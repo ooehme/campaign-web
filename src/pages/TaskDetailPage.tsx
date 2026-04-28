@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { z } from 'zod'
-import { deleteTask, getTask, getTaskEvents, updateTask } from '../api/endpoints'
+import { deleteTask, getTask, getTaskEventsPage, updateTask } from '../api/endpoints'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import { TASK_STATUSES } from '../utils/constants'
 
@@ -23,7 +23,7 @@ export function TaskDetailPage() {
   const qc = useQueryClient()
 
   const taskQuery = useQuery({ queryKey: ['task', id], queryFn: () => getTask(id), enabled: Number.isFinite(id) })
-  const eventsQuery = useQuery({ queryKey: ['task-events', id], queryFn: () => getTaskEvents(id), enabled: Number.isFinite(id) })
+  const eventsQuery = useQuery({ queryKey: ['task-events', id], queryFn: () => getTaskEventsPage(id), enabled: Number.isFinite(id) })
 
   const form = useForm({ resolver: zodResolver(taskSchema) })
 
@@ -91,10 +91,15 @@ export function TaskDetailPage() {
         <h2 className="mb-2 font-medium">Task events</h2>
         {eventsQuery.isLoading && <LoadingState />}
         {eventsQuery.isError && <ErrorState message={(eventsQuery.error as Error).message} />}
-        {eventsQuery.data && eventsQuery.data.length === 0 && <EmptyState message="No events for this task." />}
-        {eventsQuery.data && eventsQuery.data.length > 0 && (
+        {eventsQuery.data && eventsQuery.data.data.length === 0 && <EmptyState message="No events for this task." />}
+        {eventsQuery.data && (
+          <p className="mb-2 text-xs text-slate-500">
+            Page {eventsQuery.data.meta.current_page} of {eventsQuery.data.meta.last_page} · {eventsQuery.data.meta.total} total events
+          </p>
+        )}
+        {eventsQuery.data && eventsQuery.data.data.length > 0 && (
           <ul className="space-y-2 text-sm">
-            {eventsQuery.data.map((event) => (
+            {eventsQuery.data.data.map((event) => (
               <li key={event.id} className="rounded border p-2">
                 <p className="font-medium">{event.type}</p>
                 <p className="text-slate-600">{event.created_at ?? 'n/a'}</p>

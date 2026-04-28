@@ -54,3 +54,35 @@ export type GeoJsonShape = {
 }
 
 export type CampaignStatus = 'draft' | 'active' | 'archived'
+
+
+export interface PaginationNavLink {
+  url: string | null
+  label: string
+  page: number | null
+  active: boolean
+}
+
+export interface PaginationMeta {
+  current_page: number
+  from: number | null
+  last_page: number
+  links: PaginationNavLink[]
+  path: string
+  per_page: number
+  to: number | null
+  total: number
+}
+
+export interface PaginationLinks {
+  first: string | null
+  last: string | null
+  prev: string | null
+  next: string | null
+}
+
+export interface PaginatedResponse<T> {
+  data: T[]
+  links: PaginationLinks
+  meta: PaginationMeta
+}
