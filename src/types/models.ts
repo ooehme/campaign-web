@@ -1,7 +1,9 @@
 export interface Campaign {
   id: number
   name: string
+  slug?: string
   description?: string | null
+  status?: CampaignStatus | null
   starts_at?: string | null
   ends_at?: string | null
   [key: string]: unknown
@@ -50,3 +52,5 @@ export type GeoJsonShape = {
   type: 'Polygon' | 'MultiPolygon'
   coordinates: unknown[]
 }
+
+export type CampaignStatus = 'draft' | 'active' | 'archived'
