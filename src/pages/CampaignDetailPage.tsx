@@ -115,8 +115,8 @@ export function CampaignDetailPage() {
             <div key={area.id} className="rounded border p-2 text-sm">
               <p className="font-medium">{area.name}</p>
               <div className="mt-2 flex gap-2">
-                <button className="border" onClick={() => areaPatch.mutate({ areaId: area.id, name: area.name, geojson: JSON.stringify(area.geojson ?? { type: 'Polygon', coordinates: [] }) })}>Patch</button>
-                <button className="bg-red-600 text-white" onClick={() => areaDelete.mutate(area.id)}>Delete</button>
+                <button type="button" className="border" onClick={() => areaPatch.mutate({ areaId: area.id, name: area.name, geojson: JSON.stringify(area.geojson ?? { type: 'Polygon', coordinates: [] }) })}>Patch</button>
+                <button type="button" className="bg-red-600 text-white" onClick={() => areaDelete.mutate(area.id)}>Delete</button>
               </div>
             </div>
           ))}
@@ -133,8 +133,8 @@ export function CampaignDetailPage() {
             <div key={team.id} className="rounded border p-2 text-sm">
               <p className="font-medium">{team.name}</p>
               <div className="mt-2 flex gap-2">
-                <button className="border" onClick={() => teamPatch.mutate({ teamId: team.id, name: team.name })}>Patch</button>
-                <button className="bg-red-600 text-white" onClick={() => teamDeleteMutation.mutate(team.id)}>Delete</button>
+                <button type="button" className="border" onClick={() => teamPatch.mutate({ teamId: team.id, name: team.name })}>Patch</button>
+                <button type="button" className="bg-red-600 text-white" onClick={() => teamDeleteMutation.mutate(team.id)}>Delete</button>
               </div>
               <form className="mt-2 grid grid-cols-3 gap-2" onSubmit={membershipForm.handleSubmit((values) => membershipAdd.mutate({ teamId: team.id, user_id: values.user_id, role: values.role }))}>
                 <input type="number" placeholder="user_id" {...membershipForm.register('user_id')} />
@@ -144,8 +144,8 @@ export function CampaignDetailPage() {
                 <button className="border" type="submit">Add user</button>
               </form>
               <div className="mt-2 flex gap-2">
-                <button className="border" onClick={() => membershipUpdate.mutate({ teamId: team.id, user_id: Number(membershipForm.getValues('user_id')), role: membershipForm.getValues('role') })}>Update role</button>
-                <button className="border" onClick={() => membershipDelete.mutate({ teamId: team.id, user_id: Number(membershipForm.getValues('user_id')) })}>Remove user</button>
+                <button type="button" className="border" onClick={() => membershipUpdate.mutate({ teamId: team.id, user_id: Number(membershipForm.getValues('user_id')), role: membershipForm.getValues('role') })}>Update role</button>
+                <button type="button" className="border" onClick={() => membershipDelete.mutate({ teamId: team.id, user_id: Number(membershipForm.getValues('user_id')) })}>Remove user</button>
               </div>
             </div>
           ))}
@@ -174,7 +174,7 @@ export function CampaignDetailPage() {
             <div key={task.id} className="rounded border p-2 text-sm">
               <Link className="font-medium text-blue-600" to={`/tasks/${task.id}`}>{task.title}</Link>
               <p>Status: {task.status} | Priority: {task.priority}</p>
-              <button className="mt-2 bg-red-600 text-white" onClick={() => taskDeleteMutation.mutate(task.id)}>Delete</button>
+              <button type="button" className="mt-2 bg-red-600 text-white" onClick={() => taskDeleteMutation.mutate(task.id)}>Delete</button>
             </div>
           ))}
         </div>
