@@ -23,7 +23,18 @@ const buildErrorMessage = (status: number, payload: unknown) => {
   if (status === 401) return 'Unauthorized (401). Check Sanctum token.'
   if (status === 403) return 'Forbidden (403). Your token lacks permissions.'
   if (status === 404) return 'Resource not found (404).'
-  if (status === 422) return 'Validation failed (422).'
+  if (status === 422) {
+    const validationMessage =
+      typeof payload === 'object' &&
+      payload !== null &&
+      'message' in payload &&
+      typeof payload.message === 'string'
+        ? payload.message
+        : undefined
+    return validationMessage
+      ? `Validation failed (422): ${validationMessage}`
+      : 'Validation failed (422).'
+  }
   return `Request failed with status ${status}.`
 }
 
