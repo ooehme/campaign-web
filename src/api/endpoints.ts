@@ -3,7 +3,20 @@ import type { Area, Campaign, Task, TaskEvent, Team, TeamRole } from '../types/m
 
 export const healthCheck = () => apiRequest<{ status: string }>('/api/health')
 
-export const getCampaigns = () => apiRequest<Campaign[]>('/api/campaigns')
+type PaginatedCollectionResponse<T> = {
+  data: T[]
+  links?: Record<string, unknown>
+  meta?: Record<string, unknown>
+}
+
+const unwrapCollection = <T>(payload: T[] | PaginatedCollectionResponse<T>): T[] => {
+  if (Array.isArray(payload)) return payload
+  if (Array.isArray(payload.data)) return payload.data
+  throw new Error('Unexpected collection response format for campaigns.')
+}
+
+export const getCampaigns = async () =>
+  unwrapCollection(await apiRequest<Campaign[] | PaginatedCollectionResponse<Campaign>>('/api/campaigns'))
 export const getCampaign = (campaignId: number | string) => apiRequest<Campaign>(`/api/campaigns/${campaignId}`)
 export const createCampaign = (payload: Partial<Campaign>) => apiRequest<Campaign>('/api/campaigns', { method: 'POST', body: JSON.stringify(payload) })
 export const updateCampaign = (campaignId: number, payload: Partial<Campaign>) => apiRequest<Campaign>(`/api/campaigns/${campaignId}`, { method: 'PATCH', body: JSON.stringify(payload) })

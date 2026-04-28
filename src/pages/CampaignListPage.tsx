@@ -79,7 +79,7 @@ export function CampaignListPage() {
     const slugDirty = createForm.formState.dirtyFields.slug
     if (slugDirty && createSlugValue.trim() !== '') return
 
-    createForm.setValue('slug', slugify(createNameValue), { shouldDirty: false, shouldValidate: true })
+    createForm.setValue('slug', slugify(createNameValue), { shouldDirty: false, shouldValidate: false })
   }, [createForm, createForm.formState.dirtyFields.slug, createNameValue, createSlugValue])
 
   const createMutation = useMutation({
