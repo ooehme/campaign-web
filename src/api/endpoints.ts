@@ -1,12 +1,12 @@
 import { apiRequest } from './client'
-import type { Area, Campaign, Task, TaskEvent, Team, TeamRole } from '../types/models'
+import type { Area, Campaign, PaginatedResponse, Task, TaskEvent, Team, TeamRole } from '../types/models'
 
 export const healthCheck = () => apiRequest<{ status: string }>('/api/health')
 
 type PaginatedCollectionResponse<T> = {
   data: T[]
-  links?: Record<string, unknown>
-  meta?: Record<string, unknown>
+  links?: unknown
+  meta?: unknown
 }
 
 const unwrapCollection = <T>(payload: T[] | PaginatedCollectionResponse<T>): T[] => {
@@ -43,5 +43,30 @@ export const getTask = (taskId: number | string) => apiRequest<Task>(`/api/tasks
 export const createTask = (campaignId: number, payload: Partial<Task>) => apiRequest<Task>(`/api/campaigns/${campaignId}/tasks`, { method: 'POST', body: JSON.stringify(payload) })
 export const updateTask = (taskId: number, payload: Partial<Task>) => apiRequest<Task>(`/api/tasks/${taskId}`, { method: 'PATCH', body: JSON.stringify(payload) })
 export const deleteTask = (taskId: number) => apiRequest<void>(`/api/tasks/${taskId}`, { method: 'DELETE' })
+
+const normalizePaginatedResponse = <T>(payload: T[] | PaginatedResponse<T>): PaginatedResponse<T> => {
+  if (!Array.isArray(payload)) return payload
+
+  const total = payload.length
+
+  return {
+    data: payload,
+    links: { first: null, last: null, prev: null, next: null },
+    meta: {
+      current_page: 1,
+      from: total > 0 ? 1 : null,
+      last_page: 1,
+      links: [],
+      path: '',
+      per_page: total,
+      to: total > 0 ? total : null,
+      total,
+    },
+  }
+}
+
+export const getTaskEventsPage = async (taskId: number) =>
+  normalizePaginatedResponse(await apiRequest<TaskEvent[] | PaginatedResponse<TaskEvent>>(`/api/tasks/${taskId}/events`))
+
 export const getTaskEvents = async (taskId: number) =>
-  unwrapCollection(await apiRequest<TaskEvent[] | PaginatedCollectionResponse<TaskEvent>>(`/api/tasks/${taskId}/events`))
+  (await getTaskEventsPage(taskId)).data
