@@ -22,7 +22,7 @@ import {
 } from '../api/endpoints'
 import { MapPanel } from '../components/MapPanel'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
-import type { TeamRole } from '../types/models'
+import type { TaskStatus, TeamRole } from '../types/models'
 import { TASK_STATUSES, TEAM_ROLES } from '../utils/constants'
 
 const geoJsonSchema = z.object({
@@ -51,6 +51,7 @@ const taskSchema = z.object({
   latitude: z.coerce.number().min(-90).max(90).optional(),
   longitude: z.coerce.number().min(-180).max(180).optional(),
 })
+type TaskFormValues = z.infer<typeof taskSchema>
 
 export function CampaignDetailPage() {
   const { campaignId } = useParams()
@@ -65,7 +66,7 @@ export function CampaignDetailPage() {
   const areaForm = useForm({ resolver: zodResolver(areaSchema), defaultValues: { name: '', geojson: '{"type":"Polygon","coordinates":[]}' } })
   const teamForm = useForm({ resolver: zodResolver(teamSchema), defaultValues: { name: '' } })
   const membershipForm = useForm({ resolver: zodResolver(membershipSchema), defaultValues: { user_id: 0, role: 'member' as TeamRole } })
-  const taskForm = useForm({ resolver: zodResolver(taskSchema), defaultValues: { title: '', status: 'open', priority: 3, latitude: undefined, longitude: undefined } })
+  const taskForm = useForm<TaskFormValues>({ resolver: zodResolver(taskSchema), defaultValues: { title: '', status: 'open' as TaskStatus, priority: 3, latitude: undefined, longitude: undefined } })
 
   const refreshCampaign = () => {
     qc.invalidateQueries({ queryKey: ['areas', id] })
@@ -85,7 +86,7 @@ export function CampaignDetailPage() {
   const membershipUpdate = useMutation({ mutationFn: ({ teamId, user_id, role }: { teamId: number; user_id: number; role: TeamRole }) => updateTeamUser(teamId, user_id, role) })
   const membershipDelete = useMutation({ mutationFn: ({ teamId, user_id }: { teamId: number; user_id: number }) => removeTeamUser(teamId, user_id) })
 
-  const taskCreate = useMutation({ mutationFn: (values: { title: string; status: string; priority: number; latitude?: number; longitude?: number }) => createTask(id, values), onSuccess: () => { refreshCampaign(); taskForm.reset() } })
+  const taskCreate = useMutation({ mutationFn: (values: TaskFormValues) => createTask(id, values), onSuccess: () => { refreshCampaign(); taskForm.reset() } })
   const taskDeleteMutation = useMutation({ mutationFn: deleteTask, onSuccess: refreshCampaign })
 
   if (campaignQuery.isLoading) return <LoadingState />
