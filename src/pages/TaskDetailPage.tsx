@@ -1,5 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { z } from 'zod'
@@ -16,19 +17,64 @@ const taskSchema = z.object({
   longitude: z.coerce.number().min(-180).max(180).optional(),
 })
 
+type TaskFormValues = z.infer<typeof taskSchema>
+
+const taskToFormValues = (task: {
+  title: string
+  description?: string | null
+  status: TaskFormValues['status']
+  priority: number
+  latitude?: number | null
+  longitude?: number | null
+}): TaskFormValues => ({
+  title: task.title,
+  description: String(task.description ?? ''),
+  status: task.status,
+  priority: task.priority,
+  latitude: typeof task.latitude === 'number' ? task.latitude : undefined,
+  longitude: typeof task.longitude === 'number' ? task.longitude : undefined,
+})
+
 export function TaskDetailPage() {
   const { taskId } = useParams()
   const id = Number(taskId)
   const navigate = useNavigate()
   const qc = useQueryClient()
 
-  const taskQuery = useQuery({ queryKey: ['task', id], queryFn: () => getTask(id), enabled: Number.isFinite(id) })
-  const eventsQuery = useQuery({ queryKey: ['task-events', id], queryFn: () => getTaskEventsPage(id), enabled: Number.isFinite(id) })
+  const form = useForm<TaskFormValues>({
+    resolver: zodResolver(taskSchema),
+    defaultValues: {
+      title: '',
+      description: '',
+      status: 'open',
+      priority: 3,
+      latitude: undefined,
+      longitude: undefined,
+    },
+  })
 
-  const form = useForm({ resolver: zodResolver(taskSchema) })
+  const taskQuery = useQuery({
+    queryKey: ['task', id],
+    queryFn: () => getTask(id),
+    enabled: Number.isFinite(id),
+  })
+
+  const eventsQuery = useQuery({
+    queryKey: ['task-events', id],
+    queryFn: () => getTaskEventsPage(id),
+    enabled: Number.isFinite(id),
+  })
+
+  useEffect(() => {
+    if (!taskQuery.data) {
+      return
+    }
+
+    form.reset(taskToFormValues(taskQuery.data))
+  }, [form, taskQuery.data?.id])
 
   const updateMutation = useMutation({
-    mutationFn: (values: Record<string, unknown>) => updateTask(id, values),
+    mutationFn: (values: TaskFormValues) => updateTask(id, values),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['task', id] })
       qc.invalidateQueries({ queryKey: ['tasks'] })
@@ -40,22 +86,23 @@ export function TaskDetailPage() {
     onSuccess: () => navigate('/campaigns'),
   })
 
-  if (taskQuery.isLoading) return <LoadingState />
-  if (taskQuery.isError) return <ErrorState message={(taskQuery.error as Error).message} />
-  if (!taskQuery.data) return <EmptyState message="Task not found." />
+  if (!Number.isFinite(id)) {
+    return <ErrorState message="Invalid task id in URL." />
+  }
+
+  if (taskQuery.isLoading) {
+    return <LoadingState />
+  }
+
+  if (taskQuery.isError) {
+    return <ErrorState message={(taskQuery.error as Error).message} />
+  }
+
+  if (!taskQuery.data) {
+    return <EmptyState message="Task not found (404)." />
+  }
 
   const task = taskQuery.data
-
-  if (!form.getValues('title')) {
-    form.reset({
-      title: task.title,
-      description: String(task.description ?? ''),
-      status: task.status,
-      priority: task.priority,
-      latitude: typeof task.latitude === 'number' ? task.latitude : undefined,
-      longitude: typeof task.longitude === 'number' ? task.longitude : undefined,
-    })
-  }
 
   return (
     <section className="space-y-4">
