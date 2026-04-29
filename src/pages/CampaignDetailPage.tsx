@@ -1,120 +1,87 @@
-import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { z } from 'zod'
-import {
-  addUserToTeam,
-  attachTeamToCampaign,
-  createTask,
-  createTeamForCampaign,
-  deleteTeam,
-  detachTeamFromCampaign,
-  deleteTask,
-  getCampaign,
-  getTasksPage,
-  listCampaignAreas,
-  listCampaignTeams,
-  listTeams,
-  listUsers,
-  removeUserFromTeam,
-  updateTeam,
-  updateTeamUser,
-} from '../api/endpoints'
-import { MapPanel } from '../components/MapPanel'
+import { attachAreaToCampaign, attachTeamToCampaign, createOrAttachAreaToCampaign, createOrAttachTeamToCampaign, detachAreaFromCampaign, detachTeamFromCampaign, getCampaign, getTasksPage, listAreas, listCampaignAreas, listCampaignTeams, listTeams } from '../api/endpoints'
+import { ApiError } from '../api/client'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
-import type { TaskStatus, TeamRole } from '../types/models'
-import { TASK_STATUSES, TEAM_ROLES } from '../utils/constants'
-import { can, NO_PERMISSION_MESSAGE, permissionErrorMessage } from '../utils/permissions'
+import { can, NO_PERMISSION_MESSAGE } from '../utils/permissions'
 
-const teamSchema = z.object({ name: z.string().min(1) })
-const membershipSchema = z.object({ user_id: z.coerce.number().int().positive(), role: z.enum(['member', 'lead', 'admin']), display_name: z.string().optional(), notes: z.string().optional() })
-const taskSchema = z.object({ title: z.string().min(1), status: z.enum(['open', 'assigned', 'in_progress', 'done', 'cancelled']), priority: z.coerce.number().min(1).max(5), area_id: z.coerce.number().int().positive().optional(), assigned_team_id: z.coerce.number().int().positive().optional() })
-
-type TaskFormValues = z.infer<typeof taskSchema>
-
-type TeamMember = { id: number; name?: string; email?: string; pivot?: { role?: TeamRole; display_name?: string | null; notes?: string | null } }
+const message = (error: unknown) => {
+  if (!(error instanceof ApiError)) return 'Unbekannter Fehler.'
+  if (error.status === 401) return 'Nicht angemeldet (401).'
+  if (error.status === 403) return 'Keine Berechtigung (403).'
+  if (error.status >= 500) return 'Serverfehler (500).'
+  return error.message
+}
 
 export function CampaignDetailPage() {
   const { campaignId } = useParams()
   const id = Number(campaignId)
   const qc = useQueryClient()
-  const [areasPage, setAreasPage] = useState(1)
-  const [selectedTeamId, setSelectedTeamId] = useState('')
-  const [membershipDrafts, setMembershipDrafts] = useState<Record<number, { user_id: number; role: TeamRole; display_name: string; notes: string }>>({})
-
-  useEffect(() => setAreasPage(1), [id])
+  const [selectedArea, setSelectedArea] = useState('')
+  const [selectedTeam, setSelectedTeam] = useState('')
+  const [newAreaName, setNewAreaName] = useState('')
+  const [newAreaGeojson, setNewAreaGeojson] = useState('{"type":"Polygon","coordinates":[]}')
+  const [newTeamName, setNewTeamName] = useState('')
+  const [success, setSuccess] = useState('')
 
   const campaignQuery = useQuery({ queryKey: ['campaign', id], queryFn: () => getCampaign(id), enabled: Number.isFinite(id) })
-  const areasQuery = useQuery({ queryKey: ['campaign-areas', id, areasPage], queryFn: () => listCampaignAreas(id, { page: areasPage, per_page: 100 }), enabled: Number.isFinite(id) })
-  const teamsQuery = useQuery({ queryKey: ['campaign-teams', id], queryFn: () => listCampaignTeams(id, { per_page: 100 }), enabled: Number.isFinite(id) })
-  const teamsPoolQuery = useQuery({ queryKey: ['teams-pool'], queryFn: () => listTeams({ per_page: 100 }) })
-  const tasksQuery = useQuery({ queryKey: ['tasks', id], queryFn: () => getTasksPage(id, { page: 1, per_page: 100 }), enabled: Number.isFinite(id) })
-  const usersPoolQuery = useQuery({ queryKey: ['users-pool'], queryFn: () => listUsers({ per_page: 100 }) })
+  const assignedAreasQuery = useQuery({ queryKey: ['campaign-areas', id], queryFn: () => listCampaignAreas(id, { per_page: 100 }), enabled: Number.isFinite(id) })
+  const assignedTeamsQuery = useQuery({ queryKey: ['campaign-teams', id], queryFn: () => listCampaignTeams(id, { per_page: 100 }), enabled: Number.isFinite(id) })
+  const areaPoolQuery = useQuery({ queryKey: ['areas-pool'], queryFn: () => listAreas({ per_page: 100 }) })
+  const teamPoolQuery = useQuery({ queryKey: ['teams-pool'], queryFn: () => listTeams({ per_page: 100 }) })
+  const tasksQuery = useQuery({ queryKey: ['tasks', id], queryFn: () => getTasksPage(id, { per_page: 100 }), enabled: Number.isFinite(id) })
 
-  const teamForm = useForm({ resolver: zodResolver(teamSchema), defaultValues: { name: '' } })
-  const membershipForm = useForm({ resolver: zodResolver(membershipSchema), defaultValues: { user_id: 0, role: 'member' as TeamRole, display_name: '', notes: '' } })
-  const taskForm = useForm<TaskFormValues>({ resolver: zodResolver(taskSchema), defaultValues: { title: '', status: 'open' as TaskStatus, priority: 3 } })
-
-  const refreshCampaign = () => {
+  const invalidateAll = () => {
+    qc.invalidateQueries({ queryKey: ['campaigns'] })
+    qc.invalidateQueries({ queryKey: ['campaign', id] })
     qc.invalidateQueries({ queryKey: ['campaign-areas', id] })
     qc.invalidateQueries({ queryKey: ['campaign-teams', id] })
     qc.invalidateQueries({ queryKey: ['areas-pool'] })
     qc.invalidateQueries({ queryKey: ['teams-pool'] })
-    qc.invalidateQueries({ queryKey: ['tasks', id] })
   }
 
-  const teamCreate = useMutation({ mutationFn: (values: { name: string }) => createTeamForCampaign(id, values), onSuccess: () => { refreshCampaign(); teamForm.reset() } })
-  const teamPatch = useMutation({ mutationFn: ({ teamId, name }: { teamId: number; name: string }) => updateTeam(teamId, { name }), onSuccess: refreshCampaign })
-  const teamDelete = useMutation({ mutationFn: (teamId: number) => deleteTeam(teamId), onSuccess: refreshCampaign })
-  const membershipAdd = useMutation({ mutationFn: ({ teamId, user_id, role, display_name, notes }: { teamId: number; user_id: number; role: TeamRole; display_name?: string; notes?: string }) => addUserToTeam(teamId, { user_id, role, display_name, notes }), onSuccess: refreshCampaign })
-  const membershipUpdate = useMutation({ mutationFn: ({ teamId, user_id, role, display_name, notes }: { teamId: number; user_id: number; role: TeamRole; display_name?: string; notes?: string }) => updateTeamUser(teamId, user_id, { role, display_name, notes }), onSuccess: refreshCampaign })
-  const membershipDelete = useMutation({ mutationFn: ({ teamId, user_id }: { teamId: number; user_id: number }) => removeUserFromTeam(teamId, user_id), onSuccess: refreshCampaign })
-  const taskCreate = useMutation({ mutationFn: (values: TaskFormValues) => createTask(id, values), onSuccess: () => { refreshCampaign(); taskForm.reset({ title: '', status: 'open', priority: 3 }) } })
-  const taskDeleteMutation = useMutation({ mutationFn: deleteTask, onSuccess: refreshCampaign })
+  const attachAreaMutation = useMutation({ mutationFn: (areaId: number) => attachAreaToCampaign(id, areaId), onSuccess: () => { invalidateAll(); setSuccess('Fläche wurde zugewiesen.'); setSelectedArea('') } })
+  const createAttachAreaMutation = useMutation({ mutationFn: (payload: { name: string; geojson: { type: 'Polygon' | 'MultiPolygon'; coordinates: unknown[] } }) => createOrAttachAreaToCampaign(id, payload), onSuccess: () => { invalidateAll(); setSuccess('Neue Fläche erstellt und zugewiesen.'); setNewAreaName('') } })
+  const detachAreaMutation = useMutation({ mutationFn: (areaId: number) => detachAreaFromCampaign(id, areaId), onSuccess: () => { invalidateAll(); setSuccess('Zuweisung entfernt.') } })
 
-  const assignedAreas = areasQuery.data?.data ?? []
-  const assignedTeams = teamsQuery.data?.data ?? []
-  const usersError = usersPoolQuery.isError ? permissionErrorMessage(usersPoolQuery.error) : null
+  const attachTeamMutation = useMutation({ mutationFn: (teamId: number) => attachTeamToCampaign(id, teamId), onSuccess: () => { invalidateAll(); setSuccess('Team wurde zugewiesen.'); setSelectedTeam('') } })
+  const createAttachTeamMutation = useMutation({ mutationFn: (payload: { name: string }) => createOrAttachTeamToCampaign(id, payload), onSuccess: () => { invalidateAll(); setSuccess('Neues Team erstellt und zugewiesen.'); setNewTeamName('') } })
+  const detachTeamMutation = useMutation({ mutationFn: (teamId: number) => detachTeamFromCampaign(id, teamId), onSuccess: () => { invalidateAll(); setSuccess('Zuweisung entfernt.') } })
 
   if (campaignQuery.isLoading) return <LoadingState />
-  if (campaignQuery.isError) return <ErrorState message={(campaignQuery.error as Error).message} />
-  if (!campaignQuery.data) return <EmptyState message="Campaign not found." />
-
+  if (campaignQuery.isError || !campaignQuery.data) return <ErrorState message="Kampagne konnte nicht geladen werden." />
   const campaign = campaignQuery.data
 
   return <section className="space-y-6">
-    <div className="flex items-center justify-between"><h1 className="text-2xl font-semibold">Campaign: {campaign.name}</h1><Link to={`/campaigns/${id}/tasks`} className="text-blue-600">Open full task list</Link></div>
-    <MapPanel tasks={tasksQuery.data?.data ?? []} areas={assignedAreas} />
-    {usersError && <ErrorState message={usersError.includes('403') ? 'Keine Berechtigung, Benutzer zu laden.' : usersError} />}
+    <Link to="/campaigns" className="text-sm text-blue-600">← Zurück zur Kampagnenliste</Link>
+    <h1 className="text-3xl font-semibold">{campaign.name}</h1>
+    {success && <p className="rounded border border-emerald-200 bg-emerald-50 p-2 text-sm text-emerald-700">{success}</p>}
 
-    <div className="grid gap-4 lg:grid-cols-3">
-      <div className="space-y-3 rounded border bg-white p-4"><h2 className="font-medium">Assigned areas</h2><p className="text-xs text-slate-500">Area management unchanged.</p></div>
+    <div className="rounded border bg-white p-4"><h2 className="font-medium">Übersicht</h2><p>Status: {campaign.status ?? 'n/a'}</p><p>Slug: {campaign.slug ?? 'n/a'}</p><p>Start: {campaign.starts_at ?? 'n/a'}</p><p>Ende: {campaign.ends_at ?? 'n/a'}</p><p>Beschreibung: {campaign.description ?? '-'}</p></div>
 
-      <div className="space-y-3 rounded border bg-white p-4">
-        <h2 className="font-medium">Team detail</h2>
-        <p className="text-xs text-slate-500">Team overview · Assigned campaigns · Members · Add member form · Edit member rows</p>
-        <form className="space-y-2" onSubmit={teamForm.handleSubmit((values) => teamCreate.mutate(values))}><input placeholder="Team name" {...teamForm.register('name')} /><button className="bg-slate-900 text-white disabled:opacity-50" type="submit" disabled={!can(campaign.can?.create_team)} title={!can(campaign.can?.create_team) ? NO_PERMISSION_MESSAGE : undefined}>Create team and assign</button></form>
-        <div className="grid grid-cols-2 gap-2"><select value={selectedTeamId} onChange={(e) => setSelectedTeamId(e.target.value)}><option value="">Select team to attach...</option>{(teamsPoolQuery.data?.data ?? []).map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select><button type="button" className="border disabled:opacity-50" disabled={!can(campaign.can?.attach_team) || !selectedTeamId} title={!can(campaign.can?.attach_team) ? NO_PERMISSION_MESSAGE : undefined} onClick={() => selectedTeamId && attachTeamToCampaign(id, Number(selectedTeamId)).then(() => { setSelectedTeamId(''); refreshCampaign() })}>Attach selected</button></div>
-        {assignedTeams.map((team) => {
-          const members = ((team as { users?: TeamMember[] }).users ?? [])
-          const disabledMembers = !can(team.can?.manage_members)
-          return <div key={team.id} className="rounded border p-2 text-sm"><p className="font-medium">{team.name}</p><p className="text-xs text-slate-500">Assigned campaigns: current campaign #{id}</p><div className="mt-2 flex gap-2"><button type="button" className="border disabled:opacity-50" disabled={!can(team.can?.update)} title={!can(team.can?.update) ? NO_PERMISSION_MESSAGE : undefined} onClick={() => teamPatch.mutate({ teamId: team.id, name: team.name })}>Save team name</button><button type="button" className="bg-red-600 text-white disabled:opacity-50" disabled={!can(team.can?.delete)} title={!can(team.can?.delete) ? NO_PERMISSION_MESSAGE : undefined} onClick={() => teamDelete.mutate(team.id)}>Delete team</button><button type="button" className="bg-red-600 text-white disabled:opacity-50" onClick={() => detachTeamFromCampaign(id, team.id).then(refreshCampaign)} disabled={!can(campaign.can?.detach_team) || !can(team.can?.detach_from_campaign)} title={(!can(campaign.can?.detach_team) || !can(team.can?.detach_from_campaign)) ? NO_PERMISSION_MESSAGE : undefined}>Detach</button></div>
-            <form className="mt-2 grid grid-cols-5 gap-2" onSubmit={membershipForm.handleSubmit((v) => membershipAdd.mutate({ teamId: team.id, user_id: v.user_id, role: v.role, display_name: v.display_name, notes: v.notes }))}>
-              <select {...membershipForm.register('user_id', { valueAsNumber: true })} disabled={disabledMembers} title={disabledMembers ? NO_PERMISSION_MESSAGE : undefined}><option value="">Benutzer dem Team zuweisen</option>{(usersPoolQuery.data?.data ?? []).map((user) => <option key={user.id} value={user.id}>{user.name} ({user.email})</option>)}</select>
-              <select {...membershipForm.register('role')} disabled={disabledMembers} title={disabledMembers ? NO_PERMISSION_MESSAGE : undefined}>{TEAM_ROLES.map((role) => <option key={role}>{role}</option>)}</select><input placeholder="display name" {...membershipForm.register('display_name')} disabled={disabledMembers} title={disabledMembers ? NO_PERMISSION_MESSAGE : undefined} /><input placeholder="notes" {...membershipForm.register('notes')} disabled={disabledMembers} title={disabledMembers ? NO_PERMISSION_MESSAGE : undefined} /><button className="border disabled:opacity-50" disabled={disabledMembers || usersPoolQuery.isError} title={disabledMembers ? NO_PERMISSION_MESSAGE : undefined} type="submit">Benutzer dem Team zuweisen</button></form>
-            <h3 className="mt-3 font-medium">Members</h3>
-            {members.length === 0 && <p className="text-xs text-slate-500">No members assigned.</p>}
-            {members.map((member) => {
-              const draft = membershipDrafts[member.id] ?? { user_id: member.id, role: member.pivot?.role ?? 'member', display_name: member.pivot?.display_name ?? '', notes: member.pivot?.notes ?? '' }
-              return <div key={member.id} className="mt-2 grid grid-cols-5 gap-2"><span>{member.name ?? `User #${member.id}`}</span><select value={draft.role} onChange={(e) => setMembershipDrafts((prev) => ({ ...prev, [member.id]: { ...draft, role: e.target.value as TeamRole } }))} disabled={disabledMembers} title={disabledMembers ? NO_PERMISSION_MESSAGE : undefined}>{TEAM_ROLES.map((role) => <option key={role}>{role}</option>)}</select><input value={draft.display_name} onChange={(e) => setMembershipDrafts((prev) => ({ ...prev, [member.id]: { ...draft, display_name: e.target.value } }))} placeholder="display name" disabled={disabledMembers} title={disabledMembers ? NO_PERMISSION_MESSAGE : undefined} /><input value={draft.notes} onChange={(e) => setMembershipDrafts((prev) => ({ ...prev, [member.id]: { ...draft, notes: e.target.value } }))} placeholder="notes" disabled={disabledMembers} title={disabledMembers ? NO_PERMISSION_MESSAGE : undefined} /><div className="flex gap-1"><button type="button" className="border px-2" onClick={() => membershipUpdate.mutate({ teamId: team.id, user_id: member.id, role: draft.role, display_name: draft.display_name, notes: draft.notes })} disabled={disabledMembers} title={disabledMembers ? NO_PERMISSION_MESSAGE : undefined}>Mitglied bearbeiten</button><button type="button" className="border px-2" onClick={() => membershipDelete.mutate({ teamId: team.id, user_id: member.id })} disabled={disabledMembers} title={disabledMembers ? NO_PERMISSION_MESSAGE : undefined}>Mitglied entfernen</button></div></div>
-            })}
-          </div>
-        })}
-      </div>
-
-      <div className="space-y-3 rounded border bg-white p-4"><h2 className="font-medium">Tasks</h2><form className="space-y-2" onSubmit={taskForm.handleSubmit((values) => taskCreate.mutate(values))}><input placeholder="Title" {...taskForm.register('title')} /><div className="grid grid-cols-2 gap-2"><select {...taskForm.register('status')}>{TASK_STATUSES.map((status) => <option key={status}>{status}</option>)}</select><input type="number" min={1} max={5} placeholder="Priority 1-5" {...taskForm.register('priority')} /></div><div className="grid grid-cols-2 gap-2"><select {...taskForm.register('area_id')}><option value="">Select assigned area</option>{assignedAreas.map((area) => <option key={area.id} value={area.id}>{area.name}</option>)}</select><select {...taskForm.register('assigned_team_id')}><option value="">Select assigned team</option>{assignedTeams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select></div><button className="bg-slate-900 text-white disabled:opacity-50" type="submit" disabled={!can(campaign.can?.create_task)} title={!can(campaign.can?.create_task) ? NO_PERMISSION_MESSAGE : undefined}>Create task</button></form>{(tasksQuery.data?.data ?? []).map((task) => <div key={task.id} className="rounded border p-2 text-sm"><Link className="font-medium text-blue-600" to={`/tasks/${task.id}`}>{task.title}</Link><p>Status: {task.status} | Priority: {task.priority}</p><button type="button" className="mt-2 bg-red-600 text-white disabled:opacity-50" disabled={!can(task.can?.delete)} title={!can(task.can?.delete) ? NO_PERMISSION_MESSAGE : undefined} onClick={() => taskDeleteMutation.mutate(task.id)}>Delete</button></div>)}</div>
+    <div className="rounded border bg-white p-4 space-y-3"><h2 className="font-medium">Zugewiesene Flächen</h2>
+      {assignedAreasQuery.isLoading && <LoadingState />}
+      {assignedAreasQuery.isError && <ErrorState message={message(assignedAreasQuery.error)} />}
+      {areaPoolQuery.isLoading && <LoadingState />}
+      {areaPoolQuery.isError && <ErrorState message={message(areaPoolQuery.error)} />}
+      {assignedAreasQuery.data?.data.length === 0 && <EmptyState message="Noch keine Flächen zugewiesen." />}
+      <div className="grid gap-2 md:grid-cols-3"><select value={selectedArea} onChange={(e) => setSelectedArea(e.target.value)}><option value="">Fläche zuweisen…</option>{(areaPoolQuery.data?.data ?? []).map((a) => <option value={a.id} key={a.id}>{a.name}</option>)}</select><button className="border disabled:opacity-50" disabled={!can(campaign.can?.attach_area) || !selectedArea} title={!can(campaign.can?.attach_area) ? NO_PERMISSION_MESSAGE : undefined} onClick={() => selectedArea && attachAreaMutation.mutate(Number(selectedArea))}>Fläche zuweisen</button></div>
+      <div className="grid gap-2 md:grid-cols-3"><input value={newAreaName} placeholder="Name neue Fläche" onChange={(e) => setNewAreaName(e.target.value)} /><input value={newAreaGeojson} placeholder="GeoJSON" onChange={(e) => setNewAreaGeojson(e.target.value)} /><button className="border disabled:opacity-50" disabled={!can(campaign.can?.create_area)} title={!can(campaign.can?.create_area) ? NO_PERMISSION_MESSAGE : undefined} onClick={() => { try { createAttachAreaMutation.mutate({ name: newAreaName, geojson: JSON.parse(newAreaGeojson) }) } catch { alert('GeoJSON ist ungültig.') } }}>Neue Fläche erstellen und zuweisen</button></div>
+      {(assignedAreasQuery.data?.data ?? []).map((a) => <div key={a.id} className="flex items-center justify-between rounded border p-2"><Link className="text-blue-600" to="/areas">{a.name}</Link><button className="bg-red-600 text-white disabled:opacity-50" disabled={!can(campaign.can?.detach_area)} title={!can(campaign.can?.detach_area) ? NO_PERMISSION_MESSAGE : undefined} onClick={() => window.confirm('Zuweisung entfernen?') && detachAreaMutation.mutate(a.id)}>Zuweisung entfernen</button></div>)}
     </div>
+
+    <div className="rounded border bg-white p-4 space-y-3"><h2 className="font-medium">Zugewiesene Teams</h2>
+      {assignedTeamsQuery.isLoading && <LoadingState />}
+      {assignedTeamsQuery.isError && <ErrorState message={message(assignedTeamsQuery.error)} />}
+      {teamPoolQuery.isLoading && <LoadingState />}
+      {teamPoolQuery.isError && <ErrorState message={message(teamPoolQuery.error)} />}
+      {assignedTeamsQuery.data?.data.length === 0 && <EmptyState message="Noch keine Teams zugewiesen." />}
+      <div className="grid gap-2 md:grid-cols-3"><select value={selectedTeam} onChange={(e) => setSelectedTeam(e.target.value)}><option value="">Team zuweisen…</option>{(teamPoolQuery.data?.data ?? []).map((t) => <option value={t.id} key={t.id}>{t.name}</option>)}</select><button className="border disabled:opacity-50" disabled={!can(campaign.can?.attach_team) || !selectedTeam} title={!can(campaign.can?.attach_team) ? NO_PERMISSION_MESSAGE : undefined} onClick={() => selectedTeam && attachTeamMutation.mutate(Number(selectedTeam))}>Team zuweisen</button></div>
+      <div className="grid gap-2 md:grid-cols-2"><input value={newTeamName} placeholder="Name neues Team" onChange={(e) => setNewTeamName(e.target.value)} /><button className="border disabled:opacity-50" disabled={!can(campaign.can?.create_team)} title={!can(campaign.can?.create_team) ? NO_PERMISSION_MESSAGE : undefined} onClick={() => createAttachTeamMutation.mutate({ name: newTeamName })}>Neues Team erstellen und zuweisen</button></div>
+      {(assignedTeamsQuery.data?.data ?? []).map((t) => <div key={t.id} className="flex items-center justify-between rounded border p-2"><Link className="text-blue-600" to="/teams">{t.name}</Link><button className="bg-red-600 text-white disabled:opacity-50" disabled={!can(campaign.can?.detach_team)} title={!can(campaign.can?.detach_team) ? NO_PERMISSION_MESSAGE : undefined} onClick={() => window.confirm('Zuweisung entfernen?') && detachTeamMutation.mutate(t.id)}>Zuweisung entfernen</button></div>)}
+    </div>
+
+    <div className="rounded border bg-white p-4"><h2 className="font-medium">Aufträge</h2>{tasksQuery.isLoading && <LoadingState />}{tasksQuery.isError && <ErrorState message={message(tasksQuery.error)} />}{tasksQuery.data?.data.length === 0 && <EmptyState message="Noch keine Aufträge vorhanden." />}{(tasksQuery.data?.data ?? []).slice(0, 10).map((t) => <p key={t.id} className="text-sm">{t.title}</p>)}</div>
   </section>
 }
