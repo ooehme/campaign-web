@@ -60,6 +60,31 @@ export interface Area {
 export interface Team {
   id: number
   name: string
+  users?: Array<{
+    id: number
+    name: string
+    email: string
+    pivot?: {
+      role?: 'member' | 'lead' | 'admin'
+      display_name?: string | null
+      notes?: string | null
+    }
+  }>
+  campaigns?: Array<{
+    id: number
+    name: string
+    slug?: string
+    status?: string
+  }>
+  assigned_task_summary?: {
+    total?: number
+    open?: number
+    in_progress?: number
+    blocked?: number
+    completed?: number
+  }
+  created_at?: string
+  updated_at?: string
   can?: TeamCan
   [key: string]: unknown
 }
