@@ -9,6 +9,7 @@ import { AreasPage } from './pages/AreasPage'
 import { TeamsPage } from './pages/TeamsPage'
 import { UsersPage } from './pages/UsersPage'
 import { TeamDetailPage } from './pages/TeamDetailPage'
+import { TeamEditPage } from './pages/TeamEditPage'
 import { LoginPage } from './pages/LoginPage'
 import { RequireAuth } from './auth/RequireAuth'
 
@@ -24,6 +25,7 @@ export default function App() {
           <Route path="/areas" element={<AreasPage />} />
           <Route path="/teams" element={<TeamsPage />} />
           <Route path="/teams/:teamId" element={<TeamDetailPage />} />
+          <Route path="/teams/:teamId/edit" element={<TeamEditPage />} />
           <Route path="/users" element={<UsersPage />} />
           <Route path="/campaigns/:campaignId" element={<CampaignDetailPage />} />
           <Route path="/campaigns/:campaignId/tasks" element={<CampaignTaskListPage />} />
