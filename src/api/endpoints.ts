@@ -16,6 +16,13 @@ const buildQuery = (params?: PaginationParams) => {
 
 const requestPaginated = <T>(path: string): Promise<PaginatedResponse<T>> =>
   apiRequest<PaginatedResponse<T>>(path)
+const requestResource = async <T>(path: string): Promise<T> => {
+  const response = await apiRequest<T | { data?: T }>(path)
+  if (response && typeof response === 'object' && 'data' in response) {
+    return (response as { data?: T }).data as T
+  }
+  return response as T
+}
 
 export const health = () => apiRequest<{ status: string }>('/api/health')
 export const login = (payload: LoginPayload) => apiRequest<LoginResponse>('/api/login', { method: 'POST', body: JSON.stringify({ ...payload, device_name: payload.device_name ?? 'frontend' }) })
@@ -23,14 +30,14 @@ export const logout = () => apiRequest<void>('/api/logout', { method: 'POST' })
 export const getCurrentUser = () => apiRequest<User>('/api/user')
 
 export const listCampaigns = (params?: PaginationParams) => requestPaginated<Campaign>(`/api/campaigns${buildQuery(params)}`)
-export const getCampaign = (id: number | string) => apiRequest<Campaign>(`/api/campaigns/${id}`)
+export const getCampaign = (id: number | string) => requestResource<Campaign>(`/api/campaigns/${id}`)
 export const createCampaign = (payload: Partial<Campaign>) => apiRequest<Campaign>('/api/campaigns', { method: 'POST', body: JSON.stringify(payload) })
 export const updateCampaign = (id: number, payload: Partial<Campaign>) => apiRequest<Campaign>(`/api/campaigns/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
 export const deleteCampaign = (id: number) => apiRequest<void>(`/api/campaigns/${id}`, { method: 'DELETE' })
 
 export const listAreas = (params?: PaginationParams) => requestPaginated<Area>(`/api/areas${buildQuery(params)}`)
 export const createArea = (payload: Partial<Area>) => apiRequest<Area>('/api/areas', { method: 'POST', body: JSON.stringify(payload) })
-export const getArea = (id: number) => apiRequest<Area>(`/api/areas/${id}`)
+export const getArea = (id: number) => requestResource<Area>(`/api/areas/${id}`)
 export const updateArea = (id: number, payload: Partial<Area>) => apiRequest<Area>(`/api/areas/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
 export const deleteArea = (id: number) => apiRequest<void>(`/api/areas/${id}`, { method: 'DELETE' })
 export const listCampaignAreas = (campaignId: number, params?: PaginationParams) => requestPaginated<Area>(`/api/campaigns/${campaignId}/areas${buildQuery(params)}`)
@@ -39,14 +46,14 @@ export const attachAreaToCampaign = (campaignId: number, areaId: number) => apiR
 export const detachAreaFromCampaign = (campaignId: number, areaId: number) => apiRequest(`/api/campaigns/${campaignId}/areas/${areaId}`, { method: 'DELETE' })
 
 export const listUsers = (params?: PaginationParams) => requestPaginated<User>(`/api/users${buildQuery(params)}`)
-export const getUser = (id: number) => apiRequest<User>(`/api/users/${id}`)
+export const getUser = (id: number) => requestResource<User>(`/api/users/${id}`)
 export const createUser = (payload: { name: string; email: string; password: string; app_role: 'user' | 'admin' }) => apiRequest<User>('/api/users', { method: 'POST', body: JSON.stringify(payload) })
 export const updateUser = (id: number, payload: { name: string; email: string; app_role: 'user' | 'admin'; password?: string }) => apiRequest<User>(`/api/users/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
 export const deleteUser = (id: number) => apiRequest<void>(`/api/users/${id}`, { method: 'DELETE' })
 
 export const listTeams = (params?: PaginationParams) => requestPaginated<Team>(`/api/teams${buildQuery(params)}`)
 export const createTeam = (payload: Partial<Team>) => apiRequest<Team>('/api/teams', { method: 'POST', body: JSON.stringify(payload) })
-export const getTeam = (id: number) => apiRequest<Team>(`/api/teams/${id}`)
+export const getTeam = (id: number) => requestResource<Team>(`/api/teams/${id}`)
 export const updateTeam = (id: number, payload: Partial<Team>) => apiRequest<Team>(`/api/teams/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
 export const deleteTeam = (id: number) => apiRequest<void>(`/api/teams/${id}`, { method: 'DELETE' })
 export const listCampaignTeams = (campaignId: number, params?: PaginationParams) => requestPaginated<Team>(`/api/campaigns/${campaignId}/teams${buildQuery(params)}`)
@@ -60,7 +67,7 @@ export const removeUserFromTeam = (teamId: number, userId: number) => apiRequest
 
 export const listCampaignTasks = (campaignId: number, params?: PaginationParams) => requestPaginated<Task>(`/api/campaigns/${campaignId}/tasks${buildQuery(params)}`)
 export const createTask = (campaignId: number, payload: Partial<Task>) => apiRequest<Task>(`/api/campaigns/${campaignId}/tasks`, { method: 'POST', body: JSON.stringify(payload) })
-export const getTask = (id: number | string) => apiRequest<Task>(`/api/tasks/${id}`)
+export const getTask = (id: number | string) => requestResource<Task>(`/api/tasks/${id}`)
 export const updateTask = (id: number, payload: Partial<Task>) => apiRequest<Task>(`/api/tasks/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
 export const deleteTask = (id: number) => apiRequest<void>(`/api/tasks/${id}`, { method: 'DELETE' })
 export const listTaskEvents = (taskId: number, params?: PaginationParams) => requestPaginated<TaskEvent>(`/api/tasks/${taskId}/events${buildQuery(params)}`)
