@@ -13,20 +13,58 @@ import { can, NO_PERMISSION_MESSAGE } from '../utils/permissions'
 const DEFAULT_CENTER: [number, number] = [51.1657, 10.4515]
 
 const formatDate = (value?: string | null) => (value ? new Date(value).toLocaleString('de-DE') : '—')
-const isValidGeo = (geojson?: GeoJsonShape | null) => Boolean(geojson && (geojson.type === 'Polygon' || geojson.type === 'MultiPolygon') && Array.isArray(geojson.coordinates) && geojson.coordinates.length > 0)
 
-const toSummary = (geojson?: GeoJsonShape | null) => {
-  if (!isValidGeo(geojson)) return { type: 'unbekannt', rings: null as number | null, points: null as number | null }
-  if (geojson!.type === 'Polygon') return { type: 'Polygon', rings: geojson!.coordinates.length, points: geojson!.coordinates[0]?.length ?? 0 }
-  return { type: 'MultiPolygon', rings: geojson!.coordinates.reduce((acc, polygon) => acc + polygon.length, 0), points: geojson!.coordinates[0]?.[0]?.length ?? 0 }
+const isFiniteCoordinatePair = (pair: unknown): pair is [number, number] =>
+  Array.isArray(pair) && pair.length >= 2 && Number.isFinite(pair[0]) && Number.isFinite(pair[1])
+
+const isPolygonGeometry = (geojson?: GeoJsonShape | null): geojson is Extract<GeoJsonShape, { type: 'Polygon' }> =>
+  Boolean(geojson && geojson.type === 'Polygon' && Array.isArray(geojson.coordinates))
+
+const isMultiPolygonGeometry = (geojson?: GeoJsonShape | null): geojson is Extract<GeoJsonShape, { type: 'MultiPolygon' }> =>
+  Boolean(geojson && geojson.type === 'MultiPolygon' && Array.isArray(geojson.coordinates))
+
+const getGeoJsonBoundsSafely = (geojson?: GeoJsonShape | null): LatLngBoundsExpression | null => {
+  const points: [number, number][] = []
+
+  if (isPolygonGeometry(geojson)) {
+    geojson.coordinates.flat().forEach((pair) => {
+      if (!isFiniteCoordinatePair(pair)) return
+      const [lng, lat] = pair
+      points.push([lat, lng])
+    })
+  }
+
+  if (isMultiPolygonGeometry(geojson)) {
+    geojson.coordinates.flat(2).forEach((pair) => {
+      if (!isFiniteCoordinatePair(pair)) return
+      const [lng, lat] = pair
+      points.push([lat, lng])
+    })
+  }
+
+  return points.length > 2 ? points : null
 }
 
-const getBounds = (geojson?: GeoJsonShape | null): LatLngBoundsExpression | null => {
-  if (!isValidGeo(geojson)) return null
-  const pairs: [number, number][] = []
-  if (geojson!.type === 'Polygon') geojson!.coordinates.flat().forEach(([lng, lat]) => pairs.push([lat, lng]))
-  if (geojson!.type === 'MultiPolygon') geojson!.coordinates.flat(2).forEach(([lng, lat]) => pairs.push([lat, lng]))
-  return pairs.length > 2 ? pairs : null
+const getGeometrySummary = (geojson?: GeoJsonShape | null) => {
+  if (isPolygonGeometry(geojson)) {
+    return {
+      valid: Boolean(getGeoJsonBoundsSafely(geojson)),
+      type: 'Polygon',
+      rings: geojson.coordinates.length,
+      points: geojson.coordinates[0]?.length ?? 0,
+    }
+  }
+
+  if (isMultiPolygonGeometry(geojson)) {
+    return {
+      valid: Boolean(getGeoJsonBoundsSafely(geojson)),
+      type: 'MultiPolygon',
+      rings: geojson.coordinates.reduce((acc, polygon) => acc + polygon.length, 0),
+      points: geojson.coordinates[0]?.[0]?.length ?? 0,
+    }
+  }
+
+  return { valid: false, type: 'unbekannt', rings: null as number | null, points: null as number | null }
 }
 
 function FitBounds({ bounds }: { bounds: LatLngBoundsExpression | null }) {
@@ -53,22 +91,28 @@ export function AreaDetailPage() {
     },
   })
 
+  const area = areaQuery.data as Area | undefined
+  const summary = useMemo(() => getGeometrySummary(area?.geojson), [area?.geojson])
+  const bounds = useMemo(() => getGeoJsonBoundsSafely(area?.geojson), [area?.geojson])
+  const canUpdate = can(area?.can?.update)
+  const canDelete = can(area?.can?.delete)
+  const assignments = (area?.campaigns ?? area?.assignments) as AreaAssignmentRef[] | undefined
+  const prettyGeoJson = useMemo(() => {
+    try {
+      return JSON.stringify(area?.geojson ?? null, null, 2)
+    } catch {
+      return JSON.stringify(null, null, 2)
+    }
+  }, [area?.geojson])
+
   if (areaQuery.isLoading) return <LoadingState />
-  if (areaQuery.isError || !areaQuery.data) {
+  if (areaQuery.isError || !area) {
     const error = areaQuery.error as ApiError
     if (error?.status === 401) return <Navigate to="/login" replace />
     if (error?.status === 403) return <ErrorState message="Keine Berechtigung für diese Aktion." />
     if (error?.status === 404) return <ErrorState message="Fläche nicht gefunden." />
     return <ErrorState message="Serverfehler beim Laden oder Speichern der Fläche." />
   }
-
-  const area = areaQuery.data as Area
-  const canUpdate = can(area.can?.update)
-  const canDelete = can(area.can?.delete)
-  const summary = toSummary(area.geojson)
-  const bounds = useMemo(() => getBounds(area.geojson), [area.geojson])
-  const geometryValid = isValidGeo(area.geojson)
-  const assignments = (area.campaigns ?? area.assignments) as AreaAssignmentRef[] | undefined
 
   return <section className="space-y-4">
     <Link to="/areas" className="text-sm text-blue-600">← Zurück zum Flächen-Pool</Link>
@@ -77,10 +121,10 @@ export function AreaDetailPage() {
     <div className="rounded border bg-white p-4 space-y-1"><h2 className="font-medium">Übersicht</h2><p>ID: {area.id}</p><p>Name: {area.name || '—'}</p><p>Erstellt: {formatDate(area.created_at)}</p><p>Aktualisiert: {formatDate(area.updated_at)}</p><p>GeoJSON-Typ: {summary.type}</p>{summary.rings !== null && <p>Anzahl Ringe: {summary.rings}</p>}{summary.points !== null && <p>Punkte (erste Außenlinie): {summary.points}</p>}</div>
 
     <div className="rounded border bg-white p-4 space-y-2"><h2 className="font-medium">Kartenvorschau</h2>
-      {geometryValid ? <div className="h-80 overflow-hidden rounded border"><MapContainer center={DEFAULT_CENTER} zoom={6} className="h-full w-full"><TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} />{bounds && <FitBounds bounds={bounds} />}<GeoJSON data={area.geojson as GeoJSON.GeoJsonObject} /></MapContainer></div> : <p className="text-sm text-slate-700">Keine gültige Geometrie vorhanden.</p>}
+      {summary.valid && bounds ? <div className="h-80 overflow-hidden rounded border"><MapContainer center={DEFAULT_CENTER} zoom={6} className="h-full w-full"><TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} /><FitBounds bounds={bounds} /><GeoJSON data={area.geojson as GeoJSON.GeoJsonObject} /></MapContainer></div> : <p className="text-sm text-slate-700">Keine gültige Geometrie vorhanden.</p>}
     </div>
 
-    <div className="rounded border bg-white p-4"><details><summary className="cursor-pointer font-medium">GeoJSON</summary><pre className="mt-2 max-h-80 overflow-auto rounded border bg-slate-50 p-3 text-xs">{JSON.stringify(area.geojson ?? null, null, 2)}</pre></details></div>
+    <div className="rounded border bg-white p-4"><details><summary className="cursor-pointer font-medium">GeoJSON</summary><pre className="mt-2 max-h-80 overflow-auto rounded border bg-slate-50 p-3 text-xs">{prettyGeoJson}</pre></details></div>
 
     <div className="rounded border bg-white p-4 space-y-2"><h2 className="font-medium">Kampagnen-Zuweisungen</h2>
       {!assignments && <p className="text-sm text-slate-600">Kampagnen-Zuweisungen werden von der API auf dieser Flächendetailseite noch nicht bereitgestellt.</p>}
