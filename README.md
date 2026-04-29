@@ -148,3 +148,10 @@ Deployment notes are unchanged.
 - Optional unterstützt: `/campaigns/:campaignId/areas/new-map` erstellt eine Fläche und weist sie direkt der Kampagne zu.
 - Workflow: Name eingeben → Polygon auf der Karte zeichnen/bearbeiten → GeoJSON Vorschau prüfen → speichern.
 - Fallback bleibt verfügbar: „Für Experten: GeoJSON manuell bearbeiten“ (sowohl im Flächen-Pool als auch auf der Karten-Seite).
+
+## Flächen-Nutzung in Kampagnen
+
+Flächen im globalen Pool sind neutral. Erst in der Kampagnenzuweisung wird die Nutzung festgelegt: **Begrenzung** oder **Zielgebiet**.
+Zielgebiete können optional einer Begrenzung zugeordnet werden (`boundary_area_id`).
+Tasks unterstützen beide Referenzen: `boundary_area_id` (Begrenzung) und `area_id` (Zielgebiet).
+Die Karten-basierte Flächenerstellung unterstützt im Kampagnenkontext zusätzlich Erstellen+Zuweisen inklusive Nutzungsangaben.

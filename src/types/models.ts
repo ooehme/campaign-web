@@ -49,11 +49,18 @@ export interface Campaign {
   [key: string]: unknown
 }
 
+export interface CampaignAreaPivot {
+  usage?: 'boundary' | 'target'
+  boundary_area_id?: number | null
+  notes?: string | null
+}
+
 export interface Area {
   id: number
   name: string
   geojson?: GeoJsonShape | null
   can?: AreaCan
+  pivot?: CampaignAreaPivot
   [key: string]: unknown
 }
 
@@ -104,6 +111,7 @@ export interface TaskAssignedTeamRef {
 export interface Task {
   id: number
   campaign_id: number
+  boundary_area_id?: number | null
   area_id?: number | null
   assigned_team_id?: number | null
   type: string
@@ -113,7 +121,9 @@ export interface Task {
   priority: number
   latitude?: number | null
   longitude?: number | null
+  boundary_area?: TaskAreaRef | null
   area?: TaskAreaRef | null
+  target_area?: TaskAreaRef | null
   assigned_team?: TaskAssignedTeamRef | null
   payload?: Record<string, unknown> | null
   due_at?: string | null
