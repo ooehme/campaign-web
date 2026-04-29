@@ -1,5 +1,5 @@
 import { apiRequest } from './client'
-import type { Area, Campaign, PaginatedResponse, Task, TaskEvent, Team, TeamMembershipPayload } from '../types/models'
+import type { Area, Campaign, PaginatedResponse, Task, TaskEvent, Team, TeamMembershipPayload, User } from '../types/models'
 
 export const healthCheck = () => apiRequest<{ status: string }>('/api/health')
 
@@ -41,6 +41,13 @@ export const listCampaignTeams = async (campaignId: number, params: PaginationPa
 export const attachTeamToCampaign = (campaignId: number, teamId: number) => apiRequest(`/api/campaigns/${campaignId}/teams/${teamId}`, { method: 'POST' })
 export const detachTeamFromCampaign = (campaignId: number, teamId: number) => apiRequest(`/api/campaigns/${campaignId}/teams/${teamId}`, { method: 'DELETE' })
 export const createTeamForCampaign = (campaignId: number, payload: Partial<Team> & { team_id?: number }) => apiRequest<Team>(`/api/campaigns/${campaignId}/teams`, { method: 'POST', body: JSON.stringify(payload) })
+
+
+export const listUsers = async (params: PaginationParams = { per_page: 100 }) => normalizePaginatedResponse(await apiRequest<UnknownPaginatedPayload<User>>(`/api/users${buildQuery(params)}`))
+export const getUser = (userId: number) => apiRequest<User>(`/api/users/${userId}`)
+export const createUser = (payload: { name: string; email: string; password: string; app_role: 'user' | 'admin' }) => apiRequest<User>('/api/users', { method: 'POST', body: JSON.stringify(payload) })
+export const updateUser = (userId: number, payload: { name: string; email: string; app_role: 'user' | 'admin'; password?: string }) => apiRequest<User>(`/api/users/${userId}`, { method: 'PATCH', body: JSON.stringify(payload) })
+export const deleteUser = (userId: number) => apiRequest<void>(`/api/users/${userId}`, { method: 'DELETE' })
 
 export const addUserToTeam = (teamId: number, payload: TeamMembershipPayload) => apiRequest(`/api/teams/${teamId}/users`, { method: 'POST', body: JSON.stringify(payload) })
 export const updateTeamUser = (teamId: number, userId: number, payload: Omit<TeamMembershipPayload, 'user_id'>) => apiRequest(`/api/teams/${teamId}/users/${userId}`, { method: 'PATCH', body: JSON.stringify(payload) })

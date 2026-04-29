@@ -16,6 +16,7 @@ export function AppShell() {
             <NavLink to="/campaigns" className={navClass}>Campaigns</NavLink>
             <NavLink to="/areas" className={navClass}>Areas</NavLink>
             <NavLink to="/teams" className={navClass}>Teams</NavLink>
+            <NavLink to="/users" className={navClass}>Users</NavLink>
           </nav>
         </div>
       </header>
