@@ -140,10 +140,18 @@ export interface TaskEvent {
 export type TaskStatus = 'open' | 'assigned' | 'in_progress' | 'done' | 'cancelled'
 export type TeamRole = 'member' | 'lead' | 'admin'
 
-export type GeoJsonShape = {
-  type: 'Polygon' | 'MultiPolygon'
-  coordinates: unknown[]
+
+export type GeoJsonPolygon = {
+  type: 'Polygon'
+  coordinates: [Array<[number, number]>, ...Array<Array<[number, number]>>]
 }
+
+export type GeoJsonMultiPolygon = {
+  type: 'MultiPolygon'
+  coordinates: Array<Array<Array<[number, number]>>>
+}
+
+export type GeoJsonShape = GeoJsonPolygon | GeoJsonMultiPolygon
 
 export type CampaignStatus = 'draft' | 'active' | 'archived'
 

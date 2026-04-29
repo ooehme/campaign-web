@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { createArea, deleteArea, listAreas, updateArea } from '../api/endpoints'
 import { ApiError } from '../api/client'
@@ -26,9 +27,9 @@ export function AreasPage() {
 
   const formatError = (e: unknown) => e instanceof ApiError && e.status >= 500 ? 'Serverfehler (500).' : e instanceof Error ? e.message : 'Fehler.'
 
-  return <section className="space-y-4"><h1 className="text-2xl font-semibold">Flächen-Pool</h1>
+  return <section className="space-y-4"><h1 className="text-2xl font-semibold">Flächen-Pool</h1><Link className="inline-block rounded border px-3 py-2 text-sm" to="/areas/new-map">Fläche auf Karte erstellen</Link>
     {success && <p className="rounded border border-emerald-200 bg-emerald-50 p-2 text-sm text-emerald-700">{success}</p>}
-    <form className="space-y-2 rounded border bg-white p-4" onSubmit={form.handleSubmit((v) => { try { JSON.parse(v.geojson) } catch { form.setError('geojson', { message: 'GeoJSON ist kein valides JSON.' }); return } createMutation.mutate(v) })}><input placeholder="Name" {...form.register('name', { required: true })} /><label className="text-sm">GeoJSON</label><textarea rows={6} placeholder={PLACEHOLDER} {...form.register('geojson', { required: true })} /><button className="bg-slate-900 text-white" type="submit">Neue globale Fläche erstellen</button>{form.formState.errors.geojson && <ErrorState message={form.formState.errors.geojson.message ?? 'Validation error'} />}</form>
+    <form className="space-y-2 rounded border bg-white p-4" onSubmit={form.handleSubmit((v) => { try { JSON.parse(v.geojson) } catch { form.setError('geojson', { message: 'GeoJSON ist kein valides JSON.' }); return } createMutation.mutate(v) })}><input placeholder="Name" {...form.register('name', { required: true })} /><details><summary className="cursor-pointer text-sm">Für Experten: GeoJSON manuell bearbeiten</summary><label className="mt-2 block text-sm">GeoJSON</label><textarea rows={6} placeholder={PLACEHOLDER} {...form.register('geojson', { required: true })} /></details><button className="bg-slate-900 text-white" type="submit">Neue globale Fläche erstellen</button>{form.formState.errors.geojson && <ErrorState message={form.formState.errors.geojson.message ?? 'Validation error'} />}</form>
     {isLoading && <LoadingState />}
     {isError && <ErrorState message={formatError(error)} />}
     {createMutation.isError && <ErrorState message={formatError(createMutation.error)} />}
