@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
-import { createArea, deleteArea, listAreas, updateArea } from '../api/endpoints'
+import { createArea, deleteArea, listAreas } from '../api/endpoints'
 import { ApiError } from '../api/client'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import { can, NO_PERMISSION_MESSAGE } from '../utils/permissions'
@@ -15,17 +15,10 @@ export function AreasPage() {
   const { data, isLoading, isError, error } = useQuery({ queryKey: ['areas-pool'], queryFn: () => listAreas({ per_page: 100 }) })
   const form = useForm({ defaultValues: { name: '', geojson: '{"type":"Polygon","coordinates":[]}' } })
 
-  const invalidate = () => {
-    qc.invalidateQueries({ queryKey: ['areas-pool'] })
-    qc.invalidateQueries({ queryKey: ['campaign-areas'] })
-    qc.invalidateQueries({ queryKey: ['campaign'] })
-    qc.invalidateQueries({ queryKey: ['campaigns'] })
-  }
-
+  const invalidate = () => { qc.invalidateQueries({ queryKey: ['areas-pool'] }); qc.invalidateQueries({ queryKey: ['campaign-areas'] }) }
   const createMutation = useMutation({ mutationFn: (v: { name: string; geojson: string }) => createArea({ name: v.name, geojson: JSON.parse(v.geojson) }), onSuccess: () => { invalidate(); setSuccess('Fläche erstellt.'); form.reset() } })
   const del = useMutation({ mutationFn: deleteArea, onSuccess: () => { invalidate(); setSuccess('Fläche gelöscht.') } })
-
-  const formatError = (e: unknown) => e instanceof ApiError && e.status >= 500 ? 'Serverfehler (500).' : e instanceof Error ? e.message : 'Fehler.'
+  const formatError = (e: unknown) => e instanceof ApiError && e.status >= 500 ? 'Serverfehler beim Laden oder Speichern der Fläche.' : e instanceof Error ? e.message : 'Fehler.'
 
   return <section className="space-y-4"><h1 className="text-2xl font-semibold">Flächen-Pool</h1><Link className="inline-block rounded border px-3 py-2 text-sm" to="/areas/new-map">Fläche auf Karte erstellen</Link>
     {success && <p className="rounded border border-emerald-200 bg-emerald-50 p-2 text-sm text-emerald-700">{success}</p>}
@@ -34,6 +27,6 @@ export function AreasPage() {
     {isError && <ErrorState message={formatError(error)} />}
     {createMutation.isError && <ErrorState message={formatError(createMutation.error)} />}
     {data && data.data.length === 0 && <EmptyState message="Noch keine Flächen vorhanden." />}
-    {data?.data.map((area) => <div key={area.id} className="rounded border bg-white p-3"><p className="font-medium">{area.name}</p><p className="text-xs text-slate-500">GeoJSON: {area.geojson ? JSON.stringify(area.geojson).slice(0, 120) : 'n/a'}</p><div className="mt-2 flex gap-2"><button type="button" className="border disabled:opacity-50" disabled={!can(area.can?.update)} title={!can(area.can?.update) ? NO_PERMISSION_MESSAGE : undefined} onClick={() => { const nextName = window.prompt('Neuer Name', area.name); if (!nextName) return; updateArea(area.id, { name: nextName, geojson: area.geojson ?? undefined }).then(() => { invalidate(); setSuccess('Fläche aktualisiert.') }) }}>Bearbeiten</button><button type="button" className="bg-red-600 text-white disabled:opacity-50" disabled={!can(area.can?.delete)} title={!can(area.can?.delete) ? NO_PERMISSION_MESSAGE : undefined} onClick={() => window.confirm(`Fläche "${area.name}" löschen?`) && del.mutate(area.id)}>Löschen</button></div></div>)}
+    {data?.data.map((area) => <div key={area.id} className="rounded border bg-white p-3"><p className="font-medium"><Link className="text-blue-700" to={`/areas/${area.id}`}>{area.name}</Link></p><p className="text-xs text-slate-500">ID: {area.id}</p><p className="text-xs text-slate-500">GeoJSON: {area.geojson ? JSON.stringify(area.geojson).slice(0, 120) : 'Keine Geometrie'}</p><div className="mt-2 flex gap-2"><Link className={`border px-3 py-1 text-sm ${!can(area.can?.update) ? 'pointer-events-none opacity-50' : ''}`} title={!can(area.can?.update) ? NO_PERMISSION_MESSAGE : undefined} to={`/areas/${area.id}/edit`}>Bearbeiten</Link><button type="button" className="bg-red-600 text-white disabled:opacity-50" disabled={!can(area.can?.delete)} title={!can(area.can?.delete) ? NO_PERMISSION_MESSAGE : undefined} onClick={() => window.confirm(`Fläche "${area.name}" löschen?`) && del.mutate(area.id)}>Löschen</button></div></div>)}
   </section>
 }

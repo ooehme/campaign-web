@@ -55,10 +55,25 @@ export interface CampaignAreaPivot {
   notes?: string | null
 }
 
+export interface AreaAssignmentRef {
+  id?: number
+  campaign_id?: number
+  name?: string
+  campaign_name?: string
+  usage?: 'boundary' | 'target'
+  boundary_area_id?: number | null
+  notes?: string | null
+  [key: string]: unknown
+}
+
 export interface Area {
   id: number
   name: string
   geojson?: GeoJsonShape | null
+  created_at?: string | null
+  updated_at?: string | null
+  campaigns?: AreaAssignmentRef[]
+  assignments?: AreaAssignmentRef[]
   can?: AreaCan
   pivot?: CampaignAreaPivot
   [key: string]: unknown
