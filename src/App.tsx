@@ -37,6 +37,7 @@ export default function App() {
           <Route path="/campaigns/:campaignId/tasks" element={<CampaignTaskListPage />} />
           <Route path="/campaigns/:campaignId/areas/new-map" element={<AreaCreateMapPage />} />
           <Route path="/tasks/:taskId" element={<TaskDetailPage />} />
+          <Route path="/tasks/:taskId/edit" element={<TaskDetailPage />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/dashboard" replace />} />

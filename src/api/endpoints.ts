@@ -1,5 +1,5 @@
 import { apiRequest } from './client'
-import type { Area, Campaign, PaginatedResponse, Task, TaskEvent, Team, TeamMembershipPayload, User } from '../types/models'
+import type { Area, Campaign, PaginatedResponse, Task, TaskEvent, TaskPoint, Team, TeamMembershipPayload, User } from '../types/models'
 
 export type PaginationParams = { page?: number; per_page?: number }
 export type LoginPayload = { email: string; password: string; device_name?: string }
@@ -72,6 +72,12 @@ export const updateTask = (id: number, payload: Partial<Task>) => apiRequest<Tas
 export const deleteTask = (id: number) => apiRequest<void>(`/api/tasks/${id}`, { method: 'DELETE' })
 export const listTaskEvents = (taskId: number, params?: PaginationParams) => requestPaginated<TaskEvent>(`/api/tasks/${taskId}/events${buildQuery(params)}`)
 
+
+export const listTaskPoints = (taskId: number | string) => requestResource<TaskPoint[]>(`/api/tasks/${taskId}/points`)
+export const createTaskPoint = (taskId: number | string, payload: Partial<TaskPoint>) => apiRequest<TaskPoint>(`/api/tasks/${taskId}/points`, { method: 'POST', body: JSON.stringify(payload) })
+export const getTaskPoint = (taskPointId: number | string) => requestResource<TaskPoint>(`/api/task-points/${taskPointId}`)
+export const updateTaskPoint = (taskPointId: number | string, payload: Partial<TaskPoint>) => apiRequest<TaskPoint>(`/api/task-points/${taskPointId}`, { method: 'PATCH', body: JSON.stringify(payload) })
+export const deleteTaskPoint = (taskPointId: number | string) => apiRequest<void>(`/api/task-points/${taskPointId}`, { method: 'DELETE' })
 // backward-compatible aliases
 export const healthCheck = health
 export const getCampaignsPage = listCampaigns

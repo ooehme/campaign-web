@@ -94,7 +94,7 @@ npm run preview
 
 - Team detail workflow now includes assigned campaign context, member listing, "Benutzer dem Team zuweisen", per-member "Mitglied bearbeiten", and "Mitglied entfernen" actions with `role`, `display_name`, and `notes` updates.
 - User pool for membership uses `GET /api/users?per_page=100`; failures stay non-fatal, with explicit 403 message: "Keine Berechtigung, Benutzer zu laden."
-- Task detail workflow supports editing title, description, status, priority, campaign-assigned area, campaign-assigned team, latitude/longitude, due date, payload JSON, and delete action.
+- Task detail workflow supports editing title, description, status, priority, campaign-assigned area, campaign-assigned team, due date, payload JSON, and delete action. Tasks do not carry direct latitude/longitude anymore; Marker are stored as TaskPoints.
 - Task events remain visible and are refreshed after successful updates.
 - Seed demo accounts are documented in backend-aligned login notes (`admin@example.test` / `admin`).
 - New `/users` page for user CRUD against `/api/users` (list, detail, create, update, delete).
@@ -164,3 +164,11 @@ Die Karten-basierte Flächenerstellung unterstützt im Kampagnenkontext zusätzl
 - Bearbeiten auf `/areas/:areaId/edit` unterstützt interaktive Polygon-Anpassung direkt auf der Karte (Punkte verschieben, hinzufügen, entfernen, zurücksetzen, neu zeichnen).
 - MultiPolygon wird auf der Bearbeitungsseite weiterhin nur read-only angezeigt; Bearbeitung ist noch nicht unterstützt.
 - Fallback bleibt verfügbar: „GeoJSON manuell bearbeiten“ (einklappbar), inklusive Synchronisation zwischen Karte und Textfeld bei gültigem Polygon.
+
+
+## TaskPoints und Kartenverhalten
+
+- Task hat keine direkten `latitude`/`longitude`-Felder mehr.
+- Marker werden über TaskPoints verwaltet; ein Task kann 0..n Punkte besitzen.
+- Zielgebiet wird über `task.area_id` referenziert; Begrenzung über `task.boundary_area_id`.
+- Die Task-Karte zeigt Begrenzung, Zielgebiet und alle TaskPoints gemeinsam an und passt Bounds auf vorhandene Geometrie an.
