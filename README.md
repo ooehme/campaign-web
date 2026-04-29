@@ -91,6 +91,12 @@ npm run preview
 
 ## User management and team membership
 
+
+- Team detail workflow now includes assigned campaign context, member listing, "Benutzer dem Team zuweisen", per-member "Mitglied bearbeiten", and "Mitglied entfernen" actions with `role`, `display_name`, and `notes` updates.
+- User pool for membership uses `GET /api/users?per_page=100`; failures stay non-fatal, with explicit 403 message: "Keine Berechtigung, Benutzer zu laden."
+- Task detail workflow supports editing title, description, status, priority, campaign-assigned area, campaign-assigned team, latitude/longitude, due date, payload JSON, and delete action.
+- Task events remain visible and are refreshed after successful updates.
+- Seed demo accounts are documented in backend-aligned login notes (`admin@example.test` / `admin`).
 - New `/users` page for user CRUD against `/api/users` (list, detail, create, update, delete).
 - User entity fields used in UI: `name`, `email`, `app_role` (`user` or `admin`).
 - `app_role` is a global application role and is separate from team membership `role` (`member`, `lead`, `admin`).
