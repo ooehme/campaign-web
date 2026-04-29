@@ -8,13 +8,18 @@ import { deleteTask, getTask, getTaskEventsPage, updateTask } from '../api/endpo
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import { TASK_STATUSES } from '../utils/constants'
 
+const optionalCoordinateSchema = z.preprocess(
+  (value) => (value === '' || value == null ? undefined : value),
+  z.coerce.number(),
+).optional()
+
 const taskSchema = z.object({
   title: z.string().min(1),
   description: z.string().optional(),
   status: z.enum(['open', 'assigned', 'in_progress', 'done', 'cancelled']),
   priority: z.coerce.number().min(1).max(5),
-  latitude: z.coerce.number().min(-90).max(90).optional(),
-  longitude: z.coerce.number().min(-180).max(180).optional(),
+  latitude: optionalCoordinateSchema.refine((value) => value == null || (value >= -90 && value <= 90), 'Latitude must be between -90 and 90'),
+  longitude: optionalCoordinateSchema.refine((value) => value == null || (value >= -180 && value <= 180), 'Longitude must be between -180 and 180'),
 })
 
 type TaskFormValues = z.infer<typeof taskSchema>
@@ -34,6 +39,20 @@ const taskToFormValues = (task: {
   latitude: typeof task.latitude === 'number' ? task.latitude : undefined,
   longitude: typeof task.longitude === 'number' ? task.longitude : undefined,
 })
+
+const renderJsonBlock = (value: unknown) => {
+  if (value == null) {
+    return <p className="text-sm text-slate-500">None</p>
+  }
+
+  return <pre className="overflow-x-auto rounded bg-slate-50 p-2 text-xs">{JSON.stringify(value, null, 2)}</pre>
+}
+
+const areaLabel = (task: { area?: { id: number; name?: string | null } | null }) =>
+  task.area?.name ?? (typeof task.area?.id === 'number' ? `Area #${task.area.id}` : 'Unassigned area')
+
+const teamLabel = (task: { assigned_team?: { id: number; name?: string | null } | null }) =>
+  task.assigned_team?.name ?? (typeof task.assigned_team?.id === 'number' ? `Team #${task.assigned_team.id}` : 'Unassigned team')
 
 export function TaskDetailPage() {
   const { taskId } = useParams()
@@ -103,12 +122,56 @@ export function TaskDetailPage() {
   }
 
   const task = taskQuery.data
+  const hasCoordinates = typeof task.latitude === 'number' && typeof task.longitude === 'number'
+  const hasPayload = task.payload != null
 
   return (
     <section className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Task #{task.id}: {task.title}</h1>
         <Link className="text-blue-600" to={`/campaigns/${task.campaign_id}`}>Back to campaign</Link>
+      </div>
+
+      <div className="rounded border bg-white p-4">
+        <h2 className="mb-3 font-medium">Task overview</h2>
+        <dl className="grid gap-3 text-sm md:grid-cols-2">
+          <div>
+            <dt className="text-slate-500">Title</dt>
+            <dd className="font-medium">{task.title}</dd>
+          </div>
+          <div>
+            <dt className="text-slate-500">Campaign</dt>
+            <dd>{task.campaign_id}</dd>
+          </div>
+          <div>
+            <dt className="text-slate-500">Area</dt>
+            <dd>{areaLabel(task)}</dd>
+          </div>
+          <div>
+            <dt className="text-slate-500">Assigned team</dt>
+            <dd>{teamLabel(task)}</dd>
+          </div>
+          <div>
+            <dt className="text-slate-500">Status</dt>
+            <dd>{task.status}</dd>
+          </div>
+          <div>
+            <dt className="text-slate-500">Priority</dt>
+            <dd>{task.priority}</dd>
+          </div>
+          <div className="md:col-span-2">
+            <dt className="text-slate-500">Description</dt>
+            <dd>{task.description?.trim() ? task.description : 'No description'}</dd>
+          </div>
+          <div className="md:col-span-2">
+            <dt className="text-slate-500">Coordinates</dt>
+            <dd>{hasCoordinates ? `${task.latitude}, ${task.longitude}` : 'Not set'}</dd>
+          </div>
+          <div className="md:col-span-2">
+            <dt className="mb-1 text-slate-500">Payload</dt>
+            <dd>{hasPayload ? renderJsonBlock(task.payload) : <p className="text-sm text-slate-500">None</p>}</dd>
+          </div>
+        </dl>
       </div>
 
       <div className="rounded border bg-white p-4">
@@ -135,15 +198,25 @@ export function TaskDetailPage() {
       </div>
 
       <div className="rounded border bg-white p-4">
-        <h2 className="mb-2 font-medium">Task events</h2>
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <h2 className="font-medium">Task events</h2>
+          <button
+            className="rounded border px-2 py-1 text-sm"
+            type="button"
+            onClick={() => eventsQuery.refetch()}
+            disabled={eventsQuery.isFetching}
+          >
+            {eventsQuery.isFetching ? 'Refreshing…' : 'Refresh events'}
+          </button>
+        </div>
         {eventsQuery.isLoading && <LoadingState />}
         {eventsQuery.isError && <ErrorState message={(eventsQuery.error as Error).message} />}
-        {eventsQuery.data && eventsQuery.data.data.length === 0 && <EmptyState message="No events for this task." />}
         {eventsQuery.data && (
           <p className="mb-2 text-xs text-slate-500">
             Page {eventsQuery.data.meta.current_page} of {eventsQuery.data.meta.last_page} · {eventsQuery.data.meta.total} total events
           </p>
         )}
+        {eventsQuery.data && eventsQuery.data.data.length === 0 && <EmptyState message="No task events yet." />}
         {eventsQuery.data && eventsQuery.data.data.length > 0 && (
           <ul className="space-y-2 text-sm">
             {eventsQuery.data.data.map((event) => (
