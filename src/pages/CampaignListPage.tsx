@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { Link } from 'react-router-dom'
 import { createCampaign, deleteCampaign, getCampaignsPage, updateCampaign } from '../api/endpoints'
@@ -8,187 +8,81 @@ import { ApiError } from '../api/client'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import type { Campaign } from '../types/models'
 import { z } from 'zod'
-import { can, NO_PERMISSION_MESSAGE, permissionErrorMessage } from '../utils/permissions'
+import { can, NO_PERMISSION_MESSAGE } from '../utils/permissions'
 
-const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
-
-const createCampaignSchema = z.object({
-  name: z.string().trim().min(1, 'Name is required').max(255, 'Name must be 255 characters or fewer'),
-  slug: z
-    .string()
-    .trim()
-    .min(1, 'Slug is required')
-    .max(255, 'Slug must be 255 characters or fewer')
-    .regex(SLUG_PATTERN, 'Slug must use lowercase letters, numbers, and hyphens only'),
+const schema = z.object({
+  name: z.string().trim().min(1, 'Name ist erforderlich.'),
+  slug: z.string().trim().min(1, 'Slug ist erforderlich.'),
   description: z.string().optional(),
-  status: z.enum(['draft', 'active', 'archived']).optional(),
+  status: z.enum(['draft', 'active', 'archived']).default('draft'),
+  starts_at: z.string().optional(),
+  ends_at: z.string().optional(),
 })
 
-const editCampaignSchema = z.object({
-  name: z.string().trim().min(2),
-  description: z.string().optional(),
-})
+type FormValues = z.infer<typeof schema>
 
-type CreateCampaignFormValues = z.infer<typeof createCampaignSchema>
-type EditCampaignFormValues = z.infer<typeof editCampaignSchema>
-
-const slugify = (value: string) =>
-  value
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9\s-]/g, '')
-    .replace(/[\s_-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-
-const applyValidationErrors = (
-  err: unknown,
-  setError: ReturnType<typeof useForm<CreateCampaignFormValues>>['setError'],
-) => {
-  if (!(err instanceof ApiError) || err.status !== 422 || typeof err.details !== 'object' || err.details === null || !('errors' in err.details)) {
-    return
-  }
-
-  const backendErrors = err.details.errors
-  if (typeof backendErrors !== 'object' || backendErrors === null) {
-    return
-  }
-
-  const allowedFields = new Set(['name', 'slug', 'description', 'status'])
-  for (const [field, fieldErrors] of Object.entries(backendErrors)) {
-    if (!allowedFields.has(field)) continue
-    if (Array.isArray(fieldErrors) && typeof fieldErrors[0] === 'string') {
-      setError(field as keyof CreateCampaignFormValues, { message: fieldErrors[0] })
-    }
-  }
+const apiErrorMessage = (error: unknown) => {
+  if (!(error instanceof ApiError)) return 'Unbekannter Fehler.'
+  if (error.status === 401) return 'Nicht angemeldet (401). Bitte erneut einloggen.'
+  if (error.status === 403) return 'Keine Berechtigung (403).'
+  if (error.status >= 500) return 'Serverfehler (500). Bitte später erneut versuchen.'
+  return error.message
 }
 
 export function CampaignListPage() {
   const qc = useQueryClient()
   const [editing, setEditing] = useState<Campaign | null>(null)
-  const [page, setPage] = useState(1)
-  const { data, isLoading, isError, error } = useQuery({ queryKey: ['campaigns', page], queryFn: () => getCampaignsPage({ page, per_page: 100 }) })
+  const [success, setSuccess] = useState('')
+  const { data, isLoading, isError, error } = useQuery({ queryKey: ['campaigns'], queryFn: () => getCampaignsPage({ per_page: 100 }) })
+  const form = useForm<FormValues>({ resolver: zodResolver(schema), defaultValues: { name: '', slug: '', description: '', status: 'draft', starts_at: '', ends_at: '' } })
+  const editForm = useForm<FormValues>({ resolver: zodResolver(schema) })
 
-  const createForm = useForm<CreateCampaignFormValues>({
-    resolver: zodResolver(createCampaignSchema),
-    defaultValues: { name: '', slug: '', description: '', status: 'draft' },
-  })
-  const editForm = useForm<EditCampaignFormValues>({ resolver: zodResolver(editCampaignSchema) })
-
-  const createNameValue = createForm.watch('name')
-  const createSlugValue = createForm.watch('slug')
-
-  useEffect(() => {
-    const slugDirty = createForm.formState.dirtyFields.slug
-    if (slugDirty && createSlugValue.trim() !== '') return
-
-    createForm.setValue('slug', slugify(createNameValue), { shouldDirty: false, shouldValidate: false })
-  }, [createForm, createForm.formState.dirtyFields.slug, createNameValue, createSlugValue])
+  const invalidateAll = () => {
+    qc.invalidateQueries({ queryKey: ['campaigns'] })
+    qc.invalidateQueries({ queryKey: ['campaign'] })
+  }
 
   const createMutation = useMutation({
     mutationFn: createCampaign,
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['campaigns'] })
-      setPage(1)
-      createForm.reset({ name: '', slug: '', description: '', status: 'draft' })
-    },
-    onError: (err) => {
-      applyValidationErrors(err, createForm.setError)
-    },
+    onSuccess: () => { invalidateAll(); form.reset(); setSuccess('Kampagne wurde erstellt.') },
+    onError: () => setSuccess(''),
   })
-
   const updateMutation = useMutation({
     mutationFn: ({ id, payload }: { id: number; payload: Partial<Campaign> }) => updateCampaign(id, payload),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['campaigns'] })
-      setPage(1)
-      setEditing(null)
-    },
+    onSuccess: () => { invalidateAll(); setEditing(null); setSuccess('Kampagne wurde aktualisiert.') },
   })
-
   const deleteMutation = useMutation({
     mutationFn: deleteCampaign,
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['campaigns'] })
-      setPage(1)
-    },
+    onSuccess: () => { invalidateAll(); setSuccess('Kampagne wurde gelöscht.') },
   })
 
-  return (
-    <section className="space-y-4">
-      <h1 className="text-2xl font-semibold">Campaigns</h1>
-      <div className="rounded border bg-white p-4">
-        <h2 className="mb-2 font-medium">Create campaign</h2>
-        <form
-          className="grid gap-2 md:grid-cols-5"
-          onSubmit={createForm.handleSubmit(({ name, slug, description, status }) =>
-            createMutation.mutate({ name, slug, description, status }),
-          )}
-        >
-          <input placeholder="Name" {...createForm.register('name')} />
-          <input placeholder="Slug" {...createForm.register('slug')} />
-          <input placeholder="Description (optional)" {...createForm.register('description')} />
-          <select {...createForm.register('status')}>
-            <option value="draft">draft</option>
-            <option value="active">active</option>
-            <option value="archived">archived</option>
-          </select>
-          <button className="bg-slate-900 text-white" type="submit">Create</button>
-        </form>
+  const campaignCreateAllowed = data?.data.some((c) => can(c.can?.update) || can(c.can?.delete) || can(c.can?.create_area) || can(c.can?.create_team) || can(c.can?.create_task)) ?? true
 
-        {createForm.formState.errors.name && <ErrorState message={createForm.formState.errors.name.message ?? 'Validation error'} />}
-        {createForm.formState.errors.slug && <ErrorState message={createForm.formState.errors.slug.message ?? 'Validation error'} />}
-        {createForm.formState.errors.description && <ErrorState message={createForm.formState.errors.description.message ?? 'Validation error'} />}
-        {createForm.formState.errors.status && <ErrorState message={createForm.formState.errors.status.message ?? 'Validation error'} />}
-        {createMutation.isError && <ErrorState message={permissionErrorMessage(createMutation.error)} />}
-      </div>
+  return <section className="space-y-4">
+    <h1 className="text-2xl font-semibold">Kampagnen</h1>
+    {success && <p className="rounded border border-emerald-200 bg-emerald-50 p-2 text-sm text-emerald-700">{success}</p>}
 
-      <div className="rounded border bg-white p-4">
-        {isLoading && <LoadingState />}
-        {isError && <ErrorState message={(error as Error).message} />}
-        {data && data.data.length === 0 && <EmptyState message="No campaigns found." />}
-        {data && data.data.length > 0 && (
-          <ul className="space-y-3">
-            {data.data.map((campaign) => {
-              const canUpdate = can(campaign.can?.update)
-              const canDelete = can(campaign.can?.delete)
-              return (
-              <li key={campaign.id} className="rounded border p-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <p className="font-medium">{campaign.name}</p>
-                    <p className="text-sm text-slate-600">{campaign.description ?? '-'}</p>
-                    <Link className="text-sm text-blue-600" to={`/campaigns/${campaign.id}`}>Open details</Link>
-                  </div>
-                  <div className="flex gap-2">
-                    <button className="border disabled:opacity-50" disabled={!canUpdate} title={!canUpdate ? NO_PERMISSION_MESSAGE : undefined} onClick={() => { setEditing(campaign); editForm.reset({ name: campaign.name, description: String(campaign.description ?? '') }) }}>Edit</button>
-                    <button className="bg-red-600 text-white disabled:opacity-50" disabled={!canDelete} title={!canDelete ? NO_PERMISSION_MESSAGE : undefined} onClick={() => deleteMutation.mutate(campaign.id)}>Delete</button>
-                  </div>
-                </div>
-              </li>
-              )
-            })}
-          </ul>
-        )}
-        {data && data.meta.last_page > 1 && (
-          <div className="mt-3 flex items-center gap-2">
-            <button className="border px-2 py-1 disabled:opacity-50" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page <= 1}>Previous</button>
-            <span className="text-xs text-slate-500">Page {data.meta.current_page} of {data.meta.last_page}</span>
-            <button className="border px-2 py-1 disabled:opacity-50" onClick={() => setPage((current) => Math.min(data.meta.last_page, current + 1))} disabled={page >= data.meta.last_page}>Next</button>
-          </div>
-        )}
-      </div>
+    <div className="rounded border bg-white p-4">
+      <h2 className="mb-2 font-medium">Kampagne erstellen</h2>
+      <form className="grid gap-2 md:grid-cols-3" onSubmit={form.handleSubmit((values) => createMutation.mutate(values))}>
+        <input placeholder="Name" {...form.register('name')} />
+        <input placeholder="Slug" {...form.register('slug')} />
+        <input placeholder="Beschreibung (optional)" {...form.register('description')} />
+        <select {...form.register('status')}><option value="draft">draft</option><option value="active">active</option><option value="archived">archived</option></select>
+        <input type="datetime-local" {...form.register('starts_at')} />
+        <input type="datetime-local" {...form.register('ends_at')} />
+        <button className="bg-slate-900 text-white disabled:opacity-50" type="submit" disabled={!campaignCreateAllowed} title={!campaignCreateAllowed ? 'Keine Berechtigung für diese Aktion.' : undefined}>Erstellen</button>
+      </form>
+      {(createMutation.isError) && <ErrorState message={apiErrorMessage(createMutation.error)} />}
+    </div>
 
-      {editing && (
-        <div className="rounded border bg-white p-4">
-          <h2 className="mb-2 font-medium">Edit campaign: {editing.name}</h2>
-          <form className="grid gap-2 md:grid-cols-3" onSubmit={editForm.handleSubmit((values) => updateMutation.mutate({ id: editing.id, payload: values }))}>
-            <input {...editForm.register('name')} />
-            <input {...editForm.register('description')} />
-            <button className="bg-slate-900 text-white" type="submit">Save</button>
-          </form>
-          {updateMutation.isError && <ErrorState message={permissionErrorMessage(updateMutation.error)} />}
-        </div>
-      )}
-    </section>
-  )
+    <div className="rounded border bg-white p-4">
+      {isLoading && <LoadingState />}
+      {isError && <ErrorState message={apiErrorMessage(error)} />}
+      {data && data.data.length === 0 && <EmptyState message="Noch keine Kampagnen vorhanden." />}
+      {data && data.data.length > 0 && <ul className="space-y-3">{data.data.map((campaign) => <li key={campaign.id} className="rounded border p-3"><div className="flex items-center justify-between"><div><p className="font-medium">{campaign.name}</p><p className="text-sm text-slate-600">{campaign.description ?? '-'}</p><Link className="text-sm text-blue-600" to={`/campaigns/${campaign.id}`}>Details öffnen</Link></div><div className="flex gap-2"><button className="border disabled:opacity-50" disabled={!can(campaign.can?.update)} title={!can(campaign.can?.update) ? NO_PERMISSION_MESSAGE : undefined} onClick={() => { setEditing(campaign); editForm.reset({ name: campaign.name, slug: String(campaign.slug ?? ''), description: String(campaign.description ?? ''), status: (campaign.status ?? 'draft') as FormValues['status'], starts_at: String(campaign.starts_at ?? ''), ends_at: String(campaign.ends_at ?? '') }) }}>Bearbeiten</button><button className="bg-red-600 text-white disabled:opacity-50" disabled={!can(campaign.can?.delete)} title={!can(campaign.can?.delete) ? NO_PERMISSION_MESSAGE : undefined} onClick={() => window.confirm(`Kampagne "${campaign.name}" löschen?`) && deleteMutation.mutate(campaign.id)}>Löschen</button></div></div></li>)}</ul>}
+    </div>
+
+    {editing && <div className="rounded border bg-white p-4"><h2 className="mb-2 font-medium">Kampagne bearbeiten: {editing.name}</h2><form className="grid gap-2 md:grid-cols-3" onSubmit={editForm.handleSubmit((values) => updateMutation.mutate({ id: editing.id, payload: values }))}><input {...editForm.register('name')} /><input {...editForm.register('slug')} /><input {...editForm.register('description')} /><select {...editForm.register('status')}><option value="draft">draft</option><option value="active">active</option><option value="archived">archived</option></select><input type="datetime-local" {...editForm.register('starts_at')} /><input type="datetime-local" {...editForm.register('ends_at')} /><button className="bg-slate-900 text-white" type="submit">Speichern</button></form>{updateMutation.isError && <ErrorState message={apiErrorMessage(updateMutation.error)} />}</div>}
+  </section>
 }
