@@ -5,6 +5,8 @@ import { CampaignListPage } from './pages/CampaignListPage'
 import { CampaignDetailPage } from './pages/CampaignDetailPage'
 import { CampaignTaskListPage } from './pages/CampaignTaskListPage'
 import { TaskDetailPage } from './pages/TaskDetailPage'
+import { AreasPage } from './pages/AreasPage'
+import { TeamsPage } from './pages/TeamsPage'
 
 export default function App() {
   return (
@@ -12,6 +14,8 @@ export default function App() {
       <Route element={<AppShell />}>
         <Route path="/" element={<DashboardPage />} />
         <Route path="/campaigns" element={<CampaignListPage />} />
+        <Route path="/areas" element={<AreasPage />} />
+        <Route path="/teams" element={<TeamsPage />} />
         <Route path="/campaigns/:campaignId" element={<CampaignDetailPage />} />
         <Route path="/campaigns/:campaignId/tasks" element={<CampaignTaskListPage />} />
         <Route path="/tasks/:taskId" element={<TaskDetailPage />} />

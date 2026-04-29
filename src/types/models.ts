@@ -11,7 +11,6 @@ export interface Campaign {
 
 export interface Area {
   id: number
-  campaign_id: number
   name: string
   geojson?: GeoJsonShape | null
   [key: string]: unknown
@@ -19,7 +18,6 @@ export interface Area {
 
 export interface Team {
   id: number
-  campaign_id: number
   name: string
   [key: string]: unknown
 }
@@ -100,4 +98,17 @@ export interface PaginatedResponse<T> {
   data: T[]
   links: PaginationLinks
   meta: PaginationMeta
+}
+
+export interface TeamMembershipPivot {
+  role: TeamRole
+  display_name?: string | null
+  notes?: string | null
+}
+
+export interface TeamMembershipPayload {
+  user_id: number
+  role: TeamRole
+  display_name?: string | null
+  notes?: string | null
 }
