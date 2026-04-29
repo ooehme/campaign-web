@@ -223,7 +223,9 @@ export function AreaEditPage() {
 
     <div className="rounded border bg-white p-4 space-y-2">
       <h2 className="font-medium">Geometrie</h2>
-      <p className="text-sm text-slate-600">Verschieben Sie Punkte des Polygons direkt auf der Karte. Über die Zeichenwerkzeuge können Punkte hinzugefügt oder entfernt werden.</p>
+      <p className="text-sm text-slate-600">Aktivieren Sie den Bearbeitungsmodus, um Punkte des Polygons auf der Karte zu verschieben, hinzuzufügen oder zu entfernen.</p>
+      <p className={`text-sm ${editActive ? "font-medium text-emerald-700" : "text-slate-600"}`}>{editActive ? "Bearbeitungsmodus aktiv" : "Bearbeitungsmodus aus"}</p>
+      {editActive && <p className="text-xs text-slate-600">Punkte des Polygons können jetzt verschoben, hinzugefügt oder entfernt werden.</p>}
       {isMultiPolygon && <p className="rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-700">MultiPolygon-Bearbeitung ist noch nicht unterstützt.</p>}
 
       {parsedResult.parsed && <div className="h-72 overflow-hidden rounded border"><MapContainer center={DEFAULT_CENTER} zoom={6} className="h-full w-full">
@@ -233,7 +235,11 @@ export function AreaEditPage() {
             const next = [...points, point]
             setPoints(next)
             const polygon = pointsToPolygon(next)
-            if (polygon) setGeojsonText(JSON.stringify(polygon, null, 2))
+            if (polygon) {
+              setGeojsonText(JSON.stringify(polygon, null, 2))
+              return
+            }
+            setGeojsonText(EMPTY_POLYGON_TEXT)
           }} />
           {points.length >= 3 && <Polygon positions={points} pathOptions={{ color: '#0f172a' }} />}
           {points.map((point, index) => <Marker
@@ -264,11 +270,11 @@ export function AreaEditPage() {
       </MapContainer></div>}
 
       <div className="flex flex-wrap gap-2">
-        <button type="button" className="border px-3 py-2 disabled:opacity-50" disabled={!canUpdate || isMultiPolygon} onClick={() => { setEditActive(true); setDrawMode(false) }}>Bearbeitung aktivieren</button>
-        <button type="button" className="border px-3 py-2 disabled:opacity-50" disabled={!canUpdate || isMultiPolygon} onClick={() => { setEditActive(false); setDrawMode(false) }}>Bearbeitung beenden</button>
+        <button type="button" aria-pressed={editActive} title={!canUpdate ? NO_PERMISSION_MESSAGE : undefined} className={`border px-3 py-2 disabled:opacity-50 ${editActive ? "bg-slate-900 text-white" : "bg-white"}`} disabled={!canUpdate || isMultiPolygon} onClick={() => { setEditActive((value) => !value); setDrawMode(false) }}>{editActive ? "Bearbeitung aktiv" : "Polygon bearbeiten"}</button>
+        <button type="button" className={`border px-3 py-2 disabled:opacity-50 ${drawMode ? "bg-blue-900 text-white" : "bg-white"}`} title={!canUpdate ? NO_PERMISSION_MESSAGE : undefined} disabled={!canUpdate || isMultiPolygon} onClick={() => { setDrawMode((value) => !value); setEditActive(false) }}>{drawMode ? "Zeichnen aktiv" : "Polygon zeichnen"}</button>
         <button type="button" className="border px-3 py-2" onClick={() => setFitTrigger((value) => value + 1)}>Auf Fläche zentrieren</button>
-        <button type="button" className="border px-3 py-2 disabled:opacity-50" disabled={!canUpdate} onClick={() => { setName(originalName); setGeojsonText(originalGeometryText); setValidation({}) }}>Geometrie zurücksetzen</button>
-        <button type="button" className="border px-3 py-2 disabled:opacity-50" disabled={!canUpdate || isMultiPolygon} onClick={() => { setPoints([]); setGeojsonText(EMPTY_POLYGON_TEXT); setDrawMode(true); setEditActive(false) }}>Polygon löschen und neu zeichnen</button>
+        <button type="button" className="border px-3 py-2 disabled:opacity-50" disabled={!canUpdate} onClick={() => { setName(originalName); setGeojsonText(originalGeometryText); setValidation({}) }}>Polygon zurücksetzen</button>
+        <button type="button" className="border px-3 py-2 disabled:opacity-50" disabled={!canUpdate || isMultiPolygon} title={!canUpdate ? NO_PERMISSION_MESSAGE : undefined} onClick={() => { if (!window.confirm('Polygon wirklich löschen?')) return; setPoints([]); setGeojsonText(EMPTY_POLYGON_TEXT); setDrawMode(true); setEditActive(false) }}>Polygon löschen</button>
       </div>
 
       <details>
