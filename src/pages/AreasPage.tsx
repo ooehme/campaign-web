@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { createArea, deleteArea, listAreas, updateArea } from '../api/endpoints'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
+import { can, NO_PERMISSION_MESSAGE } from '../utils/permissions'
 
 export function AreasPage() {
   const qc = useQueryClient()
@@ -16,6 +17,7 @@ export function AreasPage() {
     {isLoading && <LoadingState />}
     {isError && <ErrorState message={(error as Error).message} />}
     {data && data.data.length === 0 && <EmptyState message="No areas yet." />}
-    {data?.data.map((area) => <div key={area.id} className="rounded border bg-white p-3"><p className="font-medium">{area.name}</p><p className="text-xs text-slate-500">GeoJSON: {area.geojson ? JSON.stringify(area.geojson).slice(0, 120) : 'none'}</p><div className="mt-2 flex gap-2"><button type="button" className="border" onClick={() => patch.mutate({ id: area.id, name: area.name, geojson: area.geojson })}>Save</button><button type="button" className="bg-red-600 text-white" onClick={() => del.mutate(area.id)}>Delete</button></div></div>)}
+    {data?.data.map((area) => <div key={area.id} className="rounded border bg-white p-3"><p className="font-medium">{area.name}</p><p className="text-xs text-slate-500">GeoJSON: {area.geojson ? JSON.stringify(area.geojson).slice(0, 120) : 'none'}</p><div className="mt-2 flex gap-2"><button type="button" className="border disabled:opacity-50" disabled={!can(area.can?.update)} title={!can(area.can?.update) ? NO_PERMISSION_MESSAGE : undefined} onClick={() => patch.mutate({ id: area.id, name: area.name, geojson: area.geojson })}>Save</button><button type="button" className="bg-red-600 text-white disabled:opacity-50" disabled={!can(area.can?.delete)} title={!can(area.can?.delete) ? NO_PERMISSION_MESSAGE : undefined} onClick={() => del.mutate(area.id)}>Delete</button></div></div>)}
   </section>
 }
+

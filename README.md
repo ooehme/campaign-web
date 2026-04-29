@@ -6,6 +6,8 @@ Internal React SPA to test and administrate the `ooehme/campaign-backend` Larave
 
 This frontend provides direct CRUD access to campaigns, areas, teams, team memberships, tasks, and task events. It is intentionally simple and token-based for internal usage.
 
+- Authorization UI behavior: write actions are rendered for visibility and are disabled when backend `can` flags are false. Disabled actions show "Keine Berechtigung für diese Aktion." and frontend no longer infers permissions from role names.
+
 ## Tech stack
 
 - React + TypeScript

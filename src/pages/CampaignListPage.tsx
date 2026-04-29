@@ -8,6 +8,7 @@ import { ApiError } from '../api/client'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import type { Campaign } from '../types/models'
 import { z } from 'zod'
+import { can, NO_PERMISSION_MESSAGE, permissionErrorMessage } from '../utils/permissions'
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
@@ -138,7 +139,7 @@ export function CampaignListPage() {
         {createForm.formState.errors.slug && <ErrorState message={createForm.formState.errors.slug.message ?? 'Validation error'} />}
         {createForm.formState.errors.description && <ErrorState message={createForm.formState.errors.description.message ?? 'Validation error'} />}
         {createForm.formState.errors.status && <ErrorState message={createForm.formState.errors.status.message ?? 'Validation error'} />}
-        {createMutation.isError && <ErrorState message={(createMutation.error as Error).message} />}
+        {createMutation.isError && <ErrorState message={permissionErrorMessage(createMutation.error)} />}
       </div>
 
       <div className="rounded border bg-white p-4">
@@ -147,7 +148,10 @@ export function CampaignListPage() {
         {data && data.data.length === 0 && <EmptyState message="No campaigns found." />}
         {data && data.data.length > 0 && (
           <ul className="space-y-3">
-            {data.data.map((campaign) => (
+            {data.data.map((campaign) => {
+              const canUpdate = can(campaign.can?.update)
+              const canDelete = can(campaign.can?.delete)
+              return (
               <li key={campaign.id} className="rounded border p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
@@ -156,12 +160,13 @@ export function CampaignListPage() {
                     <Link className="text-sm text-blue-600" to={`/campaigns/${campaign.id}`}>Open details</Link>
                   </div>
                   <div className="flex gap-2">
-                    <button className="border" onClick={() => { setEditing(campaign); editForm.reset({ name: campaign.name, description: String(campaign.description ?? '') }) }}>Edit</button>
-                    <button className="bg-red-600 text-white" onClick={() => deleteMutation.mutate(campaign.id)}>Delete</button>
+                    <button className="border disabled:opacity-50" disabled={!canUpdate} title={!canUpdate ? NO_PERMISSION_MESSAGE : undefined} onClick={() => { setEditing(campaign); editForm.reset({ name: campaign.name, description: String(campaign.description ?? '') }) }}>Edit</button>
+                    <button className="bg-red-600 text-white disabled:opacity-50" disabled={!canDelete} title={!canDelete ? NO_PERMISSION_MESSAGE : undefined} onClick={() => deleteMutation.mutate(campaign.id)}>Delete</button>
                   </div>
                 </div>
               </li>
-            ))}
+              )
+            })}
           </ul>
         )}
         {data && data.meta.last_page > 1 && (
@@ -181,7 +186,7 @@ export function CampaignListPage() {
             <input {...editForm.register('description')} />
             <button className="bg-slate-900 text-white" type="submit">Save</button>
           </form>
-          {updateMutation.isError && <ErrorState message={(updateMutation.error as Error).message} />}
+          {updateMutation.isError && <ErrorState message={permissionErrorMessage(updateMutation.error)} />}
         </div>
       )}
     </section>
