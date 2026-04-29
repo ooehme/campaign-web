@@ -81,6 +81,17 @@ npm run preview
 
 `public/.htaccess` rewrites non-file and non-directory requests to `/index.html`, enabling direct navigation to nested React routes, and includes explicit MIME type handling for JS, CSS, and WASM.
 
+
+## User management and team membership
+
+- New `/users` page for user CRUD against `/api/users` (list, detail, create, update, delete).
+- User entity fields used in UI: `name`, `email`, `app_role` (`user` or `admin`).
+- `app_role` is a global application role and is separate from team membership `role` (`member`, `lead`, `admin`).
+- Team membership assignment now targets existing users: "Benutzer dem Team zuweisen" / "Assign existing user to team".
+- Team membership submit payload uses `user_id` plus `role`, `display_name`, `notes`.
+- If `/api/users` list is forbidden, UI shows a readable warning and falls back to manual `user_id` input.
+- There is still no dedicated frontend login flow (unless introduced separately); API token auth remains environment-based.
+
 ## Scope intentionally not implemented
 
 - Real login flow

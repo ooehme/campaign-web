@@ -139,6 +139,25 @@ export interface PaginatedResponse<T> {
   meta: PaginationMeta
 }
 
+
+export interface UserCan {
+  view?: boolean
+  create?: boolean
+  update?: boolean
+  delete?: boolean
+}
+
+export type AppRole = 'user' | 'admin'
+
+export interface User {
+  id: number
+  name: string
+  email: string
+  app_role: AppRole
+  can?: UserCan
+  [key: string]: unknown
+}
+
 export interface TeamMembershipPivot {
   role: TeamRole
   display_name?: string | null
