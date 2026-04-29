@@ -1,3 +1,5 @@
+import { clearAuth, readStoredToken } from '../auth/storage'
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -9,19 +11,14 @@ export class ApiError extends Error {
 }
 
 const baseUrl = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '')
-const token = import.meta.env.VITE_API_TOKEN
 
 if (!baseUrl) {
   throw new Error('Missing VITE_API_BASE_URL')
 }
 
-if (!token) {
-  throw new Error('Missing VITE_API_TOKEN')
-}
-
 const buildErrorMessage = (status: number, payload: unknown) => {
-  if (status === 401) return 'Unauthorized (401). Check Sanctum token.'
-  if (status === 403) return 'Forbidden (403). Your token lacks permissions.'
+  if (status === 401) return 'Unauthorized (401). Please login again.'
+  if (status === 403) return 'Forbidden (403).'
   if (status === 404) return 'Resource not found (404).'
   if (status === 422) {
     const validationMessage =
@@ -39,14 +36,15 @@ const buildErrorMessage = (status: number, payload: unknown) => {
 }
 
 export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = readStoredToken()
+  const headers = new Headers(init?.headers ?? {})
+  headers.set('Accept', 'application/json')
+  if (!headers.has('Content-Type') && init?.body) headers.set('Content-Type', 'application/json')
+  if (token) headers.set('Authorization', `Bearer ${token}`)
+
   const response = await fetch(`${baseUrl}${path}`, {
     ...init,
-    headers: {
-      Accept: 'application/json',
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-      ...(init?.headers ?? {}),
-    },
+    headers,
   })
 
   if (!response.ok) {
@@ -55,6 +53,10 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
       payload = await response.json()
     } catch {
       payload = undefined
+    }
+    if (response.status === 401) {
+      clearAuth()
+      window.dispatchEvent(new CustomEvent('campaign-auth-required'))
     }
     throw new ApiError(response.status, buildErrorMessage(response.status, payload), payload)
   }

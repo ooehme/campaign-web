@@ -4,7 +4,7 @@ Internal React SPA to test and administrate the `ooehme/campaign-backend` Larave
 
 ## Project overview
 
-This frontend provides direct CRUD access to campaigns, areas, teams, team memberships, tasks, and task events. It is intentionally simple and token-based for internal usage.
+This frontend provides direct CRUD access to campaigns, areas, teams, team memberships, tasks, and task events. It is intentionally simple for internal usage and now uses a real login flow.
 
 - Authorization UI behavior: write actions are rendered for visibility and are disabled when backend `can` flags are false. Disabled actions show "Keine Berechtigung für diese Aktion." and frontend no longer infers permissions from role names.
 
@@ -60,14 +60,21 @@ cp .env.example .env
 Variables:
 
 - `VITE_API_BASE_URL` (e.g. `https://backend.oliveroehme.de`)
-- `VITE_API_TOKEN` (Laravel Sanctum bearer token)
 
 ## Local setup
 
 ```bash
-npm install
+npm ci
+cp .env.example .env
 npm run dev
 ```
+
+Login after backend `migrate:fresh --seed` with:
+
+- `admin@example.test`
+- `admin`
+
+> Production note: Never use seeded admin credentials in production environments.
 
 ## Development commands
 
@@ -90,11 +97,10 @@ npm run preview
 - Team membership assignment now targets existing users: "Benutzer dem Team zuweisen" / "Assign existing user to team".
 - Team membership submit payload uses `user_id` plus `role`, `display_name`, `notes`.
 - If `/api/users` list is forbidden, UI shows a readable warning and falls back to manual `user_id` input.
-- There is still no dedicated frontend login flow (unless introduced separately); API token auth remains environment-based.
+- Frontend auth uses `/api/login`, `/api/user`, and `/api/logout`.
 
 ## Scope intentionally not implemented
 
-- Real login flow
 - Refresh token flow
 - Role-based UI permissions
 - Advanced map drawing/editing
@@ -112,3 +118,10 @@ npm run preview
 - Campaign detail now emphasizes assigned areas/teams with attach/detach actions.
 
 Deployment notes are unchanged.
+
+
+## Authentication notes
+
+- Token is stored in `localStorage` as `campaign_api_token` for internal MVP testing only.
+- Current user is stored as `campaign_current_user`.
+- This should be replaced later by a cookie-based SPA auth approach for production-grade security.
