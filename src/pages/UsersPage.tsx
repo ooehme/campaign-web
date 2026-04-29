@@ -1,115 +1,113 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { ApiError } from '../api/client'
+import { useAuth } from '../auth/AuthContext'
 import { createUser, deleteUser, listUsers, updateUser } from '../api/endpoints'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import type { AppRole, User } from '../types/models'
 import { can, NO_PERMISSION_MESSAGE } from '../utils/permissions'
 
 type CreateUserValues = { name: string; email: string; password: string; app_role: AppRole }
-type UpdateUserValues = { id: number; name: string; email: string; password?: string; app_role: AppRole }
-type ValidationErrors = Partial<Record<keyof CreateUserValues, string[]>>
-type CreateUserPayload = { name: string; email: string; password: string; app_role: 'user' | 'admin' }
+type EditUserValues = { name: string; email: string; password: string; app_role: AppRole }
 
-const parseValidationErrors = (error: unknown): ValidationErrors => {
+const parseValidationErrors = (error: unknown): Record<string, string[]> => {
   if (!(error instanceof ApiError) || error.code !== 'validation' || !error.details || typeof error.details !== 'object') return {}
   const details = error.details as { errors?: unknown }
-  if (!details.errors || typeof details.errors !== 'object') return {}
-  return details.errors as ValidationErrors
+  return (details.errors as Record<string, string[]>) ?? {}
 }
 
-const toCreateUserPayload = (values: CreateUserValues): CreateUserPayload => ({
-  name: values.name.trim(),
-  email: values.email.trim(),
-  password: values.password,
-  app_role: values.app_role === 'admin' ? 'admin' : 'user',
-})
-
-const capabilityFromUsers = (users: User[], key: 'create' | 'update' | 'delete'): boolean => {
-  const explicitFlag = users.find((user) => typeof user.can?.[key] === 'boolean')?.can?.[key]
-  return explicitFlag === undefined ? true : can(explicitFlag)
-}
+const appRoleBadge = (role: AppRole) => <span className="rounded border px-2 py-0.5 text-xs font-medium">App-Rolle: {role}</span>
 
 export function UsersPage() {
   const qc = useQueryClient()
-  const usersQuery = useQuery({ queryKey: ['users'], queryFn: () => listUsers({ per_page: 100 }) })
+  const { user: currentUser, refreshUser } = useAuth()
+  const [success, setSuccess] = useState('')
+  const [editingUserId, setEditingUserId] = useState<number | null>(null)
+
+  const usersQuery = useQuery({ queryKey: ['users'], queryFn: () => listUsers({ per_page: 100 }), retry: false })
+  const users = usersQuery.data?.data ?? []
 
   const createForm = useForm<CreateUserValues>({ defaultValues: { name: '', email: '', password: '', app_role: 'user' } })
-  const updateForm = useForm<UpdateUserValues>({ defaultValues: { id: 0, name: '', email: '', password: '', app_role: 'user' } })
+  const editForm = useForm<EditUserValues>({ defaultValues: { name: '', email: '', password: '', app_role: 'user' } })
 
   const createMutation = useMutation({
     mutationFn: createUser,
-    onMutate: () => {
-      createForm.clearErrors()
-    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['users'] })
       createForm.reset({ name: '', email: '', password: '', app_role: 'user' })
+      setSuccess('Benutzer wurde erstellt.')
     },
     onError: (error) => {
-      const fieldErrors = parseValidationErrors(error)
-      const entries = Object.entries(fieldErrors) as [keyof CreateUserValues, string[]][]
-      for (const [field, messages] of entries) {
-        if (!messages?.length) continue
-        createForm.setError(field, { type: 'server', message: messages[0] })
-      }
-      if (entries.length === 0) {
-        createForm.setError('root', { type: 'server', message: error instanceof Error ? error.message : 'Failed to create user.' })
-      }
+      const errors = parseValidationErrors(error)
+      Object.entries(errors).forEach(([field, messages]) => createForm.setError(field as keyof CreateUserValues, { type: 'server', message: messages[0] }))
     },
   })
-  const updateMutation = useMutation({ mutationFn: ({ id, ...payload }: UpdateUserValues) => updateUser(id, payload), onSuccess: () => qc.invalidateQueries({ queryKey: ['users'] }) })
-  const deleteMutation = useMutation({ mutationFn: deleteUser, onSuccess: () => qc.invalidateQueries({ queryKey: ['users'] }) })
 
-  const users = usersQuery.data?.data ?? []
-  const canCreate = capabilityFromUsers(users, 'create')
-  const canUpdate = capabilityFromUsers(users, 'update')
-  const createFieldMessages = Object.values(createForm.formState.errors)
-    .map((issue) => issue?.message)
-    .filter((message): message is string => typeof message === 'string' && message.length > 0)
+  const updateMutation = useMutation({
+    mutationFn: ({ id, values }: { id: number; values: EditUserValues }) => updateUser(id, {
+      name: values.name,
+      email: values.email,
+      app_role: values.app_role,
+      ...(values.password.trim().length > 0 ? { password: values.password } : {}),
+    }),
+    onSuccess: (_, payload) => {
+      qc.invalidateQueries({ queryKey: ['users'] })
+      if (payload.id === currentUser?.id) refreshUser().catch(() => undefined)
+      setEditingUserId(null)
+      setSuccess('Benutzer wurde aktualisiert.')
+    },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteUser,
+    onSuccess: (_, deletedId) => {
+      qc.invalidateQueries({ queryKey: ['users'] })
+      if (deletedId === currentUser?.id) refreshUser().catch(() => undefined)
+      setSuccess('Benutzer wurde entfernt.')
+    },
+  })
+
+  const isForbidden = usersQuery.isError && usersQuery.error instanceof ApiError && usersQuery.error.status === 403
+  const isServerError = usersQuery.isError && usersQuery.error instanceof ApiError && usersQuery.error.status >= 500
+
+  const editingUser = useMemo(() => users.find((user) => user.id === editingUserId) ?? null, [editingUserId, users])
 
   return <section className="space-y-4">
-    <h1 className="text-2xl font-semibold">Users</h1>
+    <h1 className="text-2xl font-semibold">Benutzer</h1>
+    {success && <p className="rounded border border-emerald-200 bg-emerald-50 p-2 text-sm text-emerald-700">{success}</p>}
 
-    <form className="space-y-2 rounded border bg-white p-4" onSubmit={createForm.handleSubmit((values) => createMutation.mutate(toCreateUserPayload(values)))}>
-      <h2 className="font-medium">Create user</h2>
-      {(createMutation.isError || Object.keys(createForm.formState.errors).length > 0) && <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">
-        <p>Please fix the validation errors below and try again.</p>
-        {createFieldMessages.length > 0 && <ul className="list-inside list-disc">
-          {createFieldMessages.map((message, index) => <li key={`${message}-${index}`}>{message}</li>)}
-        </ul>}
-      </div>}
-      {createForm.formState.errors.root?.message && <p className="text-sm text-red-700">{createForm.formState.errors.root.message}</p>}
-      <input placeholder="name" {...createForm.register('name', { required: 'Name is required.', validate: (value) => value.trim().length > 0 || 'Name is required.' })} />
+    <form className="space-y-2 rounded border bg-white p-4" onSubmit={createForm.handleSubmit((values) => createMutation.mutate(values))}>
+      <h2 className="font-medium">Benutzer erstellen</h2>
+      <input placeholder="Name" {...createForm.register('name', { required: 'Name ist erforderlich.' })} />
       {createForm.formState.errors.name?.message && <p className="text-sm text-red-700">{createForm.formState.errors.name.message}</p>}
-      <input placeholder="email" type="email" {...createForm.register('email', { required: 'Email is required.', validate: (value) => value.trim().length > 0 || 'Email is required.' })} />
+      <input placeholder="E-Mail" type="email" {...createForm.register('email', { required: 'E-Mail ist erforderlich.' })} />
       {createForm.formState.errors.email?.message && <p className="text-sm text-red-700">{createForm.formState.errors.email.message}</p>}
-      <input placeholder="password" type="password" {...createForm.register('password', { required: 'Password is required.', minLength: { value: 12, message: 'Password must be at least 12 characters.' } })} />
+      <input placeholder="Passwort" type="password" {...createForm.register('password', { required: 'Passwort ist erforderlich.' })} />
       {createForm.formState.errors.password?.message && <p className="text-sm text-red-700">{createForm.formState.errors.password.message}</p>}
-      <select {...createForm.register('app_role', { validate: (value) => value === 'user' || value === 'admin' || 'Role must be user or admin.' })}><option value="user">user</option><option value="admin">admin</option></select>
-      {createForm.formState.errors.app_role?.message && <p className="text-sm text-red-700">{createForm.formState.errors.app_role.message}</p>}
-      <button className="bg-slate-900 text-white disabled:opacity-50" type="submit" disabled={!canCreate} title={!canCreate ? NO_PERMISSION_MESSAGE : undefined}>Create user</button>
+      <select {...createForm.register('app_role')}><option value="user">user</option><option value="admin">admin</option></select>
+      <button className="bg-slate-900 text-white" type="submit">Benutzer erstellen</button>
     </form>
 
-    <form className="space-y-2 rounded border bg-white p-4" onSubmit={updateForm.handleSubmit((values) => updateMutation.mutate(values))}>
-      <h2 className="font-medium">Edit user</h2>
-      <input placeholder="user id" type="number" {...updateForm.register('id', { valueAsNumber: true })} />
-      <input placeholder="name" {...updateForm.register('name')} />
-      <input placeholder="email" type="email" {...updateForm.register('email')} />
-      <input placeholder="optional password" type="password" {...updateForm.register('password')} />
-      <select {...updateForm.register('app_role')}><option value="user">user</option><option value="admin">admin</option></select>
-      <button className="border disabled:opacity-50" type="submit" disabled={!canUpdate} title={!canUpdate ? NO_PERMISSION_MESSAGE : undefined}>Update user</button>
-    </form>
+    {editingUser && <form className="space-y-2 rounded border bg-white p-4" onSubmit={editForm.handleSubmit((values) => updateMutation.mutate({ id: editingUser.id, values }))}>
+      <h2 className="font-medium">Benutzer bearbeiten: {editingUser.name}</h2>
+      {!can(editingUser.can?.update) && <p className="text-sm text-amber-700">Keine Berechtigung für diese Aktion.</p>}
+      <input placeholder="Name" disabled={!can(editingUser.can?.update)} {...editForm.register('name', { required: true })} />
+      <input placeholder="E-Mail" type="email" disabled={!can(editingUser.can?.update)} {...editForm.register('email', { required: true })} />
+      <input placeholder="Passwort (optional)" type="password" disabled={!can(editingUser.can?.update)} {...editForm.register('password')} />
+      <select disabled={!can(editingUser.can?.update)} {...editForm.register('app_role')}><option value="user">user</option><option value="admin">admin</option></select>
+      <div className="flex gap-2"><button className="border disabled:opacity-50" type="submit" disabled={!can(editingUser.can?.update)}>Benutzer speichern</button><button className="border" type="button" onClick={() => setEditingUserId(null)}>Abbrechen</button></div>
+    </form>}
 
     {usersQuery.isLoading && <LoadingState />}
-    {usersQuery.isError && <ErrorState message={(usersQuery.error as Error).message} />}
-    {usersQuery.data && users.length === 0 && <EmptyState message="No users found." />}
+    {isForbidden && <ErrorState message="Keine Berechtigung, Benutzer zu laden." />}
+    {isServerError && <ErrorState message="Serverfehler beim Laden der Benutzer." />}
+    {usersQuery.data && users.length === 0 && <EmptyState message="Noch keine Benutzer vorhanden." />}
 
-    {users.map((user) => <div key={user.id} className="rounded border bg-white p-3 text-sm">
-      <p className="font-medium">{user.name}</p>
-      <p>{user.email}</p>
-      <p>app_role: {user.app_role}</p>
-      <button type="button" className="mt-2 bg-red-600 text-white disabled:opacity-50" disabled={!can(user.can?.delete)} title={!can(user.can?.delete) ? NO_PERMISSION_MESSAGE : undefined} onClick={() => deleteMutation.mutate(user.id)}>Delete</button>
-    </div>)}
+    {users.length > 0 && <div className="rounded border bg-white p-2 overflow-auto">
+      <table className="w-full text-sm"><thead><tr className="text-left"><th>Name</th><th>E-Mail</th><th>App-Rolle</th><th>Aktionen</th></tr></thead><tbody>
+        {users.map((user: User) => <tr key={user.id} className="border-t"><td>{user.name}</td><td>{user.email}</td><td>{appRoleBadge(user.app_role)}</td><td className="py-2 flex gap-2"><button className="border disabled:opacity-50" disabled={!can(user.can?.update)} title={!can(user.can?.update) ? NO_PERMISSION_MESSAGE : undefined} onClick={() => { setEditingUserId(user.id); editForm.reset({ name: user.name, email: user.email, app_role: user.app_role, password: '' }) }}>bearbeiten</button><button className="bg-red-600 px-2 text-white disabled:opacity-50" disabled={!can(user.can?.delete)} title={!can(user.can?.delete) ? NO_PERMISSION_MESSAGE : undefined} onClick={() => window.confirm(`Benutzer \"${user.name}\" entfernen?`) && deleteMutation.mutate(user.id)}>entfernen</button></td></tr>)}
+      </tbody></table>
+    </div>}
   </section>
 }

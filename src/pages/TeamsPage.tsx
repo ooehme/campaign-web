@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { createTeam, deleteTeam, listTeams, updateTeam } from '../api/endpoints'
@@ -27,6 +28,6 @@ export function TeamsPage() {
     {isLoading && <LoadingState />}
     {isError && <ErrorState message={(error as Error).message} />}
     {data && data.data.length === 0 && <EmptyState message="Noch keine Teams vorhanden." />}
-    {data?.data.map((team) => <div key={team.id} className="rounded border bg-white p-3"><p className="font-medium">{team.name}</p><div className="mt-2 flex gap-2"><button type="button" className="border disabled:opacity-50" disabled={!can(team.can?.update)} title={!can(team.can?.update) ? NO_PERMISSION_MESSAGE : undefined} onClick={() => { const nextName = window.prompt('Neuer Name', team.name); if (!nextName) return; updateTeam(team.id, { name: nextName }).then(() => { invalidate(); setSuccess('Team aktualisiert.') }) }}>Bearbeiten</button><button type="button" className="bg-red-600 text-white disabled:opacity-50" disabled={!can(team.can?.delete)} title={!can(team.can?.delete) ? NO_PERMISSION_MESSAGE : undefined} onClick={() => window.confirm(`Team "${team.name}" löschen?`) && del.mutate(team.id)}>Löschen</button></div></div>)}
+    {data?.data.map((team) => <div key={team.id} className="rounded border bg-white p-3"><p className="font-medium"><Link className="text-blue-600" to={`/teams/${team.id}`}>{team.name}</Link></p><div className="mt-2 flex gap-2"><button type="button" className="border disabled:opacity-50" disabled={!can(team.can?.update)} title={!can(team.can?.update) ? NO_PERMISSION_MESSAGE : undefined} onClick={() => { const nextName = window.prompt('Neuer Name', team.name); if (!nextName) return; updateTeam(team.id, { name: nextName }).then(() => { invalidate(); setSuccess('Team aktualisiert.') }) }}>Bearbeiten</button><button type="button" className="bg-red-600 text-white disabled:opacity-50" disabled={!can(team.can?.delete)} title={!can(team.can?.delete) ? NO_PERMISSION_MESSAGE : undefined} onClick={() => window.confirm(`Team "${team.name}" löschen?`) && del.mutate(team.id)}>Löschen</button></div></div>)}
   </section>
 }
