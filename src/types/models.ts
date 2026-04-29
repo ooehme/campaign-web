@@ -1,3 +1,38 @@
+export interface CampaignCan {
+  update?: boolean
+  delete?: boolean
+  attach_area?: boolean
+  detach_area?: boolean
+  attach_team?: boolean
+  detach_team?: boolean
+  create_task?: boolean
+  create_team?: boolean
+  create_area?: boolean
+}
+
+export interface AreaCan {
+  update?: boolean
+  delete?: boolean
+  attach_to_campaign?: boolean
+  detach_from_campaign?: boolean
+}
+
+export interface TeamCan {
+  update?: boolean
+  delete?: boolean
+  manage_members?: boolean
+  attach_to_campaign?: boolean
+  detach_from_campaign?: boolean
+}
+
+export interface TaskCan {
+  update?: boolean
+  delete?: boolean
+  change_status?: boolean
+  assign_team?: boolean
+  complete?: boolean
+}
+
 export interface Campaign {
   id: number
   name: string
@@ -6,6 +41,7 @@ export interface Campaign {
   status?: CampaignStatus | null
   starts_at?: string | null
   ends_at?: string | null
+  can?: CampaignCan
   [key: string]: unknown
 }
 
@@ -13,12 +49,14 @@ export interface Area {
   id: number
   name: string
   geojson?: GeoJsonShape | null
+  can?: AreaCan
   [key: string]: unknown
 }
 
 export interface Team {
   id: number
   name: string
+  can?: TeamCan
   [key: string]: unknown
 }
 
@@ -46,6 +84,7 @@ export interface Task {
   area?: TaskAreaRef | null
   assigned_team?: TaskAssignedTeamRef | null
   payload?: Record<string, unknown> | null
+  can?: TaskCan
   [key: string]: unknown
 }
 

@@ -29,12 +29,14 @@ import { MapPanel } from '../components/MapPanel'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import type { TaskStatus, TeamRole } from '../types/models'
 import { TASK_STATUSES, TEAM_ROLES } from '../utils/constants'
+import { can, NO_PERMISSION_MESSAGE, permissionErrorMessage } from '../utils/permissions'
 
 const geoJsonSchema = z.object({ type: z.enum(['Polygon', 'MultiPolygon']), coordinates: z.array(z.unknown()) })
 const areaSchema = z.object({ name: z.string().min(1), geojson: z.string().refine((value) => { try { geoJsonSchema.parse(JSON.parse(value)); return true } catch { return false } }, 'GeoJSON must be valid Polygon or MultiPolygon JSON.') })
 const teamSchema = z.object({ name: z.string().min(1) })
 const membershipSchema = z.object({ user_id: z.coerce.number().int().positive(), role: z.enum(['member', 'lead', 'admin']), display_name: z.string().optional(), notes: z.string().optional() })
 const taskSchema = z.object({ title: z.string().min(1), status: z.enum(['open', 'assigned', 'in_progress', 'done', 'cancelled']), priority: z.coerce.number().min(1).max(5), area_id: z.coerce.number().int().positive().optional(), assigned_team_id: z.coerce.number().int().positive().optional() })
+
 type TaskFormValues = z.infer<typeof taskSchema>
 
 export function CampaignDetailPage() {
@@ -79,14 +81,16 @@ export function CampaignDetailPage() {
 
   const assignedAreas = areasQuery.data?.data ?? []
   const assignedTeams = teamsQuery.data?.data ?? []
-  const combinedError = useMemo(() => (areaCreate.error as Error)?.message ?? (teamCreate.error as Error)?.message ?? (taskCreate.error as Error)?.message ?? undefined, [areaCreate.error, teamCreate.error, taskCreate.error])
+  const combinedError = useMemo(() => permissionErrorMessage(areaCreate.error ?? teamCreate.error ?? taskCreate.error), [areaCreate.error, teamCreate.error, taskCreate.error])
 
   if (campaignQuery.isLoading) return <LoadingState />
   if (campaignQuery.isError) return <ErrorState message={(campaignQuery.error as Error).message} />
   if (!campaignQuery.data) return <EmptyState message="Campaign not found." />
 
+  const campaign = campaignQuery.data
+
   return <section className="space-y-6">
-    <div className="flex items-center justify-between"><h1 className="text-2xl font-semibold">Campaign: {campaignQuery.data.name}</h1><Link to={`/campaigns/${id}/tasks`} className="text-blue-600">Open full task list</Link></div>
+    <div className="flex items-center justify-between"><h1 className="text-2xl font-semibold">Campaign: {campaign.name}</h1><Link to={`/campaigns/${id}/tasks`} className="text-blue-600">Open full task list</Link></div>
     <MapPanel tasks={tasksQuery.data?.data ?? []} areas={assignedAreas} />
 
     <div className="grid gap-4 lg:grid-cols-3">
@@ -95,23 +99,23 @@ export function CampaignDetailPage() {
         <form className="space-y-2" onSubmit={areaForm.handleSubmit((values) => areaCreate.mutate(values))}>
           <input placeholder="Area name" {...areaForm.register('name')} />
           <textarea rows={4} placeholder='{"type":"Polygon","coordinates":[]}' {...areaForm.register('geojson')} />
-          <button className="bg-slate-900 text-white" type="submit">Create area and assign</button>
+          <button className="bg-slate-900 text-white disabled:opacity-50" type="submit" disabled={!can(campaign.can?.create_area)} title={!can(campaign.can?.create_area) ? NO_PERMISSION_MESSAGE : undefined}>Create area and assign</button>
         </form>
         <div className="grid grid-cols-2 gap-2">
           <select value={selectedAreaId} onChange={(e) => setSelectedAreaId(e.target.value)}><option value="">Select area to attach...</option>{(areasPoolQuery.data?.data ?? []).map((area) => <option key={area.id} value={area.id}>{area.name}</option>)}</select>
-          <button type="button" className="border" onClick={() => selectedAreaId && attachAreaToCampaign(id, Number(selectedAreaId)).then(() => { setSelectedAreaId(''); refreshCampaign() })}>Attach selected</button>
+          <button type="button" className="border disabled:opacity-50" disabled={!can(campaign.can?.attach_area) || !selectedAreaId} title={!can(campaign.can?.attach_area) ? NO_PERMISSION_MESSAGE : undefined} onClick={() => selectedAreaId && attachAreaToCampaign(id, Number(selectedAreaId)).then(() => { setSelectedAreaId(''); refreshCampaign() })}>Attach selected</button>
         </div>
         {areasQuery.isError && <ErrorState message={(areasQuery.error as Error).message} />}
         {areasQuery.data && assignedAreas.length === 0 && <p className="text-sm text-slate-500">No areas assigned to this campaign yet.</p>}
-        {assignedAreas.map((area) => <div key={area.id} className="rounded border p-2 text-sm"><p className="font-medium">{area.name}</p><div className="mt-2 flex gap-2"><button type="button" className="border" onClick={() => areaPatch.mutate({ areaId: area.id, name: area.name, geojson: JSON.stringify(area.geojson ?? { type: 'Polygon', coordinates: [] }) })}>Update</button><button type="button" className="bg-red-600 text-white" onClick={() => detachAreaFromCampaign(id, area.id).then(refreshCampaign)}>Detach</button></div></div>)}
+        {assignedAreas.map((area) => <div key={area.id} className="rounded border p-2 text-sm"><p className="font-medium">{area.name}</p><div className="mt-2 flex gap-2"><button type="button" className="border disabled:opacity-50" disabled={!can(area.can?.update)} title={!can(area.can?.update) ? NO_PERMISSION_MESSAGE : undefined} onClick={() => areaPatch.mutate({ areaId: area.id, name: area.name, geojson: JSON.stringify(area.geojson ?? { type: 'Polygon', coordinates: [] }) })}>Update</button><button type="button" className="bg-red-600 text-white disabled:opacity-50" onClick={() => detachAreaFromCampaign(id, area.id).then(refreshCampaign)} disabled={!can(campaign.can?.detach_area) || !can(area.can?.detach_from_campaign)} title={(!can(campaign.can?.detach_area) || !can(area.can?.detach_from_campaign)) ? NO_PERMISSION_MESSAGE : undefined}>Detach</button></div></div>)}
       </div>
 
       <div className="space-y-3 rounded border bg-white p-4">
         <h2 className="font-medium">Assigned teams + membership</h2>
-        <form className="space-y-2" onSubmit={teamForm.handleSubmit((values) => teamCreate.mutate(values))}><input placeholder="Team name" {...teamForm.register('name')} /><button className="bg-slate-900 text-white" type="submit">Create team and assign</button></form>
-        <div className="grid grid-cols-2 gap-2"><select value={selectedTeamId} onChange={(e) => setSelectedTeamId(e.target.value)}><option value="">Select team to attach...</option>{(teamsPoolQuery.data?.data ?? []).map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select><button type="button" className="border" onClick={() => selectedTeamId && attachTeamToCampaign(id, Number(selectedTeamId)).then(() => { setSelectedTeamId(''); refreshCampaign() })}>Attach selected</button></div>
+        <form className="space-y-2" onSubmit={teamForm.handleSubmit((values) => teamCreate.mutate(values))}><input placeholder="Team name" {...teamForm.register('name')} /><button className="bg-slate-900 text-white disabled:opacity-50" type="submit" disabled={!can(campaign.can?.create_team)} title={!can(campaign.can?.create_team) ? NO_PERMISSION_MESSAGE : undefined}>Create team and assign</button></form>
+        <div className="grid grid-cols-2 gap-2"><select value={selectedTeamId} onChange={(e) => setSelectedTeamId(e.target.value)}><option value="">Select team to attach...</option>{(teamsPoolQuery.data?.data ?? []).map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select><button type="button" className="border disabled:opacity-50" disabled={!can(campaign.can?.attach_team) || !selectedTeamId} title={!can(campaign.can?.attach_team) ? NO_PERMISSION_MESSAGE : undefined} onClick={() => selectedTeamId && attachTeamToCampaign(id, Number(selectedTeamId)).then(() => { setSelectedTeamId(''); refreshCampaign() })}>Attach selected</button></div>
         {teamsQuery.data && assignedTeams.length === 0 && <p className="text-sm text-slate-500">No teams assigned to this campaign yet.</p>}
-        {assignedTeams.map((team) => <div key={team.id} className="rounded border p-2 text-sm"><p className="font-medium">{team.name}</p><div className="mt-2 flex gap-2"><button type="button" className="border" onClick={() => teamPatch.mutate({ teamId: team.id, name: team.name })}>Update</button><button type="button" className="bg-red-600 text-white" onClick={() => detachTeamFromCampaign(id, team.id).then(refreshCampaign)}>Detach</button></div><form className="mt-2 grid grid-cols-5 gap-2" onSubmit={membershipForm.handleSubmit((v) => membershipAdd.mutate({ teamId: team.id, user_id: v.user_id, role: v.role, display_name: v.display_name, notes: v.notes }))}><input type="number" placeholder="user_id" {...membershipForm.register('user_id')} /><select {...membershipForm.register('role')}>{TEAM_ROLES.map((role) => <option key={role}>{role}</option>)}</select><input placeholder="display name" {...membershipForm.register('display_name')} /><input placeholder="notes" {...membershipForm.register('notes')} /><button className="border" type="submit">Add user</button></form><div className="mt-2 flex gap-2"><button type="button" className="border" onClick={() => membershipUpdate.mutate({ teamId: team.id, user_id: Number(membershipForm.getValues('user_id')), role: membershipForm.getValues('role'), display_name: membershipForm.getValues('display_name'), notes: membershipForm.getValues('notes') })}>Update user</button><button type="button" className="border" onClick={() => membershipDelete.mutate({ teamId: team.id, user_id: Number(membershipForm.getValues('user_id')) })}>Remove user</button></div></div>)}
+        {assignedTeams.map((team) => <div key={team.id} className="rounded border p-2 text-sm"><p className="font-medium">{team.name}</p><div className="mt-2 flex gap-2"><button type="button" className="border disabled:opacity-50" disabled={!can(team.can?.update)} title={!can(team.can?.update) ? NO_PERMISSION_MESSAGE : undefined} onClick={() => teamPatch.mutate({ teamId: team.id, name: team.name })}>Update</button><button type="button" className="bg-red-600 text-white disabled:opacity-50" onClick={() => detachTeamFromCampaign(id, team.id).then(refreshCampaign)} disabled={!can(campaign.can?.detach_team) || !can(team.can?.detach_from_campaign)} title={(!can(campaign.can?.detach_team) || !can(team.can?.detach_from_campaign)) ? NO_PERMISSION_MESSAGE : undefined}>Detach</button></div><form className="mt-2 grid grid-cols-5 gap-2" onSubmit={membershipForm.handleSubmit((v) => membershipAdd.mutate({ teamId: team.id, user_id: v.user_id, role: v.role, display_name: v.display_name, notes: v.notes }))}><input type="number" placeholder="user_id" {...membershipForm.register('user_id')} /><select {...membershipForm.register('role')}>{TEAM_ROLES.map((role) => <option key={role}>{role}</option>)}</select><input placeholder="display name" {...membershipForm.register('display_name')} /><input placeholder="notes" {...membershipForm.register('notes')} /><button className="border disabled:opacity-50" disabled={!can(team.can?.manage_members)} title={!can(team.can?.manage_members) ? NO_PERMISSION_MESSAGE : undefined} type="submit">Add user</button></form><div className="mt-2 flex gap-2"><button type="button" className="border disabled:opacity-50" disabled={!can(team.can?.manage_members)} title={!can(team.can?.manage_members) ? NO_PERMISSION_MESSAGE : undefined} onClick={() => membershipUpdate.mutate({ teamId: team.id, user_id: Number(membershipForm.getValues('user_id')), role: membershipForm.getValues('role'), display_name: membershipForm.getValues('display_name'), notes: membershipForm.getValues('notes') })}>Update user</button><button type="button" className="border disabled:opacity-50" disabled={!can(team.can?.manage_members)} title={!can(team.can?.manage_members) ? NO_PERMISSION_MESSAGE : undefined} onClick={() => membershipDelete.mutate({ teamId: team.id, user_id: Number(membershipForm.getValues('user_id')) })}>Remove user</button></div></div>)}
       </div>
 
       <div className="space-y-3 rounded border bg-white p-4">
@@ -120,11 +124,13 @@ export function CampaignDetailPage() {
           <input placeholder="Title" {...taskForm.register('title')} />
           <div className="grid grid-cols-2 gap-2"><select {...taskForm.register('status')}>{TASK_STATUSES.map((status) => <option key={status}>{status}</option>)}</select><input type="number" min={1} max={5} placeholder="Priority 1-5" {...taskForm.register('priority')} /></div>
           <div className="grid grid-cols-2 gap-2"><select {...taskForm.register('area_id')}><option value="">Select assigned area</option>{assignedAreas.map((area) => <option key={area.id} value={area.id}>{area.name}</option>)}</select><select {...taskForm.register('assigned_team_id')}><option value="">Select assigned team</option>{assignedTeams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select></div>
-          <button className="bg-slate-900 text-white" type="submit">Create task</button>
+          <button className="bg-slate-900 text-white disabled:opacity-50" type="submit" disabled={!can(campaign.can?.create_task)} title={!can(campaign.can?.create_task) ? NO_PERMISSION_MESSAGE : undefined}>Create task</button>
         </form>
-        {(tasksQuery.data?.data ?? []).map((task) => <div key={task.id} className="rounded border p-2 text-sm"><Link className="font-medium text-blue-600" to={`/tasks/${task.id}`}>{task.title}</Link><p>Status: {task.status} | Priority: {task.priority}</p><button type="button" className="mt-2 bg-red-600 text-white" onClick={() => taskDeleteMutation.mutate(task.id)}>Delete</button></div>)}
+        {(tasksQuery.data?.data ?? []).map((task) => <div key={task.id} className="rounded border p-2 text-sm"><Link className="font-medium text-blue-600" to={`/tasks/${task.id}`}>{task.title}</Link><p>Status: {task.status} | Priority: {task.priority}</p><button type="button" className="mt-2 bg-red-600 text-white disabled:opacity-50" disabled={!can(task.can?.delete)} title={!can(task.can?.delete) ? NO_PERMISSION_MESSAGE : undefined} onClick={() => taskDeleteMutation.mutate(task.id)}>Delete</button></div>)}
       </div>
     </div>
-    {combinedError && <ErrorState message={combinedError} />}
+    {(areaCreate.isError || teamCreate.isError || taskCreate.isError) && <ErrorState message={combinedError} />}
+    {(areaPatch.isError || teamPatch.isError || taskDeleteMutation.isError || membershipAdd.isError || membershipUpdate.isError || membershipDelete.isError) && <ErrorState message={permissionErrorMessage(areaPatch.error ?? teamPatch.error ?? taskDeleteMutation.error ?? membershipAdd.error ?? membershipUpdate.error ?? membershipDelete.error)} />}
+    <p className="text-xs text-slate-500">Nicht verfügbare Endpunkte werden als nicht verfügbar angezeigt.</p>
   </section>
 }

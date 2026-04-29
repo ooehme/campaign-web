@@ -7,6 +7,7 @@ import { z } from 'zod'
 import { deleteTask, getTask, getTaskEventsByPage, updateTask } from '../api/endpoints'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import { TASK_STATUSES } from '../utils/constants'
+import { can, NO_PERMISSION_MESSAGE, permissionErrorMessage } from '../utils/permissions'
 
 const optionalCoordinateSchema = z.preprocess(
   (value) => (value === '' || value == null ? undefined : value),
@@ -123,6 +124,10 @@ export function TaskDetailPage() {
   }
 
   const task = taskQuery.data
+  const canUpdate = can(task.can?.update)
+  const canDelete = can(task.can?.delete)
+  const canChangeStatus = can(task.can?.change_status)
+  const canComplete = can(task.can?.complete)
   const hasCoordinates = typeof task.latitude === 'number' && typeof task.longitude === 'number'
   const hasPayload = task.payload != null
 
@@ -181,7 +186,7 @@ export function TaskDetailPage() {
           <input {...form.register('title')} />
           <textarea rows={3} {...form.register('description')} />
           <div className="grid grid-cols-2 gap-2">
-            <select {...form.register('status')}>
+            <select {...form.register('status')} disabled={!canChangeStatus} title={!canChangeStatus ? NO_PERMISSION_MESSAGE : undefined}>
               {TASK_STATUSES.map((status) => <option key={status}>{status}</option>)}
             </select>
             <input type="number" min={1} max={5} {...form.register('priority')} />
@@ -191,11 +196,12 @@ export function TaskDetailPage() {
             <input type="number" step="any" placeholder="Longitude" {...form.register('longitude')} />
           </div>
           <div className="flex gap-2">
-            <button className="bg-slate-900 text-white" type="submit">Save</button>
-            <button className="bg-red-600 text-white" type="button" onClick={() => deleteMutation.mutate()}>Delete</button>
+            <button className="bg-slate-900 text-white disabled:opacity-50" disabled={!canUpdate} title={!canUpdate ? NO_PERMISSION_MESSAGE : undefined} type="submit">Save</button>
+            <button className="bg-red-600 text-white disabled:opacity-50" disabled={!canDelete} title={!canDelete ? NO_PERMISSION_MESSAGE : undefined} type="button" onClick={() => deleteMutation.mutate()}>Delete</button><button className="border disabled:opacity-50" type="button" disabled={!canComplete} title={!canComplete ? NO_PERMISSION_MESSAGE : undefined} onClick={() => updateMutation.mutate({ ...form.getValues(), status: "done" })}>Mark done</button>
           </div>
         </form>
-        {(updateMutation.isError || deleteMutation.isError) && <ErrorState message={(updateMutation.error as Error)?.message ?? (deleteMutation.error as Error)?.message ?? 'API Error'} />}
+        {(updateMutation.isError || deleteMutation.isError) && <ErrorState message={permissionErrorMessage(updateMutation.error ?? deleteMutation.error)} />}
+        <p className="text-xs text-slate-500">Assign-team endpoint currently unavailable in this view.</p>
       </div>
 
       <div className="rounded border bg-white p-4">

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { createTeam, deleteTeam, listTeams, updateTeam } from '../api/endpoints'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
+import { can, NO_PERMISSION_MESSAGE } from '../utils/permissions'
 
 export function TeamsPage() {
   const qc = useQueryClient()
@@ -15,6 +16,7 @@ export function TeamsPage() {
     {isLoading && <LoadingState />}
     {isError && <ErrorState message={(error as Error).message} />}
     {data && data.data.length === 0 && <EmptyState message="No teams yet." />}
-    {data?.data.map((team) => <div key={team.id} className="rounded border bg-white p-3"><p className="font-medium">{team.name}</p><div className="mt-2 flex gap-2"><button type="button" className="border" onClick={() => patch.mutate({ id: team.id, name: team.name })}>Save</button><button type="button" className="bg-red-600 text-white" onClick={() => del.mutate(team.id)}>Delete</button></div></div>)}
+    {data?.data.map((team) => <div key={team.id} className="rounded border bg-white p-3"><p className="font-medium">{team.name}</p><div className="mt-2 flex gap-2"><button type="button" className="border disabled:opacity-50" disabled={!can(team.can?.update)} title={!can(team.can?.update) ? NO_PERMISSION_MESSAGE : undefined} onClick={() => patch.mutate({ id: team.id, name: team.name })}>Save</button><button type="button" className="bg-red-600 text-white disabled:opacity-50" disabled={!can(team.can?.delete)} title={!can(team.can?.delete) ? NO_PERMISSION_MESSAGE : undefined} onClick={() => del.mutate(team.id)}>Delete</button></div></div>)}
   </section>
 }
+
