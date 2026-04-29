@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { Link } from 'react-router-dom'
-import { createCampaign, deleteCampaign, getCampaigns, updateCampaign } from '../api/endpoints'
+import { createCampaign, deleteCampaign, getCampaignsPage, updateCampaign } from '../api/endpoints'
 import { ApiError } from '../api/client'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import type { Campaign } from '../types/models'
@@ -64,7 +64,8 @@ const applyValidationErrors = (
 export function CampaignListPage() {
   const qc = useQueryClient()
   const [editing, setEditing] = useState<Campaign | null>(null)
-  const { data, isLoading, isError, error } = useQuery({ queryKey: ['campaigns'], queryFn: getCampaigns })
+  const [page, setPage] = useState(1)
+  const { data, isLoading, isError, error } = useQuery({ queryKey: ['campaigns', page], queryFn: () => getCampaignsPage({ page, per_page: 100 }) })
 
   const createForm = useForm<CreateCampaignFormValues>({
     resolver: zodResolver(createCampaignSchema),
@@ -86,6 +87,7 @@ export function CampaignListPage() {
     mutationFn: createCampaign,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['campaigns'] })
+      setPage(1)
       createForm.reset({ name: '', slug: '', description: '', status: 'draft' })
     },
     onError: (err) => {
@@ -97,13 +99,17 @@ export function CampaignListPage() {
     mutationFn: ({ id, payload }: { id: number; payload: Partial<Campaign> }) => updateCampaign(id, payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['campaigns'] })
+      setPage(1)
       setEditing(null)
     },
   })
 
   const deleteMutation = useMutation({
     mutationFn: deleteCampaign,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['campaigns'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['campaigns'] })
+      setPage(1)
+    },
   })
 
   return (
@@ -138,10 +144,10 @@ export function CampaignListPage() {
       <div className="rounded border bg-white p-4">
         {isLoading && <LoadingState />}
         {isError && <ErrorState message={(error as Error).message} />}
-        {data && data.length === 0 && <EmptyState message="No campaigns found." />}
-        {data && data.length > 0 && (
+        {data && data.data.length === 0 && <EmptyState message="No campaigns found." />}
+        {data && data.data.length > 0 && (
           <ul className="space-y-3">
-            {data.map((campaign) => (
+            {data.data.map((campaign) => (
               <li key={campaign.id} className="rounded border p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
@@ -157,6 +163,13 @@ export function CampaignListPage() {
               </li>
             ))}
           </ul>
+        )}
+        {data && data.meta.last_page > 1 && (
+          <div className="mt-3 flex items-center gap-2">
+            <button className="border px-2 py-1 disabled:opacity-50" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page <= 1}>Previous</button>
+            <span className="text-xs text-slate-500">Page {data.meta.current_page} of {data.meta.last_page}</span>
+            <button className="border px-2 py-1 disabled:opacity-50" onClick={() => setPage((current) => Math.min(data.meta.last_page, current + 1))} disabled={page >= data.meta.last_page}>Next</button>
+          </div>
         )}
       </div>
 

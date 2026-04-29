@@ -1,10 +1,10 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { z } from 'zod'
-import { deleteTask, getTask, getTaskEventsPage, updateTask } from '../api/endpoints'
+import { deleteTask, getTask, getTaskEventsByPage, updateTask } from '../api/endpoints'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import { TASK_STATUSES } from '../utils/constants'
 
@@ -59,6 +59,7 @@ export function TaskDetailPage() {
   const id = Number(taskId)
   const navigate = useNavigate()
   const qc = useQueryClient()
+  const [eventsPage, setEventsPage] = useState(1)
 
   const form = useForm<TaskFormValues>({
     resolver: zodResolver(taskSchema),
@@ -79,8 +80,8 @@ export function TaskDetailPage() {
   })
 
   const eventsQuery = useQuery({
-    queryKey: ['task-events', id],
-    queryFn: () => getTaskEventsPage(id),
+    queryKey: ['task-events', id, eventsPage],
+    queryFn: () => getTaskEventsByPage(id, { page: eventsPage, per_page: 100 }),
     enabled: Number.isFinite(id),
   })
 
@@ -227,6 +228,13 @@ export function TaskDetailPage() {
               </li>
             ))}
           </ul>
+        )}
+        {eventsQuery.data && eventsQuery.data.meta.last_page > 1 && (
+          <div className="mt-3 flex items-center gap-2">
+            <button type="button" className="border px-2 py-1 disabled:opacity-50" onClick={() => setEventsPage((page) => Math.max(1, page - 1))} disabled={eventsPage <= 1}>Previous</button>
+            <span className="text-xs text-slate-500">Page {eventsQuery.data.meta.current_page} of {eventsQuery.data.meta.last_page}</span>
+            <button type="button" className="border px-2 py-1 disabled:opacity-50" onClick={() => setEventsPage((page) => Math.min(eventsQuery.data?.meta.last_page ?? page, page + 1))} disabled={eventsPage >= eventsQuery.data.meta.last_page}>Next</button>
+          </div>
         )}
       </div>
     </section>
