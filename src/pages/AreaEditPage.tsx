@@ -99,6 +99,7 @@ export function AreaEditPage() {
   const [fitTrigger, setFitTrigger] = useState(0)
   const [editActive, setEditActive] = useState(false)
   const [drawMode, setDrawMode] = useState(false)
+  const [singlePolygonMessage, setSinglePolygonMessage] = useState('')
 
   const parsedResult = useMemo(() => parseGeojsonText(geojsonText), [geojsonText])
   const area = areaQuery.data as Area | undefined
@@ -232,14 +233,11 @@ export function AreaEditPage() {
         <TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} />
         {parsedResult.parsed.type === 'MultiPolygon' ? <GeoJSON data={parsedResult.parsed as GeoJSON.GeoJsonObject} /> : <>
           <EditMapClicks enabled={canUpdate && drawMode} onAdd={(point) => {
+            if (points.length >= 3) { setSinglePolygonMessage("Es kann nur ein Polygon pro Fläche bearbeitet werden. Bitte vorhandenes Polygon zuerst löschen."); return }
             const next = [...points, point]
             setPoints(next)
             const polygon = pointsToPolygon(next)
-            if (polygon) {
-              setGeojsonText(JSON.stringify(polygon, null, 2))
-              return
-            }
-            setGeojsonText(EMPTY_POLYGON_TEXT)
+            if (polygon) { setGeojsonText(JSON.stringify(polygon, null, 2)); setSinglePolygonMessage('') }
           }} />
           {points.length >= 3 && <Polygon positions={points} pathOptions={{ color: '#0f172a' }} />}
           {points.map((point, index) => <Marker
@@ -253,7 +251,7 @@ export function AreaEditPage() {
                 const next = points.filter((_, pointIndex) => pointIndex !== index)
                 setPoints(next)
                 const polygon = pointsToPolygon(next)
-                if (polygon) setGeojsonText(JSON.stringify(polygon, null, 2))
+                if (polygon) { setGeojsonText(JSON.stringify(polygon, null, 2)); setSinglePolygonMessage('') }
               },
               dragend: (event) => {
                 const latLng = (event.target as L.Marker).getLatLng()
@@ -261,7 +259,7 @@ export function AreaEditPage() {
                 next[index] = [latLng.lat, latLng.lng]
                 setPoints(next)
                 const polygon = pointsToPolygon(next)
-                if (polygon) setGeojsonText(JSON.stringify(polygon, null, 2))
+                if (polygon) { setGeojsonText(JSON.stringify(polygon, null, 2)); setSinglePolygonMessage('') }
               },
             }}
           />)}
@@ -281,6 +279,7 @@ export function AreaEditPage() {
         <summary className="cursor-pointer text-sm font-medium">GeoJSON manuell bearbeiten</summary>
         <textarea rows={12} value={geojsonText} onChange={(event) => setGeojsonText(event.target.value)} disabled={!canUpdate} />
       </details>
+      {singlePolygonMessage && <p className="text-sm text-amber-700">{singlePolygonMessage}</p>}
       {validation.geojson && <p className="text-sm text-red-700">{validation.geojson}</p>}
       {edit.isError && (edit.error as ApiError)?.status !== 422 && <ErrorState message="Serverfehler beim Laden oder Speichern der Fläche." />}
     </div>
