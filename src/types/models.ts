@@ -24,6 +24,18 @@ export interface Team {
   [key: string]: unknown
 }
 
+export interface TaskAreaRef {
+  id: number
+  name?: string | null
+  [key: string]: unknown
+}
+
+export interface TaskAssignedTeamRef {
+  id: number
+  name?: string | null
+  [key: string]: unknown
+}
+
 export interface Task {
   id: number
   campaign_id: number
@@ -33,6 +45,9 @@ export interface Task {
   priority: number
   latitude?: number | null
   longitude?: number | null
+  area?: TaskAreaRef | null
+  assigned_team?: TaskAssignedTeamRef | null
+  payload?: Record<string, unknown> | null
   [key: string]: unknown
 }
 
