@@ -87,3 +87,15 @@ npm run preview
 - Advanced map drawing/editing
 - Backend code changes
 - CI/CD pipeline
+
+## Area and Team pools (upcoming backend refactor)
+
+- Areas and Teams are treated as reusable pool resources.
+- Campaigns consume them through assignment endpoints.
+- Tasks must use `area_id` and `assigned_team_id` that are assigned to the task's campaign.
+- UI pages:
+  - `/areas` for pool-level area CRUD
+  - `/teams` for pool-level team CRUD
+- Campaign detail now emphasizes assigned areas/teams with attach/detach actions.
+
+Deployment notes are unchanged.
