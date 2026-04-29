@@ -1,9 +1,9 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import L from 'leaflet'
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { MapContainer, Marker, Polygon, TileLayer, useMapEvents } from 'react-leaflet'
-import { createArea, createOrAttachAreaToCampaign } from '../api/endpoints'
+import { createArea, createOrAttachAreaToCampaign, listCampaignAreas } from '../api/endpoints'
 import { ApiError } from '../api/client'
 import { ErrorState } from '../components/UiState'
 import type { GeoJsonPolygon } from '../types/models'
@@ -75,6 +75,11 @@ export function AreaCreateMapPage() {
   const [manualGeoJson, setManualGeoJson] = useState('{"type":"Polygon","coordinates":[]}')
   const [useManual, setUseManual] = useState(false)
   const [success, setSuccess] = useState('')
+  const [usage, setUsage] = useState<'boundary' | 'target'>('boundary')
+  const [boundaryAreaId, setBoundaryAreaId] = useState('')
+  const [notes, setNotes] = useState('')
+  const campaignAreasQuery = useQuery({ queryKey: ['campaign-areas', campaignNumericId], queryFn: () => listCampaignAreas(campaignNumericId as number, { per_page: 100 }), enabled: Boolean(isCampaignMode && campaignNumericId) })
+  const boundaryAreas = (campaignAreasQuery.data?.data ?? []).filter((a) => a.pivot?.usage === 'boundary')
 
   const geometry = useMemo(() => (useManual ? null : toGeoJson(points)), [points, useManual])
   const canSave = name.trim().length > 0 && (!!geometry || (useManual && manualGeoJson.trim().length > 0))
@@ -99,7 +104,7 @@ export function AreaCreateMapPage() {
         throw new Error('invalid-geometry')
       }
       if (isCampaignMode && campaignNumericId) {
-        return createOrAttachAreaToCampaign(campaignNumericId, { name: name.trim(), geojson: payloadGeometry })
+        return createOrAttachAreaToCampaign(campaignNumericId, { name: name.trim(), geojson: payloadGeometry, usage, boundary_area_id: boundaryAreaId ? Number(boundaryAreaId) : null, notes: notes || null })
       }
       return createArea({ name: name.trim(), geojson: payloadGeometry })
     },
@@ -140,6 +145,7 @@ export function AreaCreateMapPage() {
       <label className="block text-sm font-medium" htmlFor="area-name">Name</label>
       <input id="area-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="z. B. Einsatzgebiet Nord" />
 
+      {isCampaignMode && <div className='grid gap-2 md:grid-cols-2'><select value={usage} onChange={(e) => setUsage(e.target.value as 'boundary' | 'target')}><option value='boundary'>Begrenzung</option><option value='target'>Zielgebiet</option></select>{usage === 'target' && <select value={boundaryAreaId} onChange={(e) => setBoundaryAreaId(e.target.value)}><option value=''>Begrenzung auswählen (optional)</option>{boundaryAreas.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select>}<input value={notes} placeholder='Notizen (optional)' onChange={(e) => setNotes(e.target.value)} /></div>}
       <div className="h-96 overflow-hidden rounded border">
         <MapContainer center={DEFAULT_CENTER} zoom={6} className="h-full w-full">
           <TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} />
