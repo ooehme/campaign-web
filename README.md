@@ -155,3 +155,10 @@ Flächen im globalen Pool sind neutral. Erst in der Kampagnenzuweisung wird die 
 Zielgebiete können optional einer Begrenzung zugeordnet werden (`boundary_area_id`).
 Tasks unterstützen beide Referenzen: `boundary_area_id` (Begrenzung) und `area_id` (Zielgebiet).
 Die Karten-basierte Flächenerstellung unterstützt im Kampagnenkontext zusätzlich Erstellen+Zuweisen inklusive Nutzungsangaben.
+
+## Flächen-Detail und Flächen-Bearbeitung
+
+- Neue Route: `/areas/:areaId` als Flächendetailseite mit Übersicht, Kartenvorschau, einklappbarer GeoJSON-Ansicht und (falls API-Daten vorhanden) Kampagnen-Zuweisungen.
+- Neue Route: `/areas/:areaId/edit` als Bearbeitungsseite für Name und Geometrie.
+- Auf `/areas` verlinkt jede Fläche direkt auf die Detailseite; die Bearbeiten-Aktion führt nach `/areas/:areaId/edit`.
+- Bearbeiten nutzt primär „GeoJSON manuell bearbeiten“ als robuste Fallback-Strategie; die Karte dient dort als Vorschau der aktuell gültigen Geometrie.

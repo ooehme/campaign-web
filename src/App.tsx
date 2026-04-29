@@ -12,6 +12,8 @@ import { TeamDetailPage } from './pages/TeamDetailPage'
 import { TeamEditPage } from './pages/TeamEditPage'
 import { LoginPage } from './pages/LoginPage'
 import { AreaCreateMapPage } from './pages/AreaCreateMapPage'
+import { AreaDetailPage } from './pages/AreaDetailPage'
+import { AreaEditPage } from './pages/AreaEditPage'
 import { RequireAuth } from './auth/RequireAuth'
 
 export default function App() {
@@ -25,6 +27,8 @@ export default function App() {
           <Route path="/campaigns" element={<CampaignListPage />} />
           <Route path="/areas" element={<AreasPage />} />
           <Route path="/areas/new-map" element={<AreaCreateMapPage />} />
+          <Route path="/areas/:areaId" element={<AreaDetailPage />} />
+          <Route path="/areas/:areaId/edit" element={<AreaEditPage />} />
           <Route path="/teams" element={<TeamsPage />} />
           <Route path="/teams/:teamId" element={<TeamDetailPage />} />
           <Route path="/teams/:teamId/edit" element={<TeamEditPage />} />
