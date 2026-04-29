@@ -15,6 +15,11 @@ const FIT_BOUNDS_PADDING: [number, number] = [32, 32]
 const FIT_BOUNDS_MAX_ZOOM = 18
 const EMPTY_POLYGON_TEXT = '{"type":"Polygon","coordinates":[]}'
 const markerIcon = L.divIcon({ className: 'rounded-full border border-slate-700 bg-white text-xs', html: '⬤', iconSize: [18, 18], iconAnchor: [9, 9] })
+const middleMarkerIcon = L.divIcon({
+  className: 'rounded-full border-2 border-blue-700 bg-blue-100 shadow',
+  iconSize: [14, 14],
+  iconAnchor: [7, 7],
+})
 
 type LatLngTuple = [number, number]
 
@@ -28,6 +33,8 @@ const pointsToPolygon = (points: LatLngTuple[]): GeoJsonPolygon | null => {
   if (first[0] !== last[0] || first[1] !== last[1]) ring.push(first)
   return ring.length >= 4 ? { type: 'Polygon', coordinates: [ring] } : null
 }
+
+const getEdgeMidpoint = (first: LatLngTuple, second: LatLngTuple): LatLngTuple => [(first[0] + second[0]) / 2, (first[1] + second[1]) / 2]
 
 const parseGeojsonText = (value: string): { parsed?: GeoJsonShape; error?: string } => {
   try {
@@ -225,6 +232,7 @@ export function AreaEditPage() {
     <div className="rounded border bg-white p-4 space-y-2">
       <h2 className="font-medium">Geometrie</h2>
       <p className="text-sm text-slate-600">Aktivieren Sie den Bearbeitungsmodus, um Punkte des Polygons auf der Karte zu verschieben, hinzuzufügen oder zu entfernen.</p>
+      <p className="text-xs text-slate-600">Zum Hinzufügen eines Punktes den Zwischenpunkt auf einer Polygonkante ziehen oder anklicken.</p>
       <p className={`text-sm ${editActive ? "font-medium text-emerald-700" : "text-slate-600"}`}>{editActive ? "Bearbeitungsmodus aktiv" : "Bearbeitungsmodus aus"}</p>
       {editActive && <p className="text-xs text-slate-600">Punkte des Polygons können jetzt verschoben, hinzugefügt oder entfernt werden.</p>}
       {isMultiPolygon && <p className="rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-700">MultiPolygon-Bearbeitung ist noch nicht unterstützt.</p>}
@@ -263,6 +271,34 @@ export function AreaEditPage() {
               },
             }}
           />)}
+          {canUpdate && editActive && points.length >= 3 && points.map((point, index) => {
+            const nextIndex = (index + 1) % points.length
+            const midpoint = getEdgeMidpoint(point, points[nextIndex])
+            return <Marker
+              key={`mid-${index}-${midpoint[0]}-${midpoint[1]}`}
+              icon={middleMarkerIcon}
+              position={midpoint}
+              draggable
+              zIndexOffset={1000}
+              eventHandlers={{
+                click: () => {
+                  const next = [...points]
+                  next.splice(index + 1, 0, midpoint)
+                  setPoints(next)
+                  const polygon = pointsToPolygon(next)
+                  if (polygon) { setGeojsonText(JSON.stringify(polygon, null, 2)); setSinglePolygonMessage('') }
+                },
+                dragend: (event) => {
+                  const latLng = (event.target as L.Marker).getLatLng()
+                  const next = [...points]
+                  next.splice(index + 1, 0, [latLng.lat, latLng.lng])
+                  setPoints(next)
+                  const polygon = pointsToPolygon(next)
+                  if (polygon) { setGeojsonText(JSON.stringify(polygon, null, 2)); setSinglePolygonMessage('') }
+                },
+              }}
+            />
+          })}
         </>}
         <FitBoundsToGeoJson geojson={parsedResult.parsed} fitTrigger={fitTrigger} autoFitEnabled={!hasAutoFitted} onAutoFitDone={() => setHasAutoFitted(true)} />
       </MapContainer></div>}
