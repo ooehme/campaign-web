@@ -35,6 +35,13 @@ export interface TaskCan {
   change_status?: boolean
   assign_team?: boolean
   complete?: boolean
+  manage_points?: boolean
+}
+
+export interface TaskPointCan {
+  view?: boolean
+  update?: boolean
+  delete?: boolean
 }
 
 export interface Campaign {
@@ -134,8 +141,6 @@ export interface Task {
   description?: string | null
   status: TaskStatus
   priority: number
-  latitude?: number | null
-  longitude?: number | null
   boundary_area?: TaskAreaRef | null
   area?: TaskAreaRef | null
   target_area?: TaskAreaRef | null
@@ -143,8 +148,23 @@ export interface Task {
   payload?: Record<string, unknown> | null
   due_at?: string | null
   completed_at?: string | null
+  points?: TaskPoint[]
+  point_count?: number
   can?: TaskCan
   [key: string]: unknown
+}
+
+
+export interface TaskPoint {
+  id: number
+  task_id: number
+  label?: string | null
+  description?: string | null
+  latitude: number
+  longitude: number
+  sort_order?: number
+  payload?: unknown
+  can?: TaskPointCan
 }
 
 export interface TaskEventCan { view?: boolean }
