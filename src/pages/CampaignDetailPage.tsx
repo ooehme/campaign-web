@@ -5,6 +5,7 @@ import { attachAreaToCampaign, attachTeamToCampaign, createOrAttachAreaToCampaig
 import { ApiError } from '../api/client'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import { can, NO_PERMISSION_MESSAGE } from '../utils/permissions'
+import type { GeoJsonShape } from '../types/models'
 
 const message = (error: unknown) => {
   if (!(error instanceof ApiError)) return 'Unbekannter Fehler.'
@@ -42,7 +43,7 @@ export function CampaignDetailPage() {
   }
 
   const attachAreaMutation = useMutation({ mutationFn: (areaId: number) => attachAreaToCampaign(id, areaId), onSuccess: () => { invalidateAll(); setSuccess('Fläche wurde zugewiesen.'); setSelectedArea('') } })
-  const createAttachAreaMutation = useMutation({ mutationFn: (payload: { name: string; geojson: { type: 'Polygon' | 'MultiPolygon'; coordinates: unknown[] } }) => createOrAttachAreaToCampaign(id, payload), onSuccess: () => { invalidateAll(); setSuccess('Neue Fläche erstellt und zugewiesen.'); setNewAreaName('') } })
+  const createAttachAreaMutation = useMutation({ mutationFn: (payload: { name: string; geojson: GeoJsonShape }) => createOrAttachAreaToCampaign(id, payload), onSuccess: () => { invalidateAll(); setSuccess('Neue Fläche erstellt und zugewiesen.'); setNewAreaName('') } })
   const detachAreaMutation = useMutation({ mutationFn: (areaId: number) => detachAreaFromCampaign(id, areaId), onSuccess: () => { invalidateAll(); setSuccess('Zuweisung entfernt.') } })
 
   const attachTeamMutation = useMutation({ mutationFn: (teamId: number) => attachTeamToCampaign(id, teamId), onSuccess: () => { invalidateAll(); setSuccess('Team wurde zugewiesen.'); setSelectedTeam('') } })
@@ -68,6 +69,7 @@ export function CampaignDetailPage() {
       {assignedAreasQuery.data?.data.length === 0 && <EmptyState message="Noch keine Flächen zugewiesen." />}
       <div className="grid gap-2 md:grid-cols-3"><select value={selectedArea} onChange={(e) => setSelectedArea(e.target.value)}><option value="">Fläche zuweisen…</option>{(areaPoolQuery.data?.data ?? []).map((a) => <option value={a.id} key={a.id}>{a.name}</option>)}</select><button className="border disabled:opacity-50" disabled={!can(campaign.can?.attach_area) || !selectedArea} title={!can(campaign.can?.attach_area) ? NO_PERMISSION_MESSAGE : undefined} onClick={() => selectedArea && attachAreaMutation.mutate(Number(selectedArea))}>Fläche zuweisen</button></div>
       <div className="grid gap-2 md:grid-cols-3"><input value={newAreaName} placeholder="Name neue Fläche" onChange={(e) => setNewAreaName(e.target.value)} /><input value={newAreaGeojson} placeholder="GeoJSON" onChange={(e) => setNewAreaGeojson(e.target.value)} /><button className="border disabled:opacity-50" disabled={!can(campaign.can?.create_area)} title={!can(campaign.can?.create_area) ? NO_PERMISSION_MESSAGE : undefined} onClick={() => { try { createAttachAreaMutation.mutate({ name: newAreaName, geojson: JSON.parse(newAreaGeojson) }) } catch { alert('GeoJSON ist ungültig.') } }}>Neue Fläche erstellen und zuweisen</button></div>
+      <div><Link className="inline-block rounded border px-3 py-2 text-sm disabled:opacity-50" to={`/campaigns/${id}/areas/new-map`} aria-disabled={!can(campaign.can?.create_area)} onClick={(e) => { if (!can(campaign.can?.create_area)) e.preventDefault() }} title={!can(campaign.can?.create_area) ? NO_PERMISSION_MESSAGE : undefined}>Neue Fläche auf Karte erstellen und zuweisen</Link></div>
       {(assignedAreasQuery.data?.data ?? []).map((a) => <div key={a.id} className="flex items-center justify-between rounded border p-2"><Link className="text-blue-600" to="/areas">{a.name}</Link><button className="bg-red-600 text-white disabled:opacity-50" disabled={!can(campaign.can?.detach_area)} title={!can(campaign.can?.detach_area) ? NO_PERMISSION_MESSAGE : undefined} onClick={() => window.confirm('Zuweisung entfernen?') && detachAreaMutation.mutate(a.id)}>Zuweisung entfernen</button></div>)}
     </div>
 

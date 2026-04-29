@@ -141,3 +141,10 @@ Deployment notes are unchanged.
 - Membership management assigns existing users only (no user creation in this flow).
 - Invitation flow is intentionally a placeholder only: **"Einladungen per E-Mail sind noch nicht implementiert."**
 
+
+## Kartenbasierte Flächenerstellung
+
+- Neue Route: `/areas/new-map` für das Zeichnen einer Fläche als Polygon auf der Karte.
+- Optional unterstützt: `/campaigns/:campaignId/areas/new-map` erstellt eine Fläche und weist sie direkt der Kampagne zu.
+- Workflow: Name eingeben → Polygon auf der Karte zeichnen/bearbeiten → GeoJSON Vorschau prüfen → speichern.
+- Fallback bleibt verfügbar: „Für Experten: GeoJSON manuell bearbeiten“ (sowohl im Flächen-Pool als auch auf der Karten-Seite).

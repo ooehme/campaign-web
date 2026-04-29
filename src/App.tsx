@@ -11,6 +11,7 @@ import { UsersPage } from './pages/UsersPage'
 import { TeamDetailPage } from './pages/TeamDetailPage'
 import { TeamEditPage } from './pages/TeamEditPage'
 import { LoginPage } from './pages/LoginPage'
+import { AreaCreateMapPage } from './pages/AreaCreateMapPage'
 import { RequireAuth } from './auth/RequireAuth'
 
 export default function App() {
@@ -23,12 +24,14 @@ export default function App() {
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/campaigns" element={<CampaignListPage />} />
           <Route path="/areas" element={<AreasPage />} />
+          <Route path="/areas/new-map" element={<AreaCreateMapPage />} />
           <Route path="/teams" element={<TeamsPage />} />
           <Route path="/teams/:teamId" element={<TeamDetailPage />} />
           <Route path="/teams/:teamId/edit" element={<TeamEditPage />} />
           <Route path="/users" element={<UsersPage />} />
           <Route path="/campaigns/:campaignId" element={<CampaignDetailPage />} />
           <Route path="/campaigns/:campaignId/tasks" element={<CampaignTaskListPage />} />
+          <Route path="/campaigns/:campaignId/areas/new-map" element={<AreaCreateMapPage />} />
           <Route path="/tasks/:taskId" element={<TaskDetailPage />} />
         </Route>
       </Route>
