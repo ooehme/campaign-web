@@ -1,5 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { Link, useParams } from 'react-router-dom'
 import { z } from 'zod'
@@ -11,9 +12,9 @@ import {
   deleteArea,
   deleteTask,
   deleteTeam,
-  getAreas,
+  getAreasPage,
   getCampaign,
-  getTasks,
+  getTasksPage,
   getTeams,
   removeTeamUser,
   updateArea,
@@ -57,11 +58,24 @@ export function CampaignDetailPage() {
   const { campaignId } = useParams()
   const id = Number(campaignId)
   const qc = useQueryClient()
+  const [areasPage, setAreasPage] = useState(1)
+
+  useEffect(() => {
+    setAreasPage(1)
+  }, [id])
 
   const campaignQuery = useQuery({ queryKey: ['campaign', id], queryFn: () => getCampaign(id), enabled: Number.isFinite(id) })
-  const areasQuery = useQuery({ queryKey: ['areas', id], queryFn: () => getAreas(id), enabled: Number.isFinite(id) })
+  const areasQuery = useQuery({
+    queryKey: ['areas', id, areasPage],
+    queryFn: () => getAreasPage(id, { page: areasPage, per_page: 100 }),
+    enabled: Number.isFinite(id),
+  })
   const teamsQuery = useQuery({ queryKey: ['teams', id], queryFn: () => getTeams(id), enabled: Number.isFinite(id) })
-  const tasksQuery = useQuery({ queryKey: ['tasks', id], queryFn: () => getTasks(id), enabled: Number.isFinite(id) })
+  const tasksQuery = useQuery({
+    queryKey: ['tasks', id],
+    queryFn: () => getTasksPage(id, { page: 1, per_page: 100 }),
+    enabled: Number.isFinite(id),
+  })
 
   const areaForm = useForm({ resolver: zodResolver(areaSchema), defaultValues: { name: '', geojson: '{"type":"Polygon","coordinates":[]}' } })
   const teamForm = useForm({ resolver: zodResolver(teamSchema), defaultValues: { name: '' } })
@@ -74,7 +88,7 @@ export function CampaignDetailPage() {
     qc.invalidateQueries({ queryKey: ['tasks', id] })
   }
 
-  const areaCreate = useMutation({ mutationFn: (values: { name: string; geojson: string }) => createArea(id, { name: values.name, geojson: JSON.parse(values.geojson) }), onSuccess: () => { refreshCampaign(); areaForm.reset() } })
+  const areaCreate = useMutation({ mutationFn: (values: { name: string; geojson: string }) => createArea(id, { name: values.name, geojson: JSON.parse(values.geojson) }), onSuccess: () => { setAreasPage(1); refreshCampaign(); areaForm.reset() } })
   const areaDelete = useMutation({ mutationFn: deleteArea, onSuccess: refreshCampaign })
   const areaPatch = useMutation({ mutationFn: ({ areaId, name, geojson }: { areaId: number; name: string; geojson: string }) => updateArea(areaId, { name, geojson: JSON.parse(geojson) }), onSuccess: refreshCampaign })
 
@@ -100,7 +114,7 @@ export function CampaignDetailPage() {
         <Link to={`/campaigns/${id}/tasks`} className="text-blue-600">Open full task list</Link>
       </div>
 
-      <MapPanel tasks={tasksQuery.data ?? []} areas={areasQuery.data ?? []} />
+      <MapPanel tasks={tasksQuery.data?.data ?? []} areas={areasQuery.data?.data ?? []} />
 
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="space-y-3 rounded border bg-white p-4">
@@ -111,7 +125,15 @@ export function CampaignDetailPage() {
             <button className="bg-slate-900 text-white" type="submit">Create area</button>
           </form>
           {areaForm.formState.errors.geojson && <ErrorState message={areaForm.formState.errors.geojson.message ?? 'Invalid GeoJSON'} />}
-          {(areasQuery.data ?? []).map((area) => (
+          {areasQuery.isLoading && <p className="text-sm text-slate-500">Loading areas...</p>}
+          {areasQuery.isError && <ErrorState message="Failed to load areas." />}
+          {areasQuery.data && areasQuery.data.data.length === 0 && <p className="text-sm text-slate-500">No areas yet.</p>}
+          {areasQuery.data && (
+            <p className="text-xs text-slate-500">
+              Showing {areasQuery.data.data.length} of {areasQuery.data.meta.total} areas
+            </p>
+          )}
+          {(areasQuery.data?.data ?? []).map((area) => (
             <div key={area.id} className="rounded border p-2 text-sm">
               <p className="font-medium">{area.name}</p>
               <div className="mt-2 flex gap-2">
@@ -120,6 +142,13 @@ export function CampaignDetailPage() {
               </div>
             </div>
           ))}
+          {areasQuery.data && areasQuery.data.meta.last_page > 1 && (
+            <div className="flex items-center gap-2">
+              <button type="button" className="border px-2 py-1 disabled:opacity-50" onClick={() => setAreasPage((page) => Math.max(1, page - 1))} disabled={areasPage <= 1}>Previous</button>
+              <span className="text-xs text-slate-500">Page {areasQuery.data.meta.current_page} of {areasQuery.data.meta.last_page}</span>
+              <button type="button" className="border px-2 py-1 disabled:opacity-50" onClick={() => setAreasPage((page) => Math.min(areasQuery.data?.meta.last_page ?? page, page + 1))} disabled={areasPage >= areasQuery.data.meta.last_page}>Next</button>
+            </div>
+          )}
         </div>
 
         <div className="space-y-3 rounded border bg-white p-4">
@@ -170,7 +199,7 @@ export function CampaignDetailPage() {
           {taskForm.formState.errors.latitude && <ErrorState message={taskForm.formState.errors.latitude.message ?? 'Invalid latitude'} />}
           {taskForm.formState.errors.longitude && <ErrorState message={taskForm.formState.errors.longitude.message ?? 'Invalid longitude'} />}
 
-          {(tasksQuery.data ?? []).map((task) => (
+          {(tasksQuery.data?.data ?? []).map((task) => (
             <div key={task.id} className="rounded border p-2 text-sm">
               <Link className="font-medium text-blue-600" to={`/tasks/${task.id}`}>{task.title}</Link>
               <p>Status: {task.status} | Priority: {task.priority}</p>

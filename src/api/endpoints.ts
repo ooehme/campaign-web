@@ -15,6 +15,11 @@ type UnknownPaginatedPayload<T> = {
   meta?: unknown
 } | T[] | PaginatedResponse<T>
 
+type PaginationParams = {
+  page?: number
+  per_page?: number
+}
+
 const unwrapCollection = <T>(payload: T[] | PaginatedCollectionResponse<T>): T[] => {
   if (Array.isArray(payload)) return payload
   if (Array.isArray(payload.data)) return payload.data
@@ -23,6 +28,10 @@ const unwrapCollection = <T>(payload: T[] | PaginatedCollectionResponse<T>): T[]
 
 export const getCampaigns = async () =>
   unwrapCollection(await apiRequest<Campaign[] | PaginatedCollectionResponse<Campaign>>('/api/campaigns'))
+export const getCampaignsPage = async (params?: PaginationParams) =>
+  normalizePaginatedResponse(
+    await apiRequest<UnknownPaginatedPayload<Campaign>>(`/api/campaigns${buildQuery(params)}`),
+  )
 export const getCampaign = (campaignId: number | string) => apiRequest<Campaign>(`/api/campaigns/${campaignId}`)
 export const createCampaign = (payload: Partial<Campaign>) => apiRequest<Campaign>('/api/campaigns', { method: 'POST', body: JSON.stringify(payload) })
 export const updateCampaign = (campaignId: number, payload: Partial<Campaign>) => apiRequest<Campaign>(`/api/campaigns/${campaignId}`, { method: 'PATCH', body: JSON.stringify(payload) })
@@ -30,6 +39,10 @@ export const deleteCampaign = (campaignId: number) => apiRequest<void>(`/api/cam
 
 export const getAreas = async (campaignId: number) =>
   unwrapCollection(await apiRequest<Area[] | PaginatedCollectionResponse<Area>>(`/api/campaigns/${campaignId}/areas`))
+export const getAreasPage = async (campaignId: number, params?: PaginationParams) =>
+  normalizePaginatedResponse(
+    await apiRequest<UnknownPaginatedPayload<Area>>(`/api/campaigns/${campaignId}/areas${buildQuery(params)}`),
+  )
 export const createArea = (campaignId: number, payload: Partial<Area>) => apiRequest<Area>(`/api/campaigns/${campaignId}/areas`, { method: 'POST', body: JSON.stringify(payload) })
 export const updateArea = (areaId: number, payload: Partial<Area>) => apiRequest<Area>(`/api/areas/${areaId}`, { method: 'PATCH', body: JSON.stringify(payload) })
 export const deleteArea = (areaId: number) => apiRequest<void>(`/api/areas/${areaId}`, { method: 'DELETE' })
@@ -45,6 +58,10 @@ export const removeTeamUser = (teamId: number, userId: number) => apiRequest(`/a
 
 export const getTasks = async (campaignId: number) =>
   unwrapCollection(await apiRequest<Task[] | PaginatedCollectionResponse<Task>>(`/api/campaigns/${campaignId}/tasks`))
+export const getTasksPage = async (campaignId: number, params?: PaginationParams) =>
+  normalizePaginatedResponse(
+    await apiRequest<UnknownPaginatedPayload<Task>>(`/api/campaigns/${campaignId}/tasks${buildQuery(params)}`),
+  )
 export const getTask = (taskId: number | string) => apiRequest<Task>(`/api/tasks/${taskId}`)
 export const createTask = (campaignId: number, payload: Partial<Task>) => apiRequest<Task>(`/api/campaigns/${campaignId}/tasks`, { method: 'POST', body: JSON.stringify(payload) })
 export const updateTask = (taskId: number, payload: Partial<Task>) => apiRequest<Task>(`/api/tasks/${taskId}`, { method: 'PATCH', body: JSON.stringify(payload) })
@@ -110,6 +127,21 @@ const normalizePaginatedResponse = <T>(payload: UnknownPaginatedPayload<T>): Pag
 
 export const getTaskEventsPage = async (taskId: number) =>
   normalizePaginatedResponse(await apiRequest<UnknownPaginatedPayload<TaskEvent>>(`/api/tasks/${taskId}/events`))
+export const getTaskEventsByPage = async (taskId: number, params?: PaginationParams) =>
+  normalizePaginatedResponse(
+    await apiRequest<UnknownPaginatedPayload<TaskEvent>>(`/api/tasks/${taskId}/events${buildQuery(params)}`),
+  )
 
 export const getTaskEvents = async (taskId: number) =>
   (await getTaskEventsPage(taskId)).data
+
+const buildQuery = (params?: PaginationParams) => {
+  if (!params) return ''
+
+  const searchParams = new URLSearchParams()
+  if (typeof params.page === 'number') searchParams.set('page', String(params.page))
+  if (typeof params.per_page === 'number') searchParams.set('per_page', String(params.per_page))
+
+  const queryString = searchParams.toString()
+  return queryString ? `?${queryString}` : ''
+}
