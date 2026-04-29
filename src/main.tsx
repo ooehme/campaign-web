@@ -8,7 +8,22 @@ import './styles.css'
 import 'leaflet/dist/leaflet.css'
 import { AuthProvider } from './auth/AuthProvider'
 
-const queryClient = new QueryClient()
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: (count, error: unknown) => {
+        const status =
+          typeof error === 'object' && error !== null && 'status' in error
+            ? Number((error as { status?: number }).status)
+            : 0
+
+        if ([401, 403, 404, 422].includes(status)) return false
+        if (status >= 500) return count < 1
+        return count < 2
+      },
+    },
+  },
+})
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

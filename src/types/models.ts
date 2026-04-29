@@ -1,4 +1,5 @@
 export interface CampaignCan {
+  view?: boolean
   update?: boolean
   delete?: boolean
   attach_area?: boolean
@@ -11,6 +12,7 @@ export interface CampaignCan {
 }
 
 export interface AreaCan {
+  view?: boolean
   update?: boolean
   delete?: boolean
   attach_to_campaign?: boolean
@@ -18,6 +20,7 @@ export interface AreaCan {
 }
 
 export interface TeamCan {
+  view?: boolean
   update?: boolean
   delete?: boolean
   manage_members?: boolean
@@ -26,6 +29,7 @@ export interface TeamCan {
 }
 
 export interface TaskCan {
+  view?: boolean
   update?: boolean
   delete?: boolean
   change_status?: boolean
@@ -75,6 +79,9 @@ export interface TaskAssignedTeamRef {
 export interface Task {
   id: number
   campaign_id: number
+  area_id?: number | null
+  assigned_team_id?: number | null
+  type: string
   title: string
   description?: string | null
   status: TaskStatus
@@ -84,16 +91,24 @@ export interface Task {
   area?: TaskAreaRef | null
   assigned_team?: TaskAssignedTeamRef | null
   payload?: Record<string, unknown> | null
+  due_at?: string | null
+  completed_at?: string | null
   can?: TaskCan
   [key: string]: unknown
 }
 
+export interface TaskEventCan { view?: boolean }
+
 export interface TaskEvent {
   id: number
   task_id: number
-  type: string
-  created_at?: string
-  payload?: Record<string, unknown>
+  user_id?: number | null
+  event_type: string
+  old_values?: Record<string, unknown> | null
+  new_values?: Record<string, unknown> | null
+  note?: string | null
+  created_at?: string | null
+  can?: TaskEventCan
   [key: string]: unknown
 }
 
@@ -158,7 +173,8 @@ export interface User {
   [key: string]: unknown
 }
 
-export interface TeamMembershipPivot {
+export interface TeamMembership {
+  user: { id: number; name: string; email: string }
   role: TeamRole
   display_name?: string | null
   notes?: string | null

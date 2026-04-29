@@ -17,7 +17,8 @@ export default function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route element={<RequireAuth />}>
         <Route element={<AppShell />}>
-          <Route path="/" element={<DashboardPage />} />
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/campaigns" element={<CampaignListPage />} />
           <Route path="/areas" element={<AreasPage />} />
           <Route path="/teams" element={<TeamsPage />} />
@@ -27,7 +28,7 @@ export default function App() {
           <Route path="/tasks/:taskId" element={<TaskDetailPage />} />
         </Route>
       </Route>
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
   )
 }
