@@ -131,3 +131,13 @@ Deployment notes are unchanged.
 - Token is stored in `localStorage` as `campaign_api_token` for internal MVP testing only.
 - Current user is stored as `campaign_current_user`.
 - This should be replaced later by a cookie-based SPA auth approach for production-grade security.
+
+
+## Team detail and edit workflow
+
+- `/teams` shows team name, detail link, edit action, and counts (`member_count`, `campaign_count`) when backend provides them.
+- `/teams/:teamId` is an operations-focused detail page with overview, members, assigned campaigns, and related task context.
+- `/teams/:teamId/edit` contains the full edit workflow: basis data, membership management, assigned campaign detach actions (if available), and danger zone delete.
+- Membership management assigns existing users only (no user creation in this flow).
+- Invitation flow is intentionally a placeholder only: **"Einladungen per E-Mail sind noch nicht implementiert."**
+
