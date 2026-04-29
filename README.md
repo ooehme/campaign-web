@@ -161,4 +161,6 @@ Die Karten-basierte Flächenerstellung unterstützt im Kampagnenkontext zusätzl
 - Neue Route: `/areas/:areaId` als Flächendetailseite mit Übersicht, Kartenvorschau, einklappbarer GeoJSON-Ansicht und (falls API-Daten vorhanden) Kampagnen-Zuweisungen.
 - Neue Route: `/areas/:areaId/edit` als Bearbeitungsseite für Name und Geometrie.
 - Auf `/areas` verlinkt jede Fläche direkt auf die Detailseite; die Bearbeiten-Aktion führt nach `/areas/:areaId/edit`.
-- Bearbeiten nutzt primär „GeoJSON manuell bearbeiten“ als robuste Fallback-Strategie; die Karte dient dort als Vorschau der aktuell gültigen Geometrie.
+- Bearbeiten auf `/areas/:areaId/edit` unterstützt interaktive Polygon-Anpassung direkt auf der Karte (Punkte verschieben, hinzufügen, entfernen, zurücksetzen, neu zeichnen).
+- MultiPolygon wird auf der Bearbeitungsseite weiterhin nur read-only angezeigt; Bearbeitung ist noch nicht unterstützt.
+- Fallback bleibt verfügbar: „GeoJSON manuell bearbeiten“ (einklappbar), inklusive Synchronisation zwischen Karte und Textfeld bei gültigem Polygon.
