@@ -49,6 +49,7 @@ export interface Campaign {
   name: string
   slug?: string
   description?: string | null
+  briefing?: string | null
   status?: CampaignStatus | null
   starts_at?: string | null
   ends_at?: string | null
@@ -139,6 +140,7 @@ export interface Task {
   type: string
   title: string
   description?: string | null
+  briefing?: string | null
   status: TaskStatus
   priority: number
   boundary_area?: TaskAreaRef | null

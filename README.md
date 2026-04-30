@@ -94,7 +94,8 @@ npm run preview
 
 - Team detail workflow now includes assigned campaign context, member listing, "Benutzer dem Team zuweisen", per-member "Mitglied bearbeiten", and "Mitglied entfernen" actions with `role`, `display_name`, and `notes` updates.
 - User pool for membership uses `GET /api/users?per_page=100`; failures stay non-fatal, with explicit 403 message: "Keine Berechtigung, Benutzer zu laden."
-- Task detail workflow supports editing title, description, status, priority, campaign-assigned area, campaign-assigned team, due date, payload JSON, and delete action. Tasks do not carry direct latitude/longitude anymore; Marker are stored as TaskPoints.
+- Task detail workflow supports editing title, description, briefing, status, priority, campaign-assigned area, campaign-assigned team, due date, payload JSON, and delete action. Tasks do not carry direct latitude/longitude anymore; Marker are stored as TaskPoints.
+- Neue Task-Erstellroute: `/campaigns/:campaignId/tasks/new` (Button auf Kampagnendetail, gesteuert über `campaign.can.create_task`).
 - Task events remain visible and are refreshed after successful updates.
 - Seed demo accounts are documented in backend-aligned login notes (`admin@example.test` / `admin`).
 - New `/users` page for user CRUD against `/api/users` (list, detail, create, update, delete).
@@ -171,6 +172,7 @@ Die Karten-basierte Flächenerstellung unterstützt im Kampagnenkontext zusätzl
 - Task hat keine direkten `latitude`/`longitude`-Felder mehr.
 - Marker werden über TaskPoints verwaltet; ein Task kann 0..n Punkte besitzen.
 - Zielgebiet wird über `task.area_id` referenziert; Begrenzung über `task.boundary_area_id`.
+- Briefing ist ein separates Task-Feld für operative Anweisungen (`task.briefing`) und wird getrennt von `description` dargestellt.
 - Die Task-Karte zeigt Begrenzung, Zielgebiet und alle TaskPoints gemeinsam an und passt Bounds auf vorhandene Geometrie an.
 
 ## Benutzerdetail, Bearbeitung und Einladungen
