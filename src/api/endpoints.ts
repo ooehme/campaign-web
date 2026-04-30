@@ -1,5 +1,5 @@
 import { apiRequest } from './client'
-import type { Area, Campaign, PaginatedResponse, Task, TaskEvent, TaskPoint, Team, TeamMembershipPayload, User } from '../types/models'
+import type { Area, Campaign, PaginatedResponse, Task, TaskEvent, TaskPoint, Team, TeamInvitation, TeamMembershipPayload, User, UserTeam } from '../types/models'
 
 export type PaginationParams = { page?: number; per_page?: number }
 export type LoginPayload = { email: string; password: string; device_name?: string }
@@ -86,3 +86,12 @@ export const getTaskEventsPage = (taskId: number) => listTaskEvents(taskId)
 export const getTaskEventsByPage = listTaskEvents
 export const createAreaForCampaign = createOrAttachAreaToCampaign
 export const createTeamForCampaign = createOrAttachTeamToCampaign
+
+export const listUserTeams = (id: number | string) => requestResource<UserTeam[]>(`/api/users/${id}/teams`)
+export const listUserTasks = (id: number | string, status?: string) => requestResource<Task[]>(`/api/users/${id}/tasks${status ? `?status=${status}` : ''}`)
+export const listCurrentUserInvitations = () => requestResource<TeamInvitation[]>('/api/user/invitations')
+export const listTeamInvitations = (teamId: number | string) => requestResource<TeamInvitation[]>(`/api/teams/${teamId}/invitations`)
+export const createTeamInvitation = (teamId: number | string, payload: Record<string, unknown>) => apiRequest<TeamInvitation>(`/api/teams/${teamId}/invitations`, { method: 'POST', body: JSON.stringify(payload) })
+export const acceptTeamInvitation = (invitationId: number | string) => apiRequest(`/api/team-invitations/${invitationId}/accept`, { method: 'POST' })
+export const declineTeamInvitation = (invitationId: number | string) => apiRequest(`/api/team-invitations/${invitationId}/decline`, { method: 'POST' })
+export const deleteTeamInvitation = (invitationId: number | string) => apiRequest(`/api/team-invitations/${invitationId}`, { method: 'DELETE' })

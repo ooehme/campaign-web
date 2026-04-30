@@ -172,3 +172,14 @@ Die Karten-basierte Flächenerstellung unterstützt im Kampagnenkontext zusätzl
 - Marker werden über TaskPoints verwaltet; ein Task kann 0..n Punkte besitzen.
 - Zielgebiet wird über `task.area_id` referenziert; Begrenzung über `task.boundary_area_id`.
 - Die Task-Karte zeigt Begrenzung, Zielgebiet und alle TaskPoints gemeinsam an und passt Bounds auf vorhandene Geometrie an.
+
+## Benutzerdetail, Bearbeitung und Einladungen
+
+- Neue Routen: `/users/:userId` (Profil/Detail) und `/users/:userId/edit` (Bearbeitung).
+- Benutzerdetail zeigt Profil, Teamzugehörigkeiten, Kampagnenbezug, Aufgaben-Zusammenfassung, Aufgabenliste und Einladungen.
+- Benutzer-Bearbeitung nutzt `PATCH /api/users/{user}` mit optionalem Passwort-Update.
+- Nutzer-relevante Aufgaben werden über `/api/users/{user}/tasks` inkl. Statusfilter geladen.
+- Einladungs-Workflow nutzt `/api/user/invitations` sowie Accept/Decline Endpunkte.
+- Team-Einladungsbereich in Team-Bearbeitung nutzt bestehende Benutzer (kein email-only Invite).
+- Rollenmodell: `app_role` ist global (user/admin), `team_user.role` ist teambezogen (member/lead/admin).
+- Backend `can` Flags bleiben Quelle der Wahrheit; keine Rollenstring-Heuristik im Frontend.

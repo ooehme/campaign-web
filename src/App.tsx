@@ -8,6 +8,8 @@ import { TaskDetailPage } from './pages/TaskDetailPage'
 import { AreasPage } from './pages/AreasPage'
 import { TeamsPage } from './pages/TeamsPage'
 import { UsersPage } from './pages/UsersPage'
+import { UserDetailPage } from './pages/UserDetailPage'
+import { UserEditPage } from './pages/UserEditPage'
 import { TeamDetailPage } from './pages/TeamDetailPage'
 import { TeamEditPage } from './pages/TeamEditPage'
 import { LoginPage } from './pages/LoginPage'
@@ -33,6 +35,8 @@ export default function App() {
           <Route path="/teams/:teamId" element={<TeamDetailPage />} />
           <Route path="/teams/:teamId/edit" element={<TeamEditPage />} />
           <Route path="/users" element={<UsersPage />} />
+          <Route path="/users/:userId" element={<UserDetailPage />} />
+          <Route path="/users/:userId/edit" element={<UserEditPage />} />
           <Route path="/campaigns/:campaignId" element={<CampaignDetailPage />} />
           <Route path="/campaigns/:campaignId/tasks" element={<CampaignTaskListPage />} />
           <Route path="/campaigns/:campaignId/areas/new-map" element={<AreaCreateMapPage />} />

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ApiError } from '../api/client'
-import { addUserToTeam, deleteTeam, detachTeamFromCampaign, getTeam, listUsers, removeUserFromTeam, updateTeam, updateTeamUser } from '../api/endpoints'
+import { addUserToTeam, createTeamInvitation, deleteTeam, detachTeamFromCampaign, getTeam, listTeamInvitations, listUsers, removeUserFromTeam, updateTeam, updateTeamUser } from '../api/endpoints'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import type { Campaign, TeamMembership, TeamRole, User } from '../types/models'
 import { can, NO_PERMISSION_MESSAGE } from '../utils/permissions'
@@ -28,12 +28,14 @@ export function TeamEditPage() {
   const [notes, setNotes] = useState('')
   const [validation, setValidation] = useState<Record<string, string[]>>({})
   const [memberDrafts, setMemberDrafts] = useState<Record<number, MemberDraft>>({})
+  const [inviteUserId, setInviteUserId] = useState('')
 
   const teamQuery = useQuery({ queryKey: ['team', id], queryFn: () => getTeam(id), enabled: Number.isFinite(id) })
   const usersQuery = useQuery({ queryKey: ['users'], queryFn: () => listUsers({ per_page: 100 }), retry: false })
   const team = teamQuery.data as Record<string, unknown> | undefined
   const members = useMemo(() => (team ? normalizeMembers(team) : []), [team])
   const campaigns = (team?.campaigns as Campaign[] | undefined) ?? null
+  const invitationsQuery = useQuery({ queryKey: ['team-invitations', id], queryFn: () => listTeamInvitations(id), retry: false })
 
   useEffect(() => {
     if (!team) return
@@ -58,6 +60,7 @@ export function TeamEditPage() {
   const updateMember = useMutation({ mutationFn: ({ userId, payload }: { userId: number; payload: { role: TeamRole; display_name?: string; notes?: string } }) => updateTeamUser(id, userId, payload), onSuccess: () => { setSuccess('Mitglied bearbeiten erfolgreich.'); setErrorMessage(''); refetchAll() }, onError: applyApiError })
   const removeMember = useMutation({ mutationFn: (userId: number) => removeUserFromTeam(id, userId), onSuccess: () => { setSuccess('Mitglied entfernen erfolgreich.'); setErrorMessage(''); refetchAll() }, onError: applyApiError })
   const detachCampaign = useMutation({ mutationFn: (campaignId: number) => detachTeamFromCampaign(campaignId, id), onSuccess: () => { setSuccess('Team von Kampagne getrennt.'); setErrorMessage(''); refetchAll() }, onError: applyApiError })
+  const createInvitationMutation = useMutation({ mutationFn: () => createTeamInvitation(id, { user_id: Number(inviteUserId), role, display_name: displayName || undefined, notes: notes || undefined }), onSuccess: () => { setSuccess('Einladung erstellt.'); setInviteUserId(''); invitationsQuery.refetch() }, onError: applyApiError })
   const deleteMutation = useMutation({ mutationFn: () => deleteTeam(id), onSuccess: () => { qc.invalidateQueries({ queryKey: ['teams-pool'] }); navigate('/teams') }, onError: applyApiError })
 
   if (teamQuery.isLoading) return <LoadingState />
@@ -103,7 +106,7 @@ export function TeamEditPage() {
       <button className="border px-3 py-2 disabled:opacity-50" disabled={!canManage || !selectedUser} title={!canManage ? NO_PERMISSION_MESSAGE : undefined} onClick={() => addMember.mutate()}>Benutzer dem Team zuweisen</button>
     </div>
 
-    <div className="rounded border bg-white p-4"><h2 className="font-medium">Benutzer einladen</h2><p className="text-sm text-slate-600">Einladungen per E-Mail sind noch nicht implementiert.</p></div>
+    <div className="rounded border bg-white p-4"><h2 className="font-medium">Benutzer einladen</h2><select value={inviteUserId} onChange={(e) => setInviteUserId(e.target.value)} disabled={!canManage}><option value=''>Benutzer auswählen</option>{(usersQuery.data?.data ?? []).map((u: User) => <option key={u.id} value={u.id}>{u.name} ({u.email})</option>)}</select><button className='ml-2 border px-3 py-2 disabled:opacity-50' disabled={!canManage || !inviteUserId} onClick={() => createInvitationMutation.mutate()}>Einladung senden</button>{invitationsQuery.isError && <p className='text-sm text-slate-600'>Einladungen-Endpunkt derzeit nicht verfügbar.</p>}</div>
 
     <div className="rounded border bg-white p-4 space-y-2"><h2 className="font-medium">Zugewiesene Kampagnen</h2>
       {campaigns === null && <p className="text-sm text-slate-600">Zugewiesene Kampagnen werden von der API noch nicht auf dieser Team-Detailseite bereitgestellt.</p>}

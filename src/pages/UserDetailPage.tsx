@@ -1,0 +1,111 @@
+import { useMemo, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link, useNavigate, useParams } from 'react-router-dom'
+import { ApiError } from '../api/client'
+import { acceptTeamInvitation, declineTeamInvitation, deleteUser, getUser, listCurrentUserInvitations, listUserTasks, listUserTeams } from '../api/endpoints'
+import { useAuth } from '../auth/AuthContext'
+import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
+import type { TaskStatus, TeamInvitation, TeamRole, UserTaskSummary } from '../types/models'
+import { can, NO_PERMISSION_MESSAGE } from '../utils/permissions'
+
+const roleLabels: Record<TeamRole, string> = { admin: 'Team-Admin', lead: 'Teamleiter', member: 'Mitglied' }
+const taskFilters: Array<{ key: 'all' | TaskStatus; label: string }> = [
+  { key: 'all', label: 'alle' },
+  { key: 'open', label: 'offen' },
+  { key: 'assigned', label: 'zugewiesen' },
+  { key: 'in_progress', label: 'in Bearbeitung' },
+  { key: 'done', label: 'erledigt' },
+  { key: 'cancelled', label: 'abgebrochen' },
+]
+
+export function UserDetailPage() {
+  const { userId } = useParams()
+  const id = Number(userId)
+  const { user: currentUser, refreshUser } = useAuth()
+  const qc = useQueryClient()
+  const navigate = useNavigate()
+  const [success, setSuccess] = useState('')
+  const [taskFilter, setTaskFilter] = useState<'all' | TaskStatus>('all')
+
+  const userQuery = useQuery({ queryKey: ['user', id], queryFn: () => getUser(id), enabled: Number.isFinite(id), retry: false })
+  const teamsQuery = useQuery({ queryKey: ['user', id, 'teams'], queryFn: () => listUserTeams(id), enabled: can(userQuery.data?.can?.view_teams), retry: false })
+  const tasksQuery = useQuery({ queryKey: ['user', id, 'tasks', taskFilter], queryFn: () => listUserTasks(id, taskFilter === 'all' ? undefined : taskFilter), enabled: can(userQuery.data?.can?.view_tasks), retry: false })
+
+  const canViewInvitations = !!currentUser && currentUser.id === id
+  const invitationsQuery = useQuery({ queryKey: ['user-invitations', id], queryFn: listCurrentUserInvitations, enabled: canViewInvitations, retry: false })
+
+  const acceptMutation = useMutation({
+    mutationFn: acceptTeamInvitation,
+    onSuccess: () => {
+      setSuccess('Einladung angenommen.')
+      qc.invalidateQueries({ queryKey: ['user-invitations'] })
+      qc.invalidateQueries({ queryKey: ['user', id] })
+      qc.invalidateQueries({ queryKey: ['user', id, 'teams'] })
+      refreshUser().catch(() => undefined)
+    },
+  })
+
+  const declineMutation = useMutation({
+    mutationFn: declineTeamInvitation,
+    onSuccess: () => {
+      setSuccess('Einladung abgelehnt.')
+      qc.invalidateQueries({ queryKey: ['user-invitations'] })
+      qc.invalidateQueries({ queryKey: ['user', id] })
+      refreshUser().catch(() => undefined)
+    },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: () => deleteUser(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['users'] })
+      qc.invalidateQueries({ queryKey: ['user', id] })
+      navigate('/users')
+    },
+  })
+
+  if (userQuery.isLoading) return <LoadingState />
+  if (userQuery.isError) {
+    const err = userQuery.error as ApiError
+    if (err.status === 401) return <ErrorState message="Bitte erneut einloggen." />
+    if (err.status === 403) return <ErrorState message="Keine Berechtigung für diese Aktion." />
+    if (err.status === 404) return <ErrorState message="Benutzer nicht gefunden." />
+    return <ErrorState message="Serverfehler beim Laden oder Speichern." />
+  }
+
+  const user = userQuery.data!
+  const teams = teamsQuery.data ?? user.teams ?? []
+  const taskSummary: UserTaskSummary | undefined = user.task_summary
+  const invitations = useMemo(() => (invitationsQuery.data ?? []).filter((inv: TeamInvitation) => inv.status === 'pending'), [invitationsQuery.data])
+
+  return <section className="space-y-4">
+    <Link to="/users" className="text-sm text-blue-600">← Zurück zu Benutzer</Link>
+    {success && <p className="rounded border border-emerald-200 bg-emerald-50 p-2 text-sm text-emerald-700">{success}</p>}
+
+    <div className="rounded border bg-white p-4 flex items-center justify-between">
+      <div>
+        <h1 className="text-3xl font-semibold">{user.name}</h1>
+        <p>{user.email}</p>
+        <span className="rounded border px-2 py-0.5 text-xs">Rolle: {user.app_role}</span>
+      </div>
+      <div className="flex gap-2">
+        <Link className={`border px-3 py-2 ${!can(user.can?.update) ? 'pointer-events-none opacity-50' : ''}`} title={!can(user.can?.update) ? NO_PERMISSION_MESSAGE : undefined} to={`/users/${id}/edit`}>Bearbeiten</Link>
+        <button className="bg-red-600 px-3 py-2 text-white disabled:opacity-50" disabled={!can(user.can?.delete)} title={!can(user.can?.delete) ? NO_PERMISSION_MESSAGE : undefined} onClick={() => window.confirm('Benutzer löschen?') && deleteMutation.mutate()}>Löschen</button>
+      </div>
+    </div>
+
+    <div className="rounded border bg-white p-4">
+      <h2 className="font-medium">Profil</h2>
+      <p>ID: {user.id}</p><p>Name: {user.name}</p><p>E-Mail: {user.email}</p><p>Rolle: {user.app_role}</p>
+      <p>Erstellt: {user.created_at ?? 'nicht verfügbar'}</p><p>Aktualisiert: {user.updated_at ?? 'nicht verfügbar'}</p>
+    </div>
+
+    <div className="rounded border bg-white p-4"><h2 className="font-medium">Teams</h2>{teams.length === 0 ? <EmptyState message="Dieser Benutzer ist noch keinem Team zugewiesen." /> : <table className="w-full text-sm"><thead><tr className="text-left"><th>Team</th><th>Rolle</th><th>Anzeigename</th><th>Notizen</th></tr></thead><tbody>{teams.map((t) => <tr key={t.id} className="border-t"><td><Link className="text-blue-600" to={`/teams/${t.id}`}>{t.name}</Link></td><td>{roleLabels[t.pivot?.role ?? 'member']}</td><td>{t.pivot?.display_name ?? '-'}</td><td>{t.pivot?.notes ?? '-'}</td></tr>)}</tbody></table>}</div>
+    <div className="rounded border bg-white p-4"><h2 className="font-medium">Kampagnen</h2>{(user.campaigns?.length ?? 0) === 0 ? <EmptyState message="Keine zugehörigen Kampagnen gefunden." /> : <ul>{user.campaigns?.map((c) => <li key={c.id}><Link className="text-blue-600" to={`/campaigns/${c.id}`}>{c.name}</Link> ({c.status ?? '-'})</li>)}</ul>}</div>
+    <div className="rounded border bg-white p-4"><h2 className="font-medium">Aufgaben-Zusammenfassung</h2><ul><li>offen: {taskSummary?.open ?? 0}</li><li>zugewiesen: {taskSummary?.assigned ?? 0}</li><li>in Bearbeitung: {taskSummary?.in_progress ?? 0}</li><li>erledigt: {taskSummary?.done ?? 0}</li><li>abgebrochen: {taskSummary?.cancelled ?? 0}</li><li>gesamt: {taskSummary?.total ?? 0}</li></ul></div>
+
+    <div className="rounded border bg-white p-4 space-y-2"><h2 className="font-medium">Aufgaben</h2><div className="flex gap-2 flex-wrap">{taskFilters.map((f) => <button key={f.key} className={`border px-2 py-1 text-xs ${taskFilter === f.key ? 'bg-slate-900 text-white' : ''}`} onClick={() => setTaskFilter(f.key)}>{f.label}</button>)}</div>{tasksQuery.isLoading && <LoadingState />}{tasksQuery.isError && <p className="text-sm text-slate-600">Aufgaben-Endpunkt derzeit nicht verfügbar.</p>}{tasksQuery.data && tasksQuery.data.length === 0 && <EmptyState message="Keine Aufgaben gefunden." />}{tasksQuery.data && tasksQuery.data.length > 0 && <table className="w-full text-sm"><thead><tr className="text-left"><th>Titel</th><th>Status</th><th>Priorität</th><th>Kampagne</th><th>Team</th><th>Fällig</th></tr></thead><tbody>{tasksQuery.data.map((task) => <tr className="border-t" key={task.id}><td><Link className="text-blue-600" to={`/tasks/${task.id}`}>{task.title}</Link></td><td>{task.status}</td><td>{task.priority}</td><td>{task.campaign_id}</td><td>{task.assigned_team?.name ?? '-'}</td><td>{task.due_at ?? '-'}</td></tr>)}</tbody></table>}</div>
+
+    <div className="rounded border bg-white p-4"><h2 className="font-medium">Offene Einladungen</h2>{!canViewInvitations && <p className="text-sm text-slate-600">Einladungen sind nur im eigenen Profil verfügbar.</p>}{canViewInvitations && invitationsQuery.isError && <p className="text-sm text-slate-600">Einladungen-Endpunkt derzeit nicht verfügbar.</p>}{canViewInvitations && invitations.length === 0 ? <EmptyState message="Keine offenen Einladungen." /> : canViewInvitations && <table className="w-full text-sm"><thead><tr className="text-left"><th>Team</th><th>Rolle</th><th>Eingeladen von</th><th>Läuft ab</th><th>Notizen</th><th>Aktionen</th></tr></thead><tbody>{invitations.map((inv) => <tr key={inv.id} className="border-t"><td>{inv.team?.name ?? '-'}</td><td>{roleLabels[inv.role]}</td><td>{inv.invited_by_user?.name ?? '-'}</td><td>{inv.expires_at ?? '-'}</td><td>{inv.notes ?? '-'}</td><td><button className="border px-2 py-1 text-xs disabled:opacity-50" disabled={!can(inv.can?.accept)} onClick={() => acceptMutation.mutate(inv.id)}>Annehmen</button><button className="ml-2 border px-2 py-1 text-xs disabled:opacity-50" disabled={!can(inv.can?.decline)} onClick={() => declineMutation.mutate(inv.id)}>Ablehnen</button></td></tr>)}</tbody></table>}</div>
+  </section>
+}
