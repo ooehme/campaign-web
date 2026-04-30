@@ -5,6 +5,7 @@ import { CampaignListPage } from './pages/CampaignListPage'
 import { CampaignDetailPage } from './pages/CampaignDetailPage'
 import { CampaignTaskListPage } from './pages/CampaignTaskListPage'
 import { TaskDetailPage } from './pages/TaskDetailPage'
+import { TaskCreatePage } from './pages/TaskCreatePage'
 import { AreasPage } from './pages/AreasPage'
 import { TeamsPage } from './pages/TeamsPage'
 import { UsersPage } from './pages/UsersPage'
@@ -39,6 +40,7 @@ export default function App() {
           <Route path="/users/:userId/edit" element={<UserEditPage />} />
           <Route path="/campaigns/:campaignId" element={<CampaignDetailPage />} />
           <Route path="/campaigns/:campaignId/tasks" element={<CampaignTaskListPage />} />
+          <Route path="/campaigns/:campaignId/tasks/new" element={<TaskCreatePage />} />
           <Route path="/campaigns/:campaignId/areas/new-map" element={<AreaCreateMapPage />} />
           <Route path="/tasks/:taskId" element={<TaskDetailPage />} />
           <Route path="/tasks/:taskId/edit" element={<TaskDetailPage />} />
