@@ -2,6 +2,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { attachAreaToCampaign, attachTeamToCampaign, createOrAttachAreaToCampaign, createOrAttachTeamToCampaign, detachAreaFromCampaign, detachTeamFromCampaign, getCampaign, getTasksPage, listAreas, listCampaignAreas, listCampaignTeams, listTeams } from '../api/endpoints'
+import { CampaignAreaMap } from '../components/CampaignAreaMap'
+import { splitCampaignAreasByUsage } from '../utils/campaignAreaMap'
 import { ApiError } from '../api/client'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import { can, NO_PERMISSION_MESSAGE } from '../utils/permissions'
@@ -60,8 +62,7 @@ export function CampaignDetailPage() {
   if (campaignQuery.isError || !campaignQuery.data) return <ErrorState message="Kampagne konnte nicht geladen werden." />
   const campaign = campaignQuery.data
   const assignedAreas = assignedAreasQuery.data?.data ?? []
-  const boundaryAreas = assignedAreas.filter((a) => a.pivot?.usage === 'boundary')
-  const targetAreas = assignedAreas.filter((a) => a.pivot?.usage === 'target')
+  const { boundaries: boundaryAreas, targets: targetAreas, unknown: unknownAreas } = splitCampaignAreasByUsage(assignedAreas)
 
   return <section className="space-y-6">
     <Link to="/campaigns" className="text-sm text-blue-600">← Zurück zur Kampagnenliste</Link>
@@ -69,6 +70,13 @@ export function CampaignDetailPage() {
     {success && <p className="rounded border border-emerald-200 bg-emerald-50 p-2 text-sm text-emerald-700">{success}</p>}
 
     <div className="rounded border bg-white p-4"><h2 className="font-medium">Übersicht</h2><p>Status: {campaign.status ?? 'n/a'}</p><p>Slug: {campaign.slug ?? 'n/a'}</p><p>Start: {campaign.starts_at ?? 'n/a'}</p><p>Ende: {campaign.ends_at ?? 'n/a'}</p><p>Beschreibung: {campaign.description ?? '-'}</p></div>
+
+
+    <CampaignAreaMap
+      areas={assignedAreas}
+      isLoading={assignedAreasQuery.isLoading}
+      errorMessage={assignedAreasQuery.isError ? `Karten-/Flächendaten konnten nicht geladen werden: ${message(assignedAreasQuery.error)}` : null}
+    />
 
     <div className="rounded border bg-white p-4 space-y-3"><h2 className="font-medium">Fläche zuweisen</h2>
       {assignedAreasQuery.isLoading && <LoadingState />}
@@ -88,7 +96,7 @@ export function CampaignDetailPage() {
       <div><Link className="inline-block rounded border px-3 py-2 text-sm disabled:opacity-50" to={`/campaigns/${id}/areas/new-map`} aria-disabled={!can(campaign.can?.create_area)} onClick={(e) => { if (!can(campaign.can?.create_area)) e.preventDefault() }} title={!can(campaign.can?.create_area) ? NO_PERMISSION_MESSAGE : undefined}>Neue Fläche auf Karte erstellen und zuweisen</Link></div>
 
       <div className="grid gap-4 md:grid-cols-2"><div><h3 className="font-medium">Begrenzungen</h3>{boundaryAreas.length===0 && <EmptyState message="Noch keine Begrenzungen zugewiesen." />}{boundaryAreas.map((a: Area) => <div key={a.id} className="flex items-center justify-between rounded border p-2"><span>{a.name}</span><button className="bg-red-600 text-white disabled:opacity-50" disabled={!can(campaign.can?.detach_area)} onClick={() => window.confirm('Zuweisung entfernen?') && detachAreaMutation.mutate(a.id)}>Zuweisung entfernen</button></div>)}</div>
-      <div><h3 className="font-medium">Zielgebiete</h3>{targetAreas.length===0 && <EmptyState message="Noch keine Zielgebiete zugewiesen." />}{targetAreas.map((a: Area) => <div key={a.id} className="rounded border p-2"><div className="flex items-center justify-between"><span>{a.name}</span><button className="bg-red-600 text-white disabled:opacity-50" disabled={!can(campaign.can?.detach_area)} onClick={() => window.confirm('Zuweisung entfernen?') && detachAreaMutation.mutate(a.id)}>Zuweisung entfernen</button></div>{a.pivot?.boundary_area_id && <p className="text-xs text-slate-500">Begrenzung-ID: {a.pivot.boundary_area_id}</p>}</div>)}</div></div>
+      <div><h3 className="font-medium">Zielgebiete</h3>{targetAreas.length===0 && <EmptyState message="Noch keine Zielgebiete zugewiesen." />}{targetAreas.map((a: Area) => <div key={a.id} className="rounded border p-2"><div className="flex items-center justify-between"><span>{a.name}</span><button className="bg-red-600 text-white disabled:opacity-50" disabled={!can(campaign.can?.detach_area)} onClick={() => window.confirm('Zuweisung entfernen?') && detachAreaMutation.mutate(a.id)}>Zuweisung entfernen</button></div>{a.pivot?.boundary_area_id && <p className="text-xs text-slate-500">Zugeordnete Begrenzung: {boundaryAreas.find((boundary) => boundary.id === a.pivot?.boundary_area_id)?.name ?? `ID ${a.pivot.boundary_area_id}`}</p>}{a.pivot?.notes && <p className="text-xs text-slate-500">Notizen: {a.pivot.notes}</p>}</div>)}</div></div>{unknownAreas.length > 0 && <p className="text-sm text-amber-700">Einige Flächen haben keine Nutzungsart.</p>}
     </div>
 
     <div className="rounded border bg-white p-4 space-y-3"><h2 className="font-medium">Zugewiesene Teams</h2>
