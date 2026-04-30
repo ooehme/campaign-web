@@ -238,6 +238,9 @@ export interface UserCan {
   create?: boolean
   update?: boolean
   delete?: boolean
+  view_tasks?: boolean
+  view_teams?: boolean
+  view_invitations?: boolean
 }
 
 export type AppRole = 'user' | 'admin'
@@ -247,8 +250,58 @@ export interface User {
   name: string
   email: string
   app_role: AppRole
+  created_at?: string | null
+  updated_at?: string | null
+  teams?: UserTeam[]
+  campaigns?: Campaign[]
+  task_summary?: UserTaskSummary
+  invitation_summary?: Record<string, number>
   can?: UserCan
   [key: string]: unknown
+}
+
+export interface UserTeam {
+  id: number
+  name: string
+  pivot?: {
+    role?: TeamRole
+    display_name?: string | null
+    notes?: string | null
+  }
+  can?: TeamCan
+}
+
+export interface UserTaskSummary {
+  total?: number
+  open?: number
+  assigned?: number
+  in_progress?: number
+  done?: number
+  cancelled?: number
+}
+
+export type InvitationStatus = 'pending' | 'accepted' | 'declined' | 'cancelled' | 'expired'
+
+export interface TeamInvitation {
+  id: number
+  team: Team
+  invited_user?: User
+  email?: string
+  invited_by_user?: User
+  role: TeamRole
+  display_name?: string | null
+  notes?: string | null
+  status: InvitationStatus
+  expires_at?: string | null
+  responded_at?: string | null
+  created_at?: string | null
+  can?: {
+    view?: boolean
+    accept?: boolean
+    decline?: boolean
+    cancel?: boolean
+    delete?: boolean
+  }
 }
 
 export interface TeamMembership {
