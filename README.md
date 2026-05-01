@@ -1,6 +1,6 @@
-# Campaign Frontend (Internal Admin/Test GUI)
+# Campaign Web (Internal Admin/Test GUI)
 
-Internal React SPA to test and administrate the `ooehme/campaign-backend` Laravel API.
+Internal React SPA to test and administrate the `ooehme/campaign-core` Laravel API.
 
 ## Project overview
 
