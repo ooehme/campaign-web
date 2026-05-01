@@ -4,10 +4,30 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ApiError } from '../api/client'
 import { addUserToTeam, createTeamInvitation, deleteTeam, detachTeamFromCampaign, getTeam, listTeamInvitations, listUsers, removeUserFromTeam, updateTeam, updateTeamUser } from '../api/endpoints'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
-import type { Campaign, TeamMembership, TeamRole, User } from '../types/models'
+import type { Campaign, TeamInvitation, TeamMembership, TeamRole, User } from '../types/models'
 import { can, NO_PERMISSION_MESSAGE } from '../utils/permissions'
 
 type MemberDraft = { role: TeamRole; display_name: string; notes: string }
+
+const toOptionalNumber = (value: unknown): number | null => {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null
+}
+
+const normalizeErrorMap = (input: unknown): Record<string, string[]> => {
+  if (!input || typeof input !== 'object') return {}
+  return Object.entries(input as Record<string, unknown>).reduce<Record<string, string[]>>((acc, [field, raw]) => {
+    if (Array.isArray(raw)) {
+      const messages = raw.filter((message): message is string => typeof message === 'string' && message.trim().length > 0)
+      if (messages.length > 0) acc[field] = messages
+      return acc
+    }
+    if (typeof raw === 'string' && raw.trim().length > 0) {
+      acc[field] = [raw]
+    }
+    return acc
+  }, {})
+}
 
 const normalizeMembers = (team: Record<string, unknown>): TeamMembership[] => (((team.members as unknown[]) ?? (team.users as unknown[]) ?? []) as Array<Record<string, unknown>>).map((row) => {
   const pivot = (row.pivot as Record<string, unknown> | undefined) ?? row
@@ -29,6 +49,7 @@ export function TeamEditPage() {
   const [validation, setValidation] = useState<Record<string, string[]>>({})
   const [memberDrafts, setMemberDrafts] = useState<Record<number, MemberDraft>>({})
   const [inviteUserId, setInviteUserId] = useState('')
+  const [inviteValidation, setInviteValidation] = useState<Record<string, string[]>>({})
 
   const teamQuery = useQuery({ queryKey: ['team', id], queryFn: () => getTeam(id), enabled: Number.isFinite(id) })
   const usersQuery = useQuery({ queryKey: ['users'], queryFn: () => listUsers({ per_page: 100 }), retry: false })
@@ -36,6 +57,16 @@ export function TeamEditPage() {
   const members = useMemo(() => (team ? normalizeMembers(team) : []), [team])
   const campaigns = (team?.campaigns as Campaign[] | undefined) ?? null
   const invitationsQuery = useQuery({ queryKey: ['team-invitations', id], queryFn: () => listTeamInvitations(id), retry: false })
+  const pendingInvitedUserIds = useMemo(() => new Set(((invitationsQuery.data ?? []) as TeamInvitation[])
+    .filter((inv) => inv.status === 'pending')
+    .map((inv) => toOptionalNumber((inv as unknown as { invited_user_id?: unknown }).invited_user_id ?? inv.invited_user?.id))
+    .filter((userId): userId is number => userId !== null)), [invitationsQuery.data])
+  const memberUserIds = useMemo(() => new Set(members.map((member) => member.user.id)), [members])
+  const invitationCandidates = useMemo(() => (usersQuery.data?.data ?? []).map((u: User) => ({
+    user: u,
+    isMember: memberUserIds.has(u.id),
+    hasPendingInvite: pendingInvitedUserIds.has(u.id),
+  })), [usersQuery.data?.data, memberUserIds, pendingInvitedUserIds])
 
   useEffect(() => {
     if (!team) return
@@ -50,7 +81,9 @@ export function TeamEditPage() {
   const refetchAll = () => { qc.invalidateQueries({ queryKey: ['team', id] }); qc.invalidateQueries({ queryKey: ['teams-pool'] }) }
   const applyApiError = (error: unknown) => {
     const apiError = error as ApiError
+    const details = apiError?.details as { message?: string; errors?: Record<string, string[]> } | undefined
     if (apiError?.status === 403) setErrorMessage('Keine Berechtigung für diese Aktion.')
+    else if (apiError?.status === 422) setErrorMessage(details?.message ?? 'Bitte Eingaben prüfen.')
     else if (apiError?.status >= 500) setErrorMessage('Serverfehler beim Laden oder Speichern des Teams.')
     else setErrorMessage(apiError instanceof Error ? apiError.message : 'Unbekannter Fehler.')
   }
@@ -60,7 +93,46 @@ export function TeamEditPage() {
   const updateMember = useMutation({ mutationFn: ({ userId, payload }: { userId: number; payload: { role: TeamRole; display_name?: string; notes?: string } }) => updateTeamUser(id, userId, payload), onSuccess: () => { setSuccess('Mitglied bearbeiten erfolgreich.'); setErrorMessage(''); refetchAll() }, onError: applyApiError })
   const removeMember = useMutation({ mutationFn: (userId: number) => removeUserFromTeam(id, userId), onSuccess: () => { setSuccess('Mitglied entfernen erfolgreich.'); setErrorMessage(''); refetchAll() }, onError: applyApiError })
   const detachCampaign = useMutation({ mutationFn: (campaignId: number) => detachTeamFromCampaign(campaignId, id), onSuccess: () => { setSuccess('Team von Kampagne getrennt.'); setErrorMessage(''); refetchAll() }, onError: applyApiError })
-  const createInvitationMutation = useMutation({ mutationFn: () => createTeamInvitation(id, { user_id: Number(inviteUserId), role, display_name: displayName || undefined, notes: notes || undefined }), onSuccess: () => { setSuccess('Einladung erstellt.'); setInviteUserId(''); invitationsQuery.refetch() }, onError: applyApiError })
+  const createInvitationMutation = useMutation({
+    mutationFn: () => {
+      const normalizedInviteUserId = toOptionalNumber(inviteUserId)
+      if (!normalizedInviteUserId) {
+        setInviteValidation({ invited_user_id: ['Bitte einen Benutzer auswählen.'] })
+        setErrorMessage('Bitte Eingaben prüfen.')
+        throw new Error('Missing invited_user_id')
+      }
+      if (memberUserIds.has(normalizedInviteUserId)) {
+        setInviteValidation({ invited_user_id: ['Benutzer ist bereits Mitglied dieses Teams.'] })
+        setErrorMessage('Bitte Eingaben prüfen.')
+        throw new Error('User already a member')
+      }
+      if (pendingInvitedUserIds.has(normalizedInviteUserId)) {
+        setInviteValidation({ invited_user_id: ['Für diesen Benutzer existiert bereits eine offene Einladung.'] })
+        setErrorMessage('Bitte Eingaben prüfen.')
+        throw new Error('Invitation already pending')
+      }
+      return createTeamInvitation(id, { invited_user_id: normalizedInviteUserId, role, display_name: displayName || undefined, notes: notes || undefined })
+    },
+    onSuccess: () => {
+      setSuccess('Einladung erstellt.')
+      setErrorMessage('')
+      setInviteValidation({})
+      setInviteUserId('')
+      qc.invalidateQueries({ queryKey: ['team', id] })
+      qc.invalidateQueries({ queryKey: ['team-invitations', id] })
+      qc.invalidateQueries({ queryKey: ['user-invitations'] })
+    },
+    onError: (e) => {
+      const err = e as ApiError
+      if (err.status === 422) {
+        const details = err.details as { message?: string; errors?: Record<string, string[]> } | undefined
+        setInviteValidation(normalizeErrorMap(details?.errors))
+        setErrorMessage(details?.message ?? 'Bitte Eingaben prüfen.')
+        return
+      }
+      applyApiError(e)
+    },
+  })
   const deleteMutation = useMutation({ mutationFn: () => deleteTeam(id), onSuccess: () => { qc.invalidateQueries({ queryKey: ['teams-pool'] }); navigate('/teams') }, onError: applyApiError })
 
   if (teamQuery.isLoading) return <LoadingState />
@@ -97,7 +169,7 @@ export function TeamEditPage() {
       }}>Mitglied bearbeiten</button><button className="ml-2 border px-2 py-1 text-xs disabled:opacity-50" disabled={!canManage} title={!canManage ? NO_PERMISSION_MESSAGE : undefined} onClick={() => window.confirm('Mitglied entfernen?') && removeMember.mutate(member.user.id)}>Mitglied entfernen</button></td></tr>)}</tbody></table>}
       {!canManage && <p className="text-sm text-amber-700">Keine Berechtigung für diese Aktion.</p>}
 
-      <h3 className="font-medium mt-3">Benutzer dem Team hinzufügen</h3>
+      <h3 className="font-medium mt-3">Mitglied hinzufügen</h3>
       {usersQuery.isError && <p className="text-sm text-red-700">Keine Berechtigung für diese Aktion.</p>}
       <select value={selectedUser} onChange={(e) => setSelectedUser(e.target.value)} disabled={!canManage || usersQuery.isError}><option value="">Benutzer auswählen</option>{(usersQuery.data?.data ?? []).map((u: User) => <option key={u.id} value={u.id}>{u.name} ({u.email})</option>)}</select>
       <select value={role} onChange={(e) => setRole(e.target.value as TeamRole)} disabled={!canManage}><option value="member">member</option><option value="lead">lead</option><option value="admin">admin</option></select>
@@ -106,7 +178,7 @@ export function TeamEditPage() {
       <button className="border px-3 py-2 disabled:opacity-50" disabled={!canManage || !selectedUser} title={!canManage ? NO_PERMISSION_MESSAGE : undefined} onClick={() => addMember.mutate()}>Benutzer dem Team zuweisen</button>
     </div>
 
-    <div className="rounded border bg-white p-4"><h2 className="font-medium">Benutzer einladen</h2><select value={inviteUserId} onChange={(e) => setInviteUserId(e.target.value)} disabled={!canManage}><option value=''>Benutzer auswählen</option>{(usersQuery.data?.data ?? []).map((u: User) => <option key={u.id} value={u.id}>{u.name} ({u.email})</option>)}</select><button className='ml-2 border px-3 py-2 disabled:opacity-50' disabled={!canManage || !inviteUserId} onClick={() => createInvitationMutation.mutate()}>Einladung senden</button>{invitationsQuery.isError && <p className='text-sm text-slate-600'>Einladungen-Endpunkt derzeit nicht verfügbar.</p>}</div>
+    <div className="rounded border bg-white p-4"><h2 className="font-medium">Benutzer einladen</h2><select value={inviteUserId} onChange={(e) => { setInviteUserId(e.target.value); setInviteValidation({}) }} disabled={!canManage} title={!canManage ? NO_PERMISSION_MESSAGE : undefined}><option value=''>Benutzer auswählen</option>{invitationCandidates.map(({ user, isMember, hasPendingInvite }) => <option key={user.id} value={user.id} disabled={isMember || hasPendingInvite}>{user.name} ({user.email}){isMember ? ' – Bereits Mitglied' : hasPendingInvite ? ' – Einladung bereits offen' : ''}</option>)}</select><button className='ml-2 border px-3 py-2 disabled:opacity-50' disabled={!canManage || !inviteUserId || memberUserIds.has(Number(inviteUserId)) || pendingInvitedUserIds.has(Number(inviteUserId))} title={!canManage ? NO_PERMISSION_MESSAGE : undefined} onClick={() => createInvitationMutation.mutate()}>Benutzer einladen</button>{inviteUserId && memberUserIds.has(Number(inviteUserId)) && <p className='text-sm text-amber-700'>Bereits Mitglied – bitte oben „Mitglied bearbeiten“ verwenden.</p>}{inviteUserId && pendingInvitedUserIds.has(Number(inviteUserId)) && <p className='text-sm text-amber-700'>Einladung bereits offen.</p>}{inviteValidation.invited_user_id?.map((message) => <p className='text-sm text-red-700' key={message}>{message}</p>)}{inviteValidation.role?.map((message) => <p className='text-sm text-red-700' key={message}>{message}</p>)}{Object.entries(inviteValidation).filter(([field]) => field !== 'invited_user_id' && field !== 'role').flatMap(([, messages]) => messages).map((message) => <p className='text-sm text-red-700' key={message}>{message}</p>)}{invitationsQuery.isError && <p className='text-sm text-slate-600'>Einladungen-Endpunkt derzeit nicht verfügbar.</p>}</div>
 
     <div className="rounded border bg-white p-4 space-y-2"><h2 className="font-medium">Zugewiesene Kampagnen</h2>
       {campaigns === null && <p className="text-sm text-slate-600">Zugewiesene Kampagnen werden von der API noch nicht auf dieser Team-Detailseite bereitgestellt.</p>}
