@@ -268,6 +268,7 @@ export interface FeaturePermissionUpdatePayload {
 }
 
 export interface UserCan {
+  [key: string]: boolean | undefined
   view?: boolean
   create?: boolean
   update?: boolean
@@ -276,6 +277,7 @@ export interface UserCan {
   view_teams?: boolean
   view_invitations?: boolean
   manage_feature_permissions?: boolean
+  can_manage_feature_permissions?: boolean
 }
 
 export type AppRole = 'user' | 'admin'
