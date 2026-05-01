@@ -47,7 +47,7 @@ export function FeaturePermissionsPage() {
     setLocalMatrix(cloneMatrix(snapshot))
   }, [matrixQuery.data])
 
-  const canManage = canFlag(user?.can, 'manage_feature_permissions')
+  const canManage = user?.app_role === 'admin' || canFlag(user?.can, 'manage_feature_permissions')
 
   const mutation = useMutation({
     mutationFn: (payload: FeaturePermissionUpdatePayload) => updateFeaturePermissions(payload),

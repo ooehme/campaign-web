@@ -8,7 +8,7 @@ const navClass = ({ isActive }: { isActive: boolean }) =>
 
 export function AppShell() {
   const { logout, user } = useAuth()
-  const canManageFeaturePermissions = canFlag(user?.can, 'manage_feature_permissions')
+  const canManageFeaturePermissions = user?.app_role === 'admin' || canFlag(user?.can, 'manage_feature_permissions')
 
   return (
     <div className="min-h-screen bg-slate-50">
