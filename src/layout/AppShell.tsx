@@ -1,14 +1,14 @@
 import { Link, NavLink } from 'react-router-dom'
 import { Outlet } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
-import { canFlag } from '../utils/permissions'
+import { canManageFeaturePermissions } from '../utils/permissions'
 
 const navClass = ({ isActive }: { isActive: boolean }) =>
   `rounded px-3 py-2 text-sm ${isActive ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'}`
 
 export function AppShell() {
   const { logout, user } = useAuth()
-  const canManageFeaturePermissions = canFlag(user?.can, 'manage_feature_permissions')
+  const mayManageFeaturePermissions = canManageFeaturePermissions(user)
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -22,7 +22,7 @@ export function AppShell() {
               <NavLink to="/areas" className={navClass}>Areas</NavLink>
               <NavLink to="/teams" className={navClass}>Teams</NavLink>
               <NavLink to="/users" className={navClass}>Users</NavLink>
-              {canManageFeaturePermissions && <NavLink to="/admin/feature-permissions" className={navClass}>Feature-Rechte</NavLink>}
+              {mayManageFeaturePermissions && <NavLink to="/admin/feature-permissions" className={navClass}>Feature-Rechte</NavLink>}
             </nav>
             <div className="flex items-center gap-2 text-sm text-slate-600">
               <span>{user?.email}</span>

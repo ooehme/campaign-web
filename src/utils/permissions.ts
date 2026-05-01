@@ -1,5 +1,5 @@
 import { ApiError } from '../api/client'
-import type { UserCan } from '../types/models'
+import type { User, UserCan } from '../types/models'
 
 export const NO_PERMISSION_MESSAGE = 'Keine Berechtigung für diese Aktion.'
 
@@ -11,6 +11,13 @@ export const canFlag = (canMap: UserCan | null | undefined, key: string): boolea
   const prefixedKey = key.startsWith('can_') ? key : `can_${key}`
   const value = canMap[normalizedKey] ?? canMap[prefixedKey]
   return value === true
+}
+
+export const canManageFeaturePermissions = (user: User | null | undefined): boolean => {
+  if (!user) return false
+  const appRole = typeof user.app_role === 'string' ? user.app_role.toLowerCase() : ''
+  if (appRole === 'admin') return true
+  return canFlag(user.can, 'manage_feature_permissions')
 }
 
 export const permissionErrorMessage = (error: unknown): string => {
