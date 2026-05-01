@@ -1,5 +1,5 @@
 import { apiRequest } from './client'
-import type { Area, Campaign, PaginatedResponse, Task, TaskEvent, TaskPoint, Team, TeamInvitation, TeamMembershipPayload, User, UserTeam } from '../types/models'
+import type { Area, Campaign, FeaturePermissionMatrixResponse, FeaturePermissionUpdatePayload, PaginatedResponse, Task, TaskEvent, TaskPoint, Team, TeamInvitation, TeamMembershipPayload, User, UserTeam } from '../types/models'
 
 export type PaginationParams = { page?: number; per_page?: number }
 export type LoginPayload = { email: string; password: string; device_name?: string }
@@ -28,6 +28,9 @@ export const health = () => apiRequest<{ status: string }>('/api/health')
 export const login = (payload: LoginPayload) => apiRequest<LoginResponse>('/api/login', { method: 'POST', body: JSON.stringify({ ...payload, device_name: payload.device_name ?? 'frontend' }) })
 export const logout = () => apiRequest<void>('/api/logout', { method: 'POST' })
 export const getCurrentUser = () => apiRequest<User>('/api/user')
+
+export const getFeaturePermissions = () => requestResource<FeaturePermissionMatrixResponse>('/api/feature-permissions')
+export const updateFeaturePermissions = (payload: FeaturePermissionUpdatePayload) => apiRequest<FeaturePermissionMatrixResponse>('/api/feature-permissions', { method: 'PATCH', body: JSON.stringify(payload) })
 
 export const listCampaigns = (params?: PaginationParams) => requestPaginated<Campaign>(`/api/campaigns${buildQuery(params)}`)
 export const getCampaign = (id: number | string) => requestResource<Campaign>(`/api/campaigns/${id}`)

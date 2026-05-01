@@ -17,6 +17,7 @@ import { LoginPage } from './pages/LoginPage'
 import { AreaCreateMapPage } from './pages/AreaCreateMapPage'
 import { AreaDetailPage } from './pages/AreaDetailPage'
 import { AreaEditPage } from './pages/AreaEditPage'
+import { FeaturePermissionsPage } from './pages/FeaturePermissionsPage'
 import { RequireAuth } from './auth/RequireAuth'
 
 export default function App() {
@@ -38,6 +39,7 @@ export default function App() {
           <Route path="/users" element={<UsersPage />} />
           <Route path="/users/:userId" element={<UserDetailPage />} />
           <Route path="/users/:userId/edit" element={<UserEditPage />} />
+          <Route path="/admin/feature-permissions" element={<FeaturePermissionsPage />} />
           <Route path="/campaigns/:campaignId" element={<CampaignDetailPage />} />
           <Route path="/campaigns/:campaignId/tasks" element={<CampaignTaskListPage />} />
           <Route path="/campaigns/:campaignId/tasks/new" element={<TaskCreatePage />} />
