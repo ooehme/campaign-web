@@ -7,6 +7,7 @@ const navClass = ({ isActive }: { isActive: boolean }) =>
 
 export function AppShell() {
   const { logout, user } = useAuth()
+  const canManageFeaturePermissions = Boolean((user?.can as Record<string, unknown> | undefined)?.manage_feature_permissions === true)
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -20,6 +21,7 @@ export function AppShell() {
               <NavLink to="/areas" className={navClass}>Areas</NavLink>
               <NavLink to="/teams" className={navClass}>Teams</NavLink>
               <NavLink to="/users" className={navClass}>Users</NavLink>
+              {canManageFeaturePermissions && <NavLink to="/admin/feature-permissions" className={navClass}>Feature-Rechte</NavLink>}
             </nav>
             <div className="flex items-center gap-2 text-sm text-slate-600">
               <span>{user?.email}</span>

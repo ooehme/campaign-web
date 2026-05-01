@@ -106,6 +106,14 @@ npm run preview
 - If `/api/users` list is forbidden, UI shows a readable warning and falls back to manual `user_id` input.
 - Frontend auth uses `/api/login`, `/api/user`, and `/api/logout`.
 
+
+## Feature-Berechtigungsmatrix (Admin)
+
+- Neue Route: `/admin/feature-permissions`.
+- UI lädt Matrixdaten über `GET /api/feature-permissions` und speichert Sammeländerungen über `PATCH /api/feature-permissions`.
+- Zugriff/Bedienbarkeit im Frontend richtet sich weiterhin nach Backend-`can`-Flags (z. B. `user.can.manage_feature_permissions`) und **nicht** nach `app_role`-Namensheuristiken.
+- Auch auf dieser Seite bleibt das Backend die Quelle der Wahrheit für Autorisierung und Validierung.
+
 ## Scope intentionally not implemented
 
 - Refresh token flow

@@ -235,6 +235,38 @@ export interface PaginatedResponse<T> {
 }
 
 
+
+
+export interface FeaturePermissionFeature {
+  key: string
+  label?: string
+  description?: string | null
+}
+
+export interface FeaturePermissionRole {
+  id: number
+  name: string
+  label?: string
+}
+
+export interface FeaturePermissionMatrixRow {
+  role_id: number
+  feature_key: string
+  can_view: boolean
+  can_use: boolean
+  can_manage_feature_permissions?: boolean
+}
+
+export interface FeaturePermissionMatrixResponse {
+  features: FeaturePermissionFeature[]
+  roles: FeaturePermissionRole[]
+  matrix: FeaturePermissionMatrixRow[]
+}
+
+export interface FeaturePermissionUpdatePayload {
+  matrix: FeaturePermissionMatrixRow[]
+}
+
 export interface UserCan {
   view?: boolean
   create?: boolean
@@ -243,6 +275,7 @@ export interface UserCan {
   view_tasks?: boolean
   view_teams?: boolean
   view_invitations?: boolean
+  manage_feature_permissions?: boolean
 }
 
 export type AppRole = 'user' | 'admin'
