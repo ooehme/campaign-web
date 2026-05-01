@@ -5,7 +5,7 @@ import { useAuth } from '../auth/AuthContext'
 import { getFeaturePermissions, updateFeaturePermissions } from '../api/endpoints'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import type { FeaturePermissionMatrixResponse, FeaturePermissionMatrixRow, FeaturePermissionUpdatePayload } from '../types/models'
-import { canFlag, NO_PERMISSION_MESSAGE } from '../utils/permissions'
+import { canManageFeaturePermissions, NO_PERMISSION_MESSAGE } from '../utils/permissions'
 
 const toReadableError = (error: unknown): string => {
   if (error instanceof ApiError) {
@@ -47,7 +47,7 @@ export function FeaturePermissionsPage() {
     setLocalMatrix(cloneMatrix(snapshot))
   }, [matrixQuery.data])
 
-  const canManage = user?.app_role === 'admin' || canFlag(user?.can, 'manage_feature_permissions')
+  const canManage = canManageFeaturePermissions(user)
 
   const mutation = useMutation({
     mutationFn: (payload: FeaturePermissionUpdatePayload) => updateFeaturePermissions(payload),
