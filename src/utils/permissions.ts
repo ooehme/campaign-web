@@ -15,8 +15,6 @@ export const canFlag = (canMap: UserCan | null | undefined, key: string): boolea
 
 export const canManageFeaturePermissions = (user: User | null | undefined): boolean => {
   if (!user) return false
-  const appRole = typeof user.app_role === 'string' ? user.app_role.toLowerCase() : ''
-  if (appRole === 'admin') return true
   return canFlag(user.can, 'manage_feature_permissions')
 }
 

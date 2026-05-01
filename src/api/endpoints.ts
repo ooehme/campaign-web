@@ -27,7 +27,7 @@ const requestResource = async <T>(path: string): Promise<T> => {
 export const health = () => apiRequest<{ status: string }>('/api/health')
 export const login = (payload: LoginPayload) => apiRequest<LoginResponse>('/api/login', { method: 'POST', body: JSON.stringify({ ...payload, device_name: payload.device_name ?? 'frontend' }) })
 export const logout = () => apiRequest<void>('/api/logout', { method: 'POST' })
-export const getCurrentUser = () => apiRequest<User>('/api/user')
+export const getCurrentUser = () => requestResource<User>('/api/user')
 
 export const getFeaturePermissions = () => requestResource<FeaturePermissionMatrixResponse>('/api/feature-permissions')
 export const updateFeaturePermissions = (payload: FeaturePermissionUpdatePayload) => apiRequest<FeaturePermissionMatrixResponse>('/api/feature-permissions', { method: 'PATCH', body: JSON.stringify(payload) })
