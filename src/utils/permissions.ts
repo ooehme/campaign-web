@@ -5,12 +5,26 @@ export const NO_PERMISSION_MESSAGE = 'Keine Berechtigung für diese Aktion.'
 
 export const can = (flag: boolean | null | undefined): boolean => flag === true
 
+const permissionAliases = (key: string): string[] => {
+  const keys = new Set<string>([key])
+  const withoutCanPrefix = key.startsWith('can_') ? key.slice(4) : key
+  keys.add(withoutCanPrefix)
+  keys.add(`can_${withoutCanPrefix}`)
+
+  const dottedMatch = withoutCanPrefix.match(/^([a-z0-9_]+)\.(view|create|update|delete|use|manage)$/i)
+  if (dottedMatch) {
+    const [, resource, action] = dottedMatch
+    keys.add(`${resource}.can_${action}`)
+    keys.add(`${action}_${resource}`)
+    keys.add(`can_${action}_${resource}`)
+  }
+
+  return [...keys]
+}
+
 export const canFlag = (canMap: UserCan | null | undefined, key: string): boolean => {
   if (!canMap || typeof canMap !== 'object') return false
-  const normalizedKey = key.startsWith('can_') ? key.slice(4) : key
-  const prefixedKey = key.startsWith('can_') ? key : `can_${key}`
-  const value = canMap[normalizedKey] ?? canMap[prefixedKey]
-  return value === true
+  return permissionAliases(key).some((candidate) => canMap[candidate] === true)
 }
 
 export const canManageFeaturePermissions = (user: User | null | undefined): boolean => {

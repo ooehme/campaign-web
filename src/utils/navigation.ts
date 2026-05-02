@@ -11,10 +11,10 @@ export type NavigationItem = {
 
 export const NAVIGATION_ITEMS: NavigationItem[] = [
   { key: 'dashboard', label: 'Dashboard', to: '/dashboard', alwaysVisible: true },
-  { key: 'campaigns', label: 'Campaigns', to: '/campaigns', permissionKeys: ['campaigns.view', 'view_campaigns'] },
-  { key: 'areas', label: 'Areas', to: '/areas', permissionKeys: ['areas.view', 'view_areas'] },
-  { key: 'teams', label: 'Teams', to: '/teams', permissionKeys: ['teams.view', 'view_teams'] },
-  { key: 'users', label: 'Users', to: '/users', permissionKeys: ['users.view', 'view_users'] },
+  { key: 'campaigns', label: 'Campaigns', to: '/campaigns', permissionKeys: ['campaigns.view'] },
+  { key: 'areas', label: 'Areas', to: '/areas', permissionKeys: ['areas.view'] },
+  { key: 'teams', label: 'Teams', to: '/teams', permissionKeys: ['teams.view'] },
+  { key: 'users', label: 'Users', to: '/users', permissionKeys: ['users.view'] },
   {
     key: 'featurePermissions',
     label: 'Feature-Rechte',
