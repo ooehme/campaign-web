@@ -30,7 +30,8 @@ const cloneMatrix = (matrix: FeaturePermissionMatrixResponse): FeaturePermission
   matrix: matrix.matrix.map((row) => ({ ...row })),
 })
 
-const matrixKey = (row: Pick<FeaturePermissionMatrixRow, 'role_id' | 'feature_key'>): string => `${row.role_id}::${row.feature_key}`
+const matrixKey = (row: Pick<FeaturePermissionMatrixRow, 'role_scope' | 'role_key' | 'feature_key'>): string =>
+  `${row.role_scope ?? ''}:${row.role_key ?? ''}:${row.feature_key}`
 
 export function FeaturePermissionsPage() {
   const queryClient = useQueryClient()
@@ -87,10 +88,10 @@ export function FeaturePermissionsPage() {
   if (matrixQuery.isError) return <ErrorState message={toReadableError(matrixQuery.error)} />
   if (!localMatrix || localMatrix.features.length === 0 || localMatrix.roles.length === 0) return <EmptyState message='Keine Feature-Berechtigungen vorhanden.' />
 
-  const toggle = (roleId: number, featureKey: string, type: 'can_view' | 'can_use') => {
+  const toggle = (roleScope: string, roleKey: string, featureKey: string, type: 'can_view' | 'can_use') => {
     setLocalMatrix((prev) => {
       if (!prev) return prev
-      const index = prev.matrix.findIndex((row) => row.role_id === roleId && row.feature_key === featureKey)
+      const index = prev.matrix.findIndex((row) => row.role_scope === roleScope && row.role_key === roleKey && row.feature_key === featureKey)
       if (index < 0) return prev
       const nextRows = prev.matrix.map((row) => ({ ...row }))
       nextRows[index][type] = !nextRows[index][type]
@@ -134,7 +135,7 @@ export function FeaturePermissionsPage() {
             <tr className="border-b bg-slate-50 text-left">
               <th className="p-2">Feature</th>
               {localMatrix.roles.map((role) => (
-                <th key={role.id} className="p-2">{role.label ?? role.name}</th>
+                <th key={`${role.scope}:${role.key}`} className="p-2">{role.label ?? `${role.scope}:${role.key}`}</th>
               ))}
             </tr>
           </thead>
@@ -146,31 +147,34 @@ export function FeaturePermissionsPage() {
                   <p className="text-xs text-slate-500">{feature.description ?? feature.key}</p>
                 </td>
                 {localMatrix.roles.map((role) => {
-                  const cell = localMatrix.matrix.find((entry) => entry.role_id === role.id && entry.feature_key === feature.key)
-                  if (!cell) return <td key={role.id} className="p-2 text-slate-400">–</td>
+                  const roleScope = role.scope ?? ''
+                  const roleKey = role.key ?? ''
+                  const cell = localMatrix.matrix.find((entry) => entry.role_scope === roleScope && entry.role_key === roleKey && entry.feature_key === feature.key)
+                  const cellValue = cell ?? { role_scope: roleScope, role_key: roleKey, feature_key: feature.key, can_view: false, can_use: false }
 
                   return (
-                    <td key={role.id} className="p-2">
+                    <td key={`${role.scope}:${role.key}`} className="p-2">
                       <label className="flex items-center gap-2 text-xs">
                         <input
-                          aria-label={`${role.label ?? role.name} / ${feature.label ?? feature.key} Sichtbar`}
+                          aria-label={`${role.label ?? `${role.scope}:${role.key}`} / ${feature.label ?? feature.key} Sichtbar`}
                           type="checkbox"
-                          checked={cell.can_view}
-                          disabled={!canManage || mutation.isPending}
-                          onChange={() => toggle(role.id, feature.key, 'can_view')}
+                          checked={cellValue.can_view}
+                          disabled={!canManage || mutation.isPending || !cell}
+                          onChange={() => toggle(roleScope, roleKey, feature.key, 'can_view')}
                         />
                         Sichtbar
                       </label>
                       <label className="mt-1 flex items-center gap-2 text-xs">
                         <input
-                          aria-label={`${role.label ?? role.name} / ${feature.label ?? feature.key} Bedienbar`}
+                          aria-label={`${role.label ?? `${role.scope}:${role.key}`} / ${feature.label ?? feature.key} Bedienbar`}
                           type="checkbox"
-                          checked={cell.can_use}
-                          disabled={!canManage || mutation.isPending}
-                          onChange={() => toggle(role.id, feature.key, 'can_use')}
+                          checked={cellValue.can_use}
+                          disabled={!canManage || mutation.isPending || !cell}
+                          onChange={() => toggle(roleScope, roleKey, feature.key, 'can_use')}
                         />
                         Bedienbar
                       </label>
+                      {!cell && <p className="mt-1 text-xs text-amber-700">Matrix-Eintrag fehlt.</p>}
                     </td>
                   )
                 })}

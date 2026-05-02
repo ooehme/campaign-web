@@ -24,13 +24,36 @@ const requestResource = async <T>(path: string): Promise<T> => {
   return response as T
 }
 
+const normalizeFeaturePermissions = (response: FeaturePermissionMatrixResponse): FeaturePermissionMatrixResponse => ({
+  features: (response.features ?? []).map((feature) => ({
+    ...feature,
+    key: feature.key ?? feature.feature_key ?? '',
+  })),
+  roles: (response.roles ?? []).map((role) => ({
+    ...role,
+    key: role.key ?? role.role_key,
+    scope: role.scope ?? role.role_scope,
+  })),
+  matrix: (response.matrix ?? []).map((row) => ({
+    ...row,
+    can_view: Boolean(row.can_view),
+    can_use: Boolean(row.can_use),
+  })),
+})
+
 export const health = () => apiRequest<{ status: string }>('/api/health')
 export const login = (payload: LoginPayload) => apiRequest<LoginResponse>('/api/login', { method: 'POST', body: JSON.stringify({ ...payload, device_name: payload.device_name ?? 'frontend' }) })
 export const logout = () => apiRequest<void>('/api/logout', { method: 'POST' })
 export const getCurrentUser = () => requestResource<User>('/api/user')
 
-export const getFeaturePermissions = () => requestResource<FeaturePermissionMatrixResponse>('/api/feature-permissions')
-export const updateFeaturePermissions = (payload: FeaturePermissionUpdatePayload) => apiRequest<FeaturePermissionMatrixResponse>('/api/feature-permissions', { method: 'PATCH', body: JSON.stringify(payload) })
+export const getFeaturePermissions = async () => normalizeFeaturePermissions(await requestResource<FeaturePermissionMatrixResponse>('/api/feature-permissions'))
+export const updateFeaturePermissions = async (payload: FeaturePermissionUpdatePayload) => {
+  const response = await apiRequest<FeaturePermissionMatrixResponse | { data: FeaturePermissionMatrixResponse }>('/api/feature-permissions', { method: 'PATCH', body: JSON.stringify(payload) })
+  const unwrapped = response && typeof response === 'object' && 'data' in response
+    ? (response as { data: FeaturePermissionMatrixResponse }).data
+    : (response as FeaturePermissionMatrixResponse)
+  return normalizeFeaturePermissions(unwrapped)
+}
 
 export const listCampaigns = (params?: PaginationParams) => requestPaginated<Campaign>(`/api/campaigns${buildQuery(params)}`)
 export const getCampaign = (id: number | string) => requestResource<Campaign>(`/api/campaigns/${id}`)

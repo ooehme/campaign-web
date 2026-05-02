@@ -239,18 +239,25 @@ export interface PaginatedResponse<T> {
 
 export interface FeaturePermissionFeature {
   key: string
+  feature_key?: string
   label?: string
   description?: string | null
 }
 
 export interface FeaturePermissionRole {
-  id: number
-  name: string
+  id?: number
+  key?: string
+  role_key?: string
+  scope?: string
+  role_scope?: string
+  name?: string
   label?: string
 }
 
 export interface FeaturePermissionMatrixRow {
-  role_id: number
+  role_id?: number
+  role_scope?: string
+  role_key?: string
   feature_key: string
   can_view: boolean
   can_use: boolean
