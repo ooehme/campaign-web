@@ -120,11 +120,11 @@ npm run preview
 Main navigation visibility is controlled only by backend `user.can` flags from `GET /api/user`:
 
 - Dashboard: always visible for authenticated users.
-- Campaigns: `campaigns.view` or `campaign.view`, with legacy fallback `view_campaigns`/`view_campaign`.
-- Areas: `areas.view` or `area.view`, with legacy fallback `view_areas`/`view_area`.
-- Teams: `teams.view` or `team.view`, with legacy fallback `view_teams`/`view_team`.
-- Users: `users.view` or `user.view`, with legacy fallback `view_users`/`view_user`.
-- Feature-Rechte: `feature_permissions.view` or `manage_feature_permissions` (backend-dependent; either grants navigation visibility).
+- Campaigns: `campaigns.view` (preferred) or `view_campaigns` (legacy).
+- Areas: `areas.view` (preferred) or `view_areas` (legacy).
+- Teams: `teams.view` (preferred) or `view_teams` (legacy).
+- Users: `users.view` (preferred) or `view_users` (legacy).
+- Feature-Rechte: `manage_feature_permissions`.
 
 Notes:
 - Missing module visibility flags are treated as `false` (fail closed), so the related nav entry is hidden.
@@ -136,7 +136,7 @@ Notes:
 - Admin/test user with all relevant `user.can` flags sees all expected module nav entries.
 - User without `campaigns.view`/`view_campaigns` does not see Campaigns.
 - User without `users.view`/`view_users` does not see Users.
-- Feature-Rechte appears with `feature_permissions.view` or `manage_feature_permissions` (depending on backend payload).
+- Feature-Rechte appears only with `manage_feature_permissions`.
 - Opening a direct forbidden URL still shows the existing backend-driven forbidden/error state.
 
 ## Scope intentionally not implemented

@@ -9,24 +9,17 @@ export type NavigationItem = {
   alwaysVisible?: boolean
 }
 
-const VIEW_PERMISSION_KEYS: Record<'campaigns' | 'areas' | 'teams' | 'users', string[]> = {
-  campaigns: ['campaigns.view', 'campaign.view', 'view_campaigns', 'view_campaign'],
-  areas: ['areas.view', 'area.view', 'view_areas', 'view_area'],
-  teams: ['teams.view', 'team.view', 'view_teams', 'view_team'],
-  users: ['users.view', 'user.view', 'view_users', 'view_user'],
-}
-
 export const NAVIGATION_ITEMS: NavigationItem[] = [
   { key: 'dashboard', label: 'Dashboard', to: '/dashboard', alwaysVisible: true },
-  { key: 'campaigns', label: 'Campaigns', to: '/campaigns', permissionKeys: VIEW_PERMISSION_KEYS.campaigns },
-  { key: 'areas', label: 'Areas', to: '/areas', permissionKeys: VIEW_PERMISSION_KEYS.areas },
-  { key: 'teams', label: 'Teams', to: '/teams', permissionKeys: VIEW_PERMISSION_KEYS.teams },
-  { key: 'users', label: 'Users', to: '/users', permissionKeys: VIEW_PERMISSION_KEYS.users },
+  { key: 'campaigns', label: 'Campaigns', to: '/campaigns', permissionKeys: ['campaigns.view', 'view_campaigns'] },
+  { key: 'areas', label: 'Areas', to: '/areas', permissionKeys: ['areas.view', 'view_areas'] },
+  { key: 'teams', label: 'Teams', to: '/teams', permissionKeys: ['teams.view', 'view_teams'] },
+  { key: 'users', label: 'Users', to: '/users', permissionKeys: ['users.view', 'view_users'] },
   {
     key: 'featurePermissions',
     label: 'Feature-Rechte',
     to: '/admin/feature-permissions',
-    permissionKeys: ['feature_permissions.view', 'manage_feature_permissions'],
+    permissionKeys: ['manage_feature_permissions'],
   },
 ]
 
