@@ -25,15 +25,8 @@ const requestResource = async <T>(path: string): Promise<T> => {
 }
 
 const normalizeFeaturePermissions = (response: FeaturePermissionMatrixResponse): FeaturePermissionMatrixResponse => ({
-  features: (response.features ?? []).map((feature) => ({
-    ...feature,
-    key: feature.key ?? feature.feature_key ?? '',
-  })),
-  roles: (response.roles ?? []).map((role) => ({
-    ...role,
-    key: role.key ?? role.role_key,
-    scope: role.scope ?? role.role_scope,
-  })),
+  features: (response.features ?? []).map((feature) => ({ ...feature })),
+  roles: (response.roles ?? []).map((role) => ({ ...role })),
   matrix: (response.matrix ?? []).map((row) => ({
     ...row,
     can_view: Boolean(row.can_view),

@@ -31,7 +31,21 @@ const cloneMatrix = (matrix: FeaturePermissionMatrixResponse): FeaturePermission
 })
 
 const matrixKey = (row: Pick<FeaturePermissionMatrixRow, 'role_scope' | 'role_key' | 'feature_key'>): string =>
-  `${row.role_scope ?? ''}:${row.role_key ?? ''}:${row.feature_key}`
+  `${row.role_scope}:${row.role_key}:${row.feature_key}`
+
+const isValidMatrixResponse = (value: FeaturePermissionMatrixResponse): boolean =>
+  Array.isArray(value.features)
+  && value.features.every((feature) => typeof feature.key === 'string' && feature.key.length > 0)
+  && Array.isArray(value.roles)
+  && value.roles.every((role) => typeof role.scope === 'string' && role.scope.length > 0 && typeof role.key === 'string' && role.key.length > 0)
+  && Array.isArray(value.matrix)
+  && value.matrix.every((row) =>
+    typeof row.role_scope === 'string'
+    && typeof row.role_key === 'string'
+    && typeof row.feature_key === 'string'
+    && typeof row.can_view === 'boolean'
+    && typeof row.can_use === 'boolean'
+  )
 
 export function FeaturePermissionsPage() {
   const queryClient = useQueryClient()
@@ -43,6 +57,11 @@ export function FeaturePermissionsPage() {
 
   useEffect(() => {
     if (!matrixQuery.data) return
+    if (!isValidMatrixResponse(matrixQuery.data)) {
+      setServerMatrix(null)
+      setLocalMatrix(null)
+      return
+    }
     const snapshot = cloneMatrix(matrixQuery.data)
     setServerMatrix(snapshot)
     setLocalMatrix(cloneMatrix(snapshot))
@@ -69,23 +88,15 @@ export function FeaturePermissionsPage() {
     for (const [key, row] of current) {
       const source = original.get(key)
       if (!source) return true
-      if (source.can_view !== row.can_view || source.can_use !== row.can_use || source.can_manage_feature_permissions !== row.can_manage_feature_permissions) return true
+      if (source.can_view !== row.can_view || source.can_use !== row.can_use) return true
     }
     return false
   }, [localMatrix, serverMatrix])
 
-  const selfLockoutWarning = useMemo(() => {
-    if (!localMatrix || !serverMatrix || !dirty) return null
-    const managesPermissionFlagTouched = localMatrix.matrix.some((row) => typeof row.can_manage_feature_permissions === 'boolean')
-    if (!managesPermissionFlagTouched) return null
-
-    // Backend response does not always include current user's role linkage.
-    // Therefore we show a generic warning whenever manage-permission flags are edited.
-    return 'Warnung: Änderungen an Verwaltungsrechten können Ihren eigenen Zugriff auf diese Seite entfernen.'
-  }, [dirty, localMatrix, serverMatrix])
 
   if (matrixQuery.isLoading) return <LoadingState />
   if (matrixQuery.isError) return <ErrorState message={toReadableError(matrixQuery.error)} />
+  if (matrixQuery.data && !isValidMatrixResponse(matrixQuery.data)) return <ErrorState message='Ungültige Antwort vom Server: Feature-Rechte-Matrix hat nicht das erwartete Format.' />
   if (!localMatrix || localMatrix.features.length === 0 || localMatrix.roles.length === 0) return <EmptyState message='Keine Feature-Berechtigungen vorhanden.' />
 
   const toggle = (roleScope: string, roleKey: string, featureKey: string, type: 'can_view' | 'can_use') => {
@@ -125,7 +136,6 @@ export function FeaturePermissionsPage() {
       </div>
 
       {!canManage && <ErrorState message="Keine Berechtigung für diese Aktion." />}
-      {selfLockoutWarning && <div className="rounded border border-amber-400 bg-amber-50 p-3 text-sm text-amber-800">{selfLockoutWarning}</div>}
       {mutation.isError && <ErrorState message={toReadableError(mutation.error)} />}
       {mutation.isSuccess && <p className="text-sm text-emerald-700">Berechtigungen gespeichert.</p>}
 
@@ -147,8 +157,8 @@ export function FeaturePermissionsPage() {
                   <p className="text-xs text-slate-500">{feature.description ?? feature.key}</p>
                 </td>
                 {localMatrix.roles.map((role) => {
-                  const roleScope = role.scope ?? ''
-                  const roleKey = role.key ?? ''
+                  const roleScope = role.scope
+                  const roleKey = role.key
                   const cell = localMatrix.matrix.find((entry) => entry.role_scope === roleScope && entry.role_key === roleKey && entry.feature_key === feature.key)
                   const cellValue = cell ?? { role_scope: roleScope, role_key: roleKey, feature_key: feature.key, can_view: false, can_use: false }
 
