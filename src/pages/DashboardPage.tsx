@@ -2,9 +2,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { acceptTeamInvitation, declineTeamInvitation, healthCheck, listCurrentUserInvitations } from '../api/endpoints'
 import { ErrorState, LoadingState } from '../components/UiState'
+import { useAuth } from '../auth/AuthContext'
+import { hasVisibleModuleNavigation } from '../utils/navigation'
 
 export function DashboardPage() {
   const qc = useQueryClient()
+  const { user } = useAuth()
+  const hasModuleNavigation = hasVisibleModuleNavigation(user)
   const { data, isLoading, isError, error } = useQuery({ queryKey: ['health'], queryFn: healthCheck })
   const invitationsQuery = useQuery({ queryKey: ['user-invitations'], queryFn: listCurrentUserInvitations, retry: false })
   const acceptMutation = useMutation({ mutationFn: acceptTeamInvitation, onSuccess: () => qc.invalidateQueries({ queryKey: ['user-invitations'] }) })
@@ -13,6 +17,7 @@ export function DashboardPage() {
   return (
     <section className="space-y-4">
       <h1 className="text-2xl font-semibold">Dashboard</h1>
+      {!hasModuleNavigation && <p className="text-sm text-slate-600">Für diesen Benutzer sind keine Bereiche sichtbar.</p>}
       <div className="grid gap-4 md:grid-cols-2">
         <div className="rounded border bg-white p-4">
           <h2 className="font-medium">Backend Health</h2>
@@ -30,7 +35,8 @@ export function DashboardPage() {
         <div className="rounded border bg-white p-4">
           <h2 className="font-medium">Quick Links</h2>
           <ul className="mt-2 list-disc pl-5 text-sm">
-            <li><Link className="text-blue-600" to="/campaigns">Manage campaigns</Link></li>
+            {hasModuleNavigation && <li><Link className="text-blue-600" to="/campaigns">Manage campaigns</Link></li>}
+            {!hasModuleNavigation && <li>Keine sichtbaren Bereiche verfügbar.</li>}
           </ul>
         </div>
       </div>
