@@ -114,6 +114,31 @@ npm run preview
 - Zugriff/Bedienbarkeit im Frontend richtet sich weiterhin nach Backend-`can`-Flags (z. B. `user.can.manage_feature_permissions`) und **nicht** nach `app_role`-Namensheuristiken.
 - Auch auf dieser Seite bleibt das Backend die Quelle der Wahrheit für Autorisierung und Validierung.
 
+
+## Navigation visibility permissions
+
+Main navigation visibility is controlled only by backend `user.can` flags from `GET /api/user`:
+
+- Dashboard: always visible for authenticated users.
+- Campaigns: `campaigns.view` (preferred) or `view_campaigns` (legacy).
+- Areas: `areas.view` (preferred) or `view_areas` (legacy).
+- Teams: `teams.view` (preferred) or `view_teams` (legacy).
+- Users: `users.view` (preferred) or `view_users` (legacy).
+- Feature-Rechte: `manage_feature_permissions`.
+
+Notes:
+- Missing module visibility flags are treated as `false` (fail closed), so the related nav entry is hidden.
+- `false` flags stay `false`; frontend does not infer permissions from `app_role` or team role names.
+- Action buttons/forms inside pages still use action-specific backend `can` flags and are not replaced by nav visibility checks.
+
+### Manual verification checklist
+
+- Admin/test user with all relevant `user.can` flags sees all expected module nav entries.
+- User without `campaigns.view`/`view_campaigns` does not see Campaigns.
+- User without `users.view`/`view_users` does not see Users.
+- Feature-Rechte appears only with `manage_feature_permissions`.
+- Opening a direct forbidden URL still shows the existing backend-driven forbidden/error state.
+
 ## Scope intentionally not implemented
 
 - Refresh token flow
