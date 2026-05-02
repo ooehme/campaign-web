@@ -239,29 +239,25 @@ export interface PaginatedResponse<T> {
 
 export interface FeaturePermissionFeature {
   key: string
-  feature_key?: string
   label?: string
   description?: string | null
 }
 
 export interface FeaturePermissionRole {
   id?: number
-  key?: string
-  role_key?: string
-  scope?: string
-  role_scope?: string
+  key: string
+  scope: string
   name?: string
   label?: string
 }
 
 export interface FeaturePermissionMatrixRow {
   role_id?: number
-  role_scope?: string
-  role_key?: string
+  role_scope: string
+  role_key: string
   feature_key: string
   can_view: boolean
   can_use: boolean
-  can_manage_feature_permissions?: boolean
 }
 
 export interface FeaturePermissionMatrixResponse {
@@ -275,16 +271,7 @@ export interface FeaturePermissionUpdatePayload {
 }
 
 export interface UserCan {
-  [key: string]: boolean | undefined
-  view?: boolean
-  create?: boolean
-  update?: boolean
-  delete?: boolean
-  view_tasks?: boolean
-  view_teams?: boolean
-  view_invitations?: boolean
-  manage_feature_permissions?: boolean
-  can_manage_feature_permissions?: boolean
+  [featureKey: string]: boolean | undefined
 }
 
 export type AppRole = 'user' | 'admin'

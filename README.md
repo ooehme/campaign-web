@@ -109,35 +109,49 @@ npm run preview
 
 ## Feature-Berechtigungsmatrix (Admin)
 
-- Neue Route: `/admin/feature-permissions`.
-- UI lädt Matrixdaten über `GET /api/feature-permissions` und speichert Sammeländerungen über `PATCH /api/feature-permissions`.
-- Zugriff/Bedienbarkeit im Frontend richtet sich weiterhin nach Backend-`can`-Flags (z. B. `user.can.manage_feature_permissions`) und **nicht** nach `app_role`-Namensheuristiken.
-- Auch auf dieser Seite bleibt das Backend die Quelle der Wahrheit für Autorisierung und Validierung.
-
+- Route: `/admin/feature-permissions`.
+- Zugriff auf die Seite erfordert ausschließlich `user.can["feature_permissions.manage"] === true`.
+- UI lädt Matrixdaten über `GET /api/feature-permissions` und speichert über `PATCH /api/feature-permissions`.
+- Unterstützte Matrix-Felder sind ausschließlich der kanonische Backend-Contract:
+  - `feature.key`
+  - `role.scope`
+  - `role.key`
+  - `row.role_scope`
+  - `row.role_key`
+  - `row.feature_key`
+  - `row.can_view`
+  - `row.can_use`
+- Bei ungültiger oder unvollständiger Matrix-Antwort zeigt das Frontend eine klare Fehlermeldung auf Deutsch.
 
 ## Navigation visibility permissions
 
-Main navigation visibility is controlled only by backend `user.can` flags from `GET /api/user`:
+Main navigation visibility is controlled only by canonical backend `user.can` keys from `GET /api/user`:
 
 - Dashboard: always visible for authenticated users.
-- Campaigns: `campaigns.view` (preferred) or `view_campaigns` (legacy).
-- Areas: `areas.view` (preferred) or `view_areas` (legacy).
-- Teams: `teams.view` (preferred) or `view_teams` (legacy).
-- Users: `users.view` (preferred) or `view_users` (legacy).
-- Feature-Rechte: `manage_feature_permissions`.
+- Campaigns: `campaigns.view`.
+- Areas: `areas.view`.
+- Teams: `teams.view`.
+- Users: `users.view`.
+- Feature-Rechte: `feature_permissions.manage`.
 
 Notes:
-- Missing module visibility flags are treated as `false` (fail closed), so the related nav entry is hidden.
-- `false` flags stay `false`; frontend does not infer permissions from `app_role` or team role names.
-- Action buttons/forms inside pages still use action-specific backend `can` flags and are not replaced by nav visibility checks.
+- Missing permission keys are treated as `false` (fail closed).
+- `false` stays `false`.
+- No legacy fallback keys are supported.
+- No `can_` prefix aliasing is supported.
+- Frontend does not infer permissions from `app_role` or team role names.
 
-### Manual verification checklist
+## Canonical action permission examples
 
-- Admin/test user with all relevant `user.can` flags sees all expected module nav entries.
-- User without `campaigns.view`/`view_campaigns` does not see Campaigns.
-- User without `users.view`/`view_users` does not see Users.
-- Feature-Rechte appears only with `manage_feature_permissions`.
-- Opening a direct forbidden URL still shows the existing backend-driven forbidden/error state.
+- Kampagne erstellen: `campaigns.create`
+- Kampagne bearbeiten: `campaigns.update`
+- Kampagne löschen: `campaigns.delete`
+- Fläche erstellen/bearbeiten/löschen: `areas.create` / `areas.update` / `areas.delete`
+- Team erstellen/bearbeiten/löschen: `teams.create` / `teams.update` / `teams.delete`
+- Benutzer erstellen/bearbeiten/löschen: `users.create` / `users.update` / `users.delete`
+- Task erstellen/bearbeiten/löschen: `tasks.create` / `tasks.update` / `tasks.delete`
+- TaskPoint-Aktionen: `task_points.manage`
+- Einladungsaktionen: `invitations.manage`
 
 ## Scope intentionally not implemented
 
