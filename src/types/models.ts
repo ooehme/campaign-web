@@ -239,18 +239,19 @@ export interface PaginatedResponse<T> {
 
 export interface PermissionDefinition {
   key: string
-  label?: string
+  label: string
   group?: string
   action?: string
+  description?: string
 }
 
 export interface PermissionRole {
-  key: 'app-admin' | 'app-user'
-  label?: string
+  key: string
+  label: string
 }
 
 export interface RolePermissionMatrixRow {
-  role_key: PermissionRole['key']
+  role_key: string
   permission_key: string
   enabled: boolean
 }
@@ -261,7 +262,7 @@ export interface RolePermissionMatrixResponse {
   matrix: RolePermissionMatrixRow[]
 }
 
-export interface FeaturePermissionUpdatePayload {
+export interface RolePermissionUpdatePayload {
   matrix: RolePermissionMatrixRow[]
 }
 
@@ -281,6 +282,7 @@ export interface User {
   task_summary?: UserTaskSummary
   invitation_summary?: Record<string, number>
   can?: UserCan
+  roles?: string[]
   [key: string]: unknown
 }
 
