@@ -1,5 +1,5 @@
 import { apiRequest } from './client'
-import type { Area, Campaign, FeaturePermissionMatrixResponse, FeaturePermissionUpdatePayload, PaginatedResponse, Task, TaskEvent, TaskPoint, Team, TeamInvitation, TeamMembershipPayload, User, UserTeam } from '../types/models'
+import type { Area, Campaign, RolePermissionMatrixResponse, FeaturePermissionUpdatePayload, PaginatedResponse, Task, TaskEvent, TaskPoint, Team, TeamInvitation, TeamMembershipPayload, User, UserTeam } from '../types/models'
 
 export type PaginationParams = { page?: number; per_page?: number }
 export type LoginPayload = { email: string; password: string; device_name?: string }
@@ -24,14 +24,10 @@ const requestResource = async <T>(path: string): Promise<T> => {
   return response as T
 }
 
-const normalizeFeaturePermissions = (response: FeaturePermissionMatrixResponse): FeaturePermissionMatrixResponse => ({
-  features: (response.features ?? []).map((feature) => ({ ...feature })),
+const normalizeFeaturePermissions = (response: RolePermissionMatrixResponse): RolePermissionMatrixResponse => ({
+  permissions: (response.permissions ?? []).map((permission) => ({ ...permission })),
   roles: (response.roles ?? []).map((role) => ({ ...role })),
-  matrix: (response.matrix ?? []).map((row) => ({
-    ...row,
-    can_view: Boolean(row.can_view),
-    can_use: Boolean(row.can_use),
-  })),
+  matrix: (response.matrix ?? []).map((row) => ({ ...row, enabled: row.enabled === true })),
 })
 
 export const health = () => apiRequest<{ status: string }>('/api/health')
@@ -39,13 +35,10 @@ export const login = (payload: LoginPayload) => apiRequest<LoginResponse>('/api/
 export const logout = () => apiRequest<void>('/api/logout', { method: 'POST' })
 export const getCurrentUser = () => requestResource<User>('/api/user')
 
-export const getFeaturePermissions = async () => normalizeFeaturePermissions(await requestResource<FeaturePermissionMatrixResponse>('/api/feature-permissions'))
+export const getFeaturePermissions = async () => normalizeFeaturePermissions((await requestResource<{ data: RolePermissionMatrixResponse }>('/api/feature-permissions')).data)
 export const updateFeaturePermissions = async (payload: FeaturePermissionUpdatePayload) => {
-  const response = await apiRequest<FeaturePermissionMatrixResponse | { data: FeaturePermissionMatrixResponse }>('/api/feature-permissions', { method: 'PATCH', body: JSON.stringify(payload) })
-  const unwrapped = response && typeof response === 'object' && 'data' in response
-    ? (response as { data: FeaturePermissionMatrixResponse }).data
-    : (response as FeaturePermissionMatrixResponse)
-  return normalizeFeaturePermissions(unwrapped)
+  const response = await apiRequest<{ data: RolePermissionMatrixResponse }>('/api/feature-permissions', { method: 'PATCH', body: JSON.stringify(payload) })
+  return normalizeFeaturePermissions(response.data)
 }
 
 export const listCampaigns = (params?: PaginationParams) => requestPaginated<Campaign>(`/api/campaigns${buildQuery(params)}`)
@@ -66,8 +59,8 @@ export const detachAreaFromCampaign = (campaignId: number, areaId: number) => ap
 
 export const listUsers = (params?: PaginationParams) => requestPaginated<User>(`/api/users${buildQuery(params)}`)
 export const getUser = (id: number) => requestResource<User>(`/api/users/${id}`)
-export const createUser = (payload: { name: string; email: string; password: string; app_role: 'user' | 'admin' }) => apiRequest<User>('/api/users', { method: 'POST', body: JSON.stringify(payload) })
-export const updateUser = (id: number, payload: { name: string; email: string; app_role: 'user' | 'admin'; password?: string }) => apiRequest<User>(`/api/users/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
+export const createUser = (payload: { name: string; email: string; password: string; app_role: 'user' | 'admin' | 'app-user' | 'app-admin' }) => apiRequest<User>('/api/users', { method: 'POST', body: JSON.stringify(payload) })
+export const updateUser = (id: number, payload: { name: string; email: string; app_role: 'user' | 'admin' | 'app-user' | 'app-admin'; password?: string }) => apiRequest<User>(`/api/users/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
 export const deleteUser = (id: number) => apiRequest<void>(`/api/users/${id}`, { method: 'DELETE' })
 
 export const listTeams = (params?: PaginationParams) => requestPaginated<Team>(`/api/teams${buildQuery(params)}`)

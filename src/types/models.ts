@@ -237,44 +237,37 @@ export interface PaginatedResponse<T> {
 
 
 
-export interface FeaturePermissionFeature {
+export interface PermissionDefinition {
   key: string
   label?: string
-  description?: string | null
+  group?: string
+  action?: string
 }
 
-export interface FeaturePermissionRole {
-  id?: number
-  key: string
-  scope: string
-  name?: string
+export interface PermissionRole {
+  key: 'app-admin' | 'app-user'
   label?: string
 }
 
-export interface FeaturePermissionMatrixRow {
-  role_id?: number
-  role_scope: string
-  role_key: string
-  feature_key: string
-  can_view: boolean
-  can_use: boolean
+export interface RolePermissionMatrixRow {
+  role_key: PermissionRole['key']
+  permission_key: string
+  enabled: boolean
 }
 
-export interface FeaturePermissionMatrixResponse {
-  features: FeaturePermissionFeature[]
-  roles: FeaturePermissionRole[]
-  matrix: FeaturePermissionMatrixRow[]
+export interface RolePermissionMatrixResponse {
+  permissions: PermissionDefinition[]
+  roles: PermissionRole[]
+  matrix: RolePermissionMatrixRow[]
 }
 
 export interface FeaturePermissionUpdatePayload {
-  matrix: FeaturePermissionMatrixRow[]
+  matrix: RolePermissionMatrixRow[]
 }
 
-export interface UserCan {
-  [featureKey: string]: boolean | undefined
-}
+export type UserCan = Partial<Record<string, boolean>>
 
-export type AppRole = 'user' | 'admin'
+export type AppRole = 'app-admin' | 'app-user' | 'admin' | 'user'
 
 export interface User {
   id: number
