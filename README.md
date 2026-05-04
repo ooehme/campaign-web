@@ -99,8 +99,8 @@ npm run preview
 - Task events remain visible and are refreshed after successful updates.
 - Seed demo accounts are documented in backend-aligned login notes (`admin@example.test` / `admin`).
 - New `/users` page for user CRUD against `/api/users` (list, detail, create, update, delete).
-- User entity fields used in UI: `name`, `email`, `app_role` (`user` or `admin`).
-- `app_role` is a global application role and is separate from team membership `role` (`member`, `lead`, `admin`).
+- User entity fields used in UI: `name`, `email`, `app_role` (legacy string from backend), optional `roles` (z. B. `app-admin`, `app-user`) und `can` als kanonische Permission-Map.
+- Team membership `role` (`member`, `lead`, `admin`) bleibt rein teambezogen und ist getrennt von globalen App-Rollen/Permissions.
 - Team membership assignment now targets existing users: "Benutzer dem Team zuweisen" / "Assign existing user to team".
 - Team membership submit payload uses `user_id` plus `role`, `display_name`, `notes`.
 - If `/api/users` list is forbidden, UI shows a readable warning and falls back to manual `user_id` input.
@@ -113,15 +113,13 @@ npm run preview
 - Zugriff auf die Seite erfordert ausschließlich `user.can["feature_permissions.manage"] === true`.
 - UI lädt Matrixdaten über `GET /api/feature-permissions` und speichert über `PATCH /api/feature-permissions`.
 - Unterstützte Matrix-Felder sind ausschließlich der kanonische Backend-Contract:
-  - `feature.key`
-  - `role.scope`
-  - `role.key`
-  - `row.role_scope`
-  - `row.role_key`
-  - `row.feature_key`
-  - `row.can_view`
-  - `row.can_use`
-- Bei ungültiger oder unvollständiger Matrix-Antwort zeigt das Frontend eine klare Fehlermeldung auf Deutsch.
+  - `permissions[]` mit `key`, `label`, optional `group`, `action`, `description`
+  - `roles[]` mit `key`, `label`
+  - `matrix[]` mit `role_key`, `permission_key`, `enabled`
+- Die Matrix-UI verwendet genau **einen** Toggle (`Aktiv`) je Rolle/Berechtigung.
+- Fehlende Matrix-Zellen werden als deaktiviert dargestellt und mit deutscher Warnung hervorgehoben (kein kaputter „-“-Fallback).
+- Bei Backend-422 zeigt die UI eine klare deutsche Validierungsmeldung und behält lokale Änderungen.
+- Warnhinweis: Wenn `app-admin` für `feature_permissions.manage` deaktiviert wird, zeigt die UI eine Self-Lockout-Warnung.
 
 ## Navigation visibility permissions
 
@@ -241,3 +239,9 @@ Die Karten-basierte Flächenerstellung unterstützt im Kampagnenkontext zusätzl
 - Die Seite **Feature-Rechte** bearbeitet nur App-Rollen (`app-admin`, `app-user`) mit einer einzigen `enabled`-Checkbox je Rolle/Berechtigung.
 - Team-Rollen (`member`, `lead`, `admin`) sind keine globalen Berechtigungsrollen.
 - Team-Mitgliedschaftsaktionen verwenden backend-seitige Resource-`can`-Flags (z. B. `can.add_member`) und/oder sauberes 403-Handling.
+
+
+## Backend deployment note
+
+- Der bekannte `campaign-core` Blocker mit veraltetem `composer.lock` (wegen Packagist-Netzwerkproblem) ist **kein Frontend-Problem**.
+- Für produktive Nutzung muss Backend mit installierter Spatie Permission Abhängigkeit deployt sein, damit der dokumentierte Contract (`/api/user`, `/api/feature-permissions`) verfügbar ist.

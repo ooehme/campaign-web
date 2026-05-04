@@ -1,5 +1,5 @@
 import { apiRequest } from './client'
-import type { Area, Campaign, RolePermissionMatrixResponse, FeaturePermissionUpdatePayload, PaginatedResponse, Task, TaskEvent, TaskPoint, Team, TeamInvitation, TeamMembershipPayload, User, UserTeam } from '../types/models'
+import type { Area, Campaign, RolePermissionMatrixResponse, RolePermissionUpdatePayload, PaginatedResponse, Task, TaskEvent, TaskPoint, Team, TeamInvitation, TeamMembershipPayload, User, UserTeam } from '../types/models'
 
 export type PaginationParams = { page?: number; per_page?: number }
 export type LoginPayload = { email: string; password: string; device_name?: string }
@@ -35,8 +35,9 @@ export const login = (payload: LoginPayload) => apiRequest<LoginResponse>('/api/
 export const logout = () => apiRequest<void>('/api/logout', { method: 'POST' })
 export const getCurrentUser = () => requestResource<User>('/api/user')
 
-export const getFeaturePermissions = async () => normalizeFeaturePermissions((await requestResource<{ data: RolePermissionMatrixResponse }>('/api/feature-permissions')).data)
-export const updateFeaturePermissions = async (payload: FeaturePermissionUpdatePayload) => {
+export const getFeaturePermissions = async () =>
+  normalizeFeaturePermissions(await requestResource<RolePermissionMatrixResponse>('/api/feature-permissions'))
+export const updateFeaturePermissions = async (payload: RolePermissionUpdatePayload) => {
   const response = await apiRequest<{ data: RolePermissionMatrixResponse }>('/api/feature-permissions', { method: 'PATCH', body: JSON.stringify(payload) })
   return normalizeFeaturePermissions(response.data)
 }
