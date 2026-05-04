@@ -6,7 +6,8 @@ import { acceptTeamInvitation, declineTeamInvitation, deleteUser, getUser, listC
 import { useAuth } from '../auth/AuthContext'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import type { TaskStatus, TeamInvitation, TeamRole, UserTaskSummary } from '../types/models'
-import { can, hasCanPermission, NO_PERMISSION_MESSAGE } from '../utils/permissions'
+import { can, hasPermission, NO_PERMISSION_MESSAGE } from '../utils/permissions'
+import { PERMISSIONS } from '../utils/permissionKeys'
 
 const roleLabels: Record<TeamRole, string> = { admin: 'Team-Admin', lead: 'Teamleiter', member: 'Mitglied' }
 const taskFilters: Array<{ key: 'all' | TaskStatus; label: string }> = [
@@ -28,8 +29,8 @@ export function UserDetailPage() {
   const [taskFilter, setTaskFilter] = useState<'all' | TaskStatus>('all')
 
   const userQuery = useQuery({ queryKey: ['user', id], queryFn: () => getUser(id), enabled: Number.isFinite(id), retry: false })
-  const teamsQuery = useQuery({ queryKey: ['user', id, 'teams'], queryFn: () => listUserTeams(id), enabled: hasCanPermission(userQuery.data?.can, 'teams.view'), retry: false })
-  const tasksQuery = useQuery({ queryKey: ['user', id, 'tasks', taskFilter], queryFn: () => listUserTasks(id, taskFilter === 'all' ? undefined : taskFilter), enabled: hasCanPermission(userQuery.data?.can, 'tasks.view'), retry: false })
+  const teamsQuery = useQuery({ queryKey: ['user', id, 'teams'], queryFn: () => listUserTeams(id), enabled: hasPermission(userQuery.data, PERMISSIONS.TEAMS_VIEW), retry: false })
+  const tasksQuery = useQuery({ queryKey: ['user', id, 'tasks', taskFilter], queryFn: () => listUserTasks(id, taskFilter === 'all' ? undefined : taskFilter), enabled: hasPermission(userQuery.data, PERMISSIONS.TASKS_VIEW), retry: false })
 
   const canViewInvitations = !!currentUser && currentUser.id === id
   const invitationsQuery = useQuery({ queryKey: ['user-invitations', id], queryFn: listCurrentUserInvitations, enabled: canViewInvitations, retry: false })

@@ -1,25 +1,27 @@
 import type { User } from '../types/models'
+import type { PermissionKey } from './permissionKeys'
+import { PERMISSIONS } from './permissionKeys'
 import { hasPermission } from './permissions'
 
 export type NavigationItem = {
   key: 'dashboard' | 'campaigns' | 'areas' | 'teams' | 'users' | 'featurePermissions'
   label: string
   to: string
-  permissionKey?: string
+  permissionKey?: PermissionKey
   alwaysVisible?: boolean
 }
 
 export const NAVIGATION_ITEMS: NavigationItem[] = [
   { key: 'dashboard', label: 'Dashboard', to: '/dashboard', alwaysVisible: true },
-  { key: 'campaigns', label: 'Campaigns', to: '/campaigns', permissionKey: 'campaigns.view' },
-  { key: 'areas', label: 'Areas', to: '/areas', permissionKey: 'areas.view' },
-  { key: 'teams', label: 'Teams', to: '/teams', permissionKey: 'teams.view' },
-  { key: 'users', label: 'Users', to: '/users', permissionKey: 'users.view' },
+  { key: 'campaigns', label: 'Campaigns', to: '/campaigns', permissionKey: PERMISSIONS.CAMPAIGNS_VIEW },
+  { key: 'areas', label: 'Areas', to: '/areas', permissionKey: PERMISSIONS.AREAS_VIEW },
+  { key: 'teams', label: 'Teams', to: '/teams', permissionKey: PERMISSIONS.TEAMS_VIEW },
+  { key: 'users', label: 'Users', to: '/users', permissionKey: PERMISSIONS.USERS_VIEW },
   {
     key: 'featurePermissions',
     label: 'Feature-Rechte',
     to: '/admin/feature-permissions',
-    permissionKey: 'feature_permissions.manage',
+    permissionKey: PERMISSIONS.FEATURE_PERMISSIONS_MANAGE,
   },
 ]
 

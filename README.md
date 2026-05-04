@@ -232,3 +232,12 @@ Die Karten-basierte Flächenerstellung unterstützt im Kampagnenkontext zusätzl
 - Team-Einladungsbereich in Team-Bearbeitung nutzt bestehende Benutzer (kein email-only Invite).
 - Rollenmodell: `app_role` ist global (user/admin), `team_user.role` ist teambezogen (member/lead/admin).
 - Backend `can` Flags bleiben Quelle der Wahrheit; keine Rollenstring-Heuristik im Frontend.
+
+## Berechtigungen (kanonischer Contract)
+
+- Die UI verwendet ausschließlich `user.can` aus `/api/user` mit kanonischen Schlüsseln (z. B. `campaigns.view`, `feature_permissions.manage`).
+- Legacy-Fallbacks (`can_*`, `view_*`, Rollenheuristiken) werden nicht mehr verwendet; fehlende Keys sind automatisch **verboten** (fail closed).
+- Navigation: Dashboard immer sichtbar; Module nur mit `*.view`; Feature-Rechte nur mit `feature_permissions.manage`.
+- Die Seite **Feature-Rechte** bearbeitet nur App-Rollen (`app-admin`, `app-user`) mit einer einzigen `enabled`-Checkbox je Rolle/Berechtigung.
+- Team-Rollen (`member`, `lead`, `admin`) sind keine globalen Berechtigungsrollen.
+- Team-Mitgliedschaftsaktionen verwenden backend-seitige Resource-`can`-Flags (z. B. `can.add_member`) und/oder sauberes 403-Handling.

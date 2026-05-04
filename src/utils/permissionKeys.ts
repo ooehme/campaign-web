@@ -1,0 +1,27 @@
+export const PERMISSIONS = {
+  CAMPAIGNS_VIEW: 'campaigns.view',
+  CAMPAIGNS_CREATE: 'campaigns.create',
+  CAMPAIGNS_UPDATE: 'campaigns.update',
+  CAMPAIGNS_DELETE: 'campaigns.delete',
+  AREAS_VIEW: 'areas.view',
+  AREAS_CREATE: 'areas.create',
+  AREAS_UPDATE: 'areas.update',
+  AREAS_DELETE: 'areas.delete',
+  TEAMS_VIEW: 'teams.view',
+  TEAMS_CREATE: 'teams.create',
+  TEAMS_UPDATE: 'teams.update',
+  TEAMS_DELETE: 'teams.delete',
+  USERS_VIEW: 'users.view',
+  USERS_CREATE: 'users.create',
+  USERS_UPDATE: 'users.update',
+  USERS_DELETE: 'users.delete',
+  TASKS_VIEW: 'tasks.view',
+  TASKS_CREATE: 'tasks.create',
+  TASKS_UPDATE: 'tasks.update',
+  TASKS_DELETE: 'tasks.delete',
+  TASK_POINTS_MANAGE: 'task_points.manage',
+  INVITATIONS_MANAGE: 'invitations.manage',
+  FEATURE_PERMISSIONS_MANAGE: 'feature_permissions.manage',
+} as const
+
+export type PermissionKey = typeof PERMISSIONS[keyof typeof PERMISSIONS]
