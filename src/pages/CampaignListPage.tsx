@@ -3,12 +3,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { Link } from 'react-router-dom'
+import { useAuth } from '../auth/AuthContext'
 import { createCampaign, deleteCampaign, getCampaignsPage, updateCampaign } from '../api/endpoints'
 import { ApiError } from '../api/client'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import type { Campaign } from '../types/models'
 import { z } from 'zod'
-import { can, NO_PERMISSION_MESSAGE } from '../utils/permissions'
+import { can, canPermission, NO_PERMISSION_MESSAGE } from '../utils/permissions'
 
 const schema = z.object({
   name: z.string().trim().min(1, 'Name ist erforderlich.'),
@@ -30,6 +31,7 @@ const apiErrorMessage = (error: unknown) => {
 }
 
 export function CampaignListPage() {
+  const { user } = useAuth()
   const qc = useQueryClient()
   const [editing, setEditing] = useState<Campaign | null>(null)
   const [success, setSuccess] = useState('')
@@ -56,7 +58,7 @@ export function CampaignListPage() {
     onSuccess: () => { invalidateAll(); setSuccess('Kampagne wurde gelöscht.') },
   })
 
-  const campaignCreateAllowed = data?.data.some((c) => can(c.can?.update) || can(c.can?.delete) || can(c.can?.create_area) || can(c.can?.create_team) || can(c.can?.create_task)) ?? true
+  const campaignCreateAllowed = canPermission(user?.can, 'campaigns.create')
 
   return <section className="space-y-4">
     <h1 className="text-2xl font-semibold">Kampagnen</h1>
