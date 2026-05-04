@@ -22,7 +22,13 @@ export function AppShell() {
               ))}
             </nav>
             <div className="flex items-center gap-2 text-sm text-slate-600">
-              <span>{user?.email}</span>
+              {user?.id ? (
+                <Link to={`/users/${user.id}`} className="text-slate-600 hover:text-slate-900 hover:underline">
+                  {user.email}
+                </Link>
+              ) : (
+                <span>{user?.email}</span>
+              )}
               <button type="button" onClick={() => void logout()} className="rounded border border-slate-300 px-2 py-1 hover:bg-slate-100">Logout</button>
             </div>
           </div>
