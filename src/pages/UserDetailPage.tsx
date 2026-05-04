@@ -2,14 +2,14 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 import { ApiError } from '../api/client'
-import { acceptTeamInvitation, declineTeamInvitation, deleteUser, getUser, listCurrentUserInvitations, listUserTasks, listUserTeams } from '../api/endpoints'
+import { deleteUser, getUser, listCurrentUserInvitations, listUserTasks, listUserTeams } from '../api/endpoints'
 import { useAuth } from '../auth/AuthContext'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import type { TaskStatus, TeamInvitation, TeamRole, UserTaskSummary } from '../types/models'
 import { can, hasPermission, NO_PERMISSION_MESSAGE } from '../utils/permissions'
 import { PERMISSIONS } from '../utils/permissionKeys'
 
-const roleLabels: Record<TeamRole, string> = { admin: 'Team-Admin', lead: 'Teamleiter', member: 'Mitglied' }
+const roleLabels: Record<TeamRole, string> = { lead: 'Teamleiter', member: 'Mitglied' }
 const taskFilters: Array<{ key: 'all' | TaskStatus; label: string }> = [
   { key: 'all', label: 'alle' },
   { key: 'open', label: 'offen' },
@@ -22,10 +22,9 @@ const taskFilters: Array<{ key: 'all' | TaskStatus; label: string }> = [
 export function UserDetailPage() {
   const { userId } = useParams()
   const id = Number(userId)
-  const { user: currentUser, refreshUser } = useAuth()
+  const { user: currentUser } = useAuth()
   const qc = useQueryClient()
   const navigate = useNavigate()
-  const [success, setSuccess] = useState('')
   const [taskFilter, setTaskFilter] = useState<'all' | TaskStatus>('all')
 
   const userQuery = useQuery({ queryKey: ['user', id], queryFn: () => getUser(id), enabled: Number.isFinite(id), retry: false })
@@ -36,26 +35,6 @@ export function UserDetailPage() {
   const invitationsQuery = useQuery({ queryKey: ['user-invitations', id], queryFn: listCurrentUserInvitations, enabled: canViewInvitations, retry: false })
   const invitations = useMemo(() => (invitationsQuery.data ?? []).filter((inv: TeamInvitation) => inv.status === 'pending'), [invitationsQuery.data])
 
-  const acceptMutation = useMutation({
-    mutationFn: acceptTeamInvitation,
-    onSuccess: () => {
-      setSuccess('Einladung angenommen.')
-      qc.invalidateQueries({ queryKey: ['user-invitations'] })
-      qc.invalidateQueries({ queryKey: ['user', id] })
-      qc.invalidateQueries({ queryKey: ['user', id, 'teams'] })
-      refreshUser().catch(() => undefined)
-    },
-  })
-
-  const declineMutation = useMutation({
-    mutationFn: declineTeamInvitation,
-    onSuccess: () => {
-      setSuccess('Einladung abgelehnt.')
-      qc.invalidateQueries({ queryKey: ['user-invitations'] })
-      qc.invalidateQueries({ queryKey: ['user', id] })
-      refreshUser().catch(() => undefined)
-    },
-  })
 
   const deleteMutation = useMutation({
     mutationFn: () => deleteUser(id),
@@ -86,7 +65,6 @@ export function UserDetailPage() {
 
   return <section className="space-y-4">
     <Link to="/users" className="text-sm text-blue-600">← Zurück zu Benutzer</Link>
-    {success && <p className="rounded border border-emerald-200 bg-emerald-50 p-2 text-sm text-emerald-700">{success}</p>}
 
     <div className="rounded border bg-white p-4 flex items-center justify-between">
       <div>
@@ -112,6 +90,6 @@ export function UserDetailPage() {
 
     <div className="rounded border bg-white p-4 space-y-2"><h2 className="font-medium">Aufgaben</h2><div className="flex gap-2 flex-wrap">{taskFilters.map((f) => <button key={f.key} className={`border px-2 py-1 text-xs ${taskFilter === f.key ? 'bg-slate-900 text-white' : ''}`} onClick={() => setTaskFilter(f.key)}>{f.label}</button>)}</div>{tasksQuery.isLoading && <LoadingState />}{tasksQuery.isError && <p className="text-sm text-slate-600">Aufgaben-Endpunkt derzeit nicht verfügbar.</p>}{!tasksQuery.isLoading && !tasksQuery.isError && tasks.length === 0 && <EmptyState message="Keine Aufgaben gefunden." />}{tasks.length > 0 && <table className="w-full text-sm"><thead><tr className="text-left"><th>Titel</th><th>Status</th><th>Priorität</th><th>Kampagne</th><th>Team</th><th>Fällig</th></tr></thead><tbody>{tasks.map((task) => <tr className="border-t" key={task.id}><td><Link className="text-blue-600" to={`/tasks/${task.id}`}>{task.title}</Link></td><td>{task.status}</td><td>{task.priority}</td><td>{task.campaign_id}</td><td>{task.assigned_team?.name ?? '-'}</td><td>{task.due_at ?? '-'}</td></tr>)}</tbody></table>}</div>
 
-    <div className="rounded border bg-white p-4"><h2 className="font-medium">Offene Einladungen</h2>{!canViewInvitations && <p className="text-sm text-slate-600">Einladungen sind nur im eigenen Profil verfügbar.</p>}{canViewInvitations && invitationsQuery.isError && <p className="text-sm text-slate-600">Einladungen-Endpunkt derzeit nicht verfügbar.</p>}{canViewInvitations && invitations.length === 0 ? <EmptyState message="Keine offenen Einladungen." /> : canViewInvitations && <table className="w-full text-sm"><thead><tr className="text-left"><th>Team</th><th>Rolle</th><th>Eingeladen von</th><th>Läuft ab</th><th>Notizen</th><th>Aktionen</th></tr></thead><tbody>{invitations.map((inv) => <tr key={inv.id} className="border-t"><td>{inv.team?.name ?? '-'}</td><td>{roleLabels[inv.role]}</td><td>{inv.invited_by_user?.name ?? '-'}</td><td>{inv.expires_at ?? '-'}</td><td>{inv.notes ?? '-'}</td><td><button className="border px-2 py-1 text-xs disabled:opacity-50" disabled={!can(inv.can?.accept)} onClick={() => acceptMutation.mutate(inv.id)}>Annehmen</button><button className="ml-2 border px-2 py-1 text-xs disabled:opacity-50" disabled={!can(inv.can?.decline)} onClick={() => declineMutation.mutate(inv.id)}>Ablehnen</button></td></tr>)}</tbody></table>}</div>
+    <div className="rounded border bg-white p-4"><h2 className="font-medium">Offene Einladungen</h2>{!canViewInvitations && <p className="text-sm text-slate-600">Einladungen sind nur im eigenen Profil verfügbar.</p>}{canViewInvitations && invitationsQuery.isError && <p className="text-sm text-slate-600">Einladungen-Endpunkt derzeit nicht verfügbar.</p>}{canViewInvitations && invitations.length === 0 ? <EmptyState message="Keine offenen Einladungen." /> : canViewInvitations && <table className="w-full text-sm"><thead><tr className="text-left"><th>Team</th><th>Rolle</th><th>Eingeladen von</th><th>Läuft ab</th><th>Notizen</th><th>Aktionen</th></tr></thead><tbody>{invitations.map((inv) => <tr key={inv.id} className="border-t"><td>{inv.team?.name ?? '-'}</td><td>{roleLabels[inv.role]}</td><td>{inv.invited_by_user?.name ?? '-'}</td><td>{inv.expires_at ?? '-'}</td><td>{inv.notes ?? '-'}</td><td><span className="text-xs text-slate-600">Antwort nur im campaign-core Backend-Workflow möglich.</span></td></tr>)}</tbody></table>}</div>
   </section>
 }

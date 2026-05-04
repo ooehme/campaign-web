@@ -7,7 +7,7 @@ import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import type { Campaign, Task, Team, TeamMembership, TeamRole } from '../types/models'
 import { can, NO_PERMISSION_MESSAGE } from '../utils/permissions'
 
-const roleLabel: Record<TeamRole, string> = { admin: 'Team-Admin', lead: 'Teamleiter', member: 'Mitglied' }
+const roleLabel: Record<TeamRole, string> = { lead: 'Teamleiter', member: 'Mitglied' }
 
 const normalizeMembers = (team: Team): TeamMembership[] => {
   const members = (team.members as unknown[] | undefined) ?? team.users ?? []

@@ -245,3 +245,20 @@ Die Karten-basierte Flächenerstellung unterstützt im Kampagnenkontext zusätzl
 
 - Der bekannte `campaign-core` Blocker mit veraltetem `composer.lock` (wegen Packagist-Netzwerkproblem) ist **kein Frontend-Problem**.
 - Für produktive Nutzung muss Backend mit installierter Spatie Permission Abhängigkeit deployt sein, damit der dokumentierte Contract (`/api/user`, `/api/feature-permissions`) verfügbar ist.
+
+## API alignment (2026-05)
+
+- Frontend now uses campaign planning routes exactly as provided by campaign-core:
+  - `GET|POST /api/campaigns/{campaign}/areas`
+  - `GET|POST /api/campaigns/{campaign}/teams`
+  - `GET|POST /api/campaigns/{campaign}/tasks`
+- Team membership routes are aligned to:
+  - `POST /api/teams/{team}/users`
+  - `PATCH|DELETE /api/teams/{team}/users/{user}`
+- Invitation routes are aligned to:
+  - `GET|POST /api/teams/{team}/invitations`
+  - `DELETE /api/team-invitations/{invitation}`
+- The UI no longer calls legacy invitation accept/decline endpoints. Pending invitations are shown read-only until backend exposes a supported action endpoint.
+- Team roles in UI are limited to `lead` and `member` (no `team-admin` UI).
+- Global app roles in user edit flows are limited to `app-admin`, `campaign-manager`, `app-user`.
+- Authorization decisions in navigation/actions continue to use backend `can` flags only; role strings are display data only.

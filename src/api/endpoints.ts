@@ -60,8 +60,8 @@ export const detachAreaFromCampaign = (campaignId: number, areaId: number) => ap
 
 export const listUsers = (params?: PaginationParams) => requestPaginated<User>(`/api/users${buildQuery(params)}`)
 export const getUser = (id: number) => requestResource<User>(`/api/users/${id}`)
-export const createUser = (payload: { name: string; email: string; password: string; app_role: 'user' | 'admin' | 'app-user' | 'app-admin' }) => apiRequest<User>('/api/users', { method: 'POST', body: JSON.stringify(payload) })
-export const updateUser = (id: number, payload: { name: string; email: string; app_role: 'user' | 'admin' | 'app-user' | 'app-admin'; password?: string }) => apiRequest<User>(`/api/users/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
+export const createUser = (payload: { name: string; email: string; password: string; app_role: 'app-user' | 'campaign-manager' | 'app-admin' }) => apiRequest<User>('/api/users', { method: 'POST', body: JSON.stringify(payload) })
+export const updateUser = (id: number, payload: { name: string; email: string; app_role: 'app-user' | 'campaign-manager' | 'app-admin'; password?: string }) => apiRequest<User>(`/api/users/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
 export const deleteUser = (id: number) => apiRequest<void>(`/api/users/${id}`, { method: 'DELETE' })
 
 export const listTeams = (params?: PaginationParams) => requestPaginated<Team>(`/api/teams${buildQuery(params)}`)
@@ -105,6 +105,4 @@ export const listUserTasks = (id: number | string, status?: string) => requestRe
 export const listCurrentUserInvitations = () => requestResource<TeamInvitation[]>('/api/user/invitations')
 export const listTeamInvitations = (teamId: number | string) => requestResource<TeamInvitation[]>(`/api/teams/${teamId}/invitations`)
 export const createTeamInvitation = (teamId: number | string, payload: Record<string, unknown>) => apiRequest<TeamInvitation>(`/api/teams/${teamId}/invitations`, { method: 'POST', body: JSON.stringify(payload) })
-export const acceptTeamInvitation = (invitationId: number | string) => apiRequest(`/api/team-invitations/${invitationId}/accept`, { method: 'POST' })
-export const declineTeamInvitation = (invitationId: number | string) => apiRequest(`/api/team-invitations/${invitationId}/decline`, { method: 'POST' })
 export const deleteTeamInvitation = (invitationId: number | string) => apiRequest(`/api/team-invitations/${invitationId}`, { method: 'DELETE' })

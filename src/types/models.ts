@@ -95,7 +95,7 @@ export interface Team {
     name: string
     email: string
     pivot?: {
-      role?: 'member' | 'lead' | 'admin'
+      role?: 'member' | 'lead'
       display_name?: string | null
       notes?: string | null
     }
@@ -185,7 +185,7 @@ export interface TaskEvent {
 }
 
 export type TaskStatus = 'open' | 'assigned' | 'in_progress' | 'done' | 'cancelled'
-export type TeamRole = 'member' | 'lead' | 'admin'
+export type TeamRole = 'member' | 'lead'
 
 
 export type GeoJsonPolygon = {
@@ -268,7 +268,7 @@ export interface RolePermissionUpdatePayload {
 
 export type UserCan = Partial<Record<string, boolean>>
 
-export type AppRole = 'app-admin' | 'app-user' | 'admin' | 'user'
+export type AppRole = 'app-admin' | 'campaign-manager' | 'app-user'
 
 export interface User {
   id: number
