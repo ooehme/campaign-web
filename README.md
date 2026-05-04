@@ -99,6 +99,7 @@ npm run preview
 - Task events remain visible and are refreshed after successful updates.
 - Seed demo accounts are documented in backend-aligned login notes (`admin@example.test` / `admin`).
 - New `/users` page for user CRUD against `/api/users` (list, detail, create, update, delete).
+- Neue Route `/users/new` für Benutzererstellung über `POST /api/users` (sichtbar nur bei `users.create`).
 - User entity fields used in UI: `name`, `email`, `app_role` (legacy string from backend), optional `roles` (z. B. `app-admin`, `app-user`) und `can` als kanonische Permission-Map.
 - Team membership `role` (`member`, `lead`, `admin`) bleibt rein teambezogen und ist getrennt von globalen App-Rollen/Permissions.
 - Team membership assignment now targets existing users: "Benutzer dem Team zuweisen" / "Assign existing user to team".
@@ -223,7 +224,7 @@ Die Karten-basierte Flächenerstellung unterstützt im Kampagnenkontext zusätzl
 
 ## Benutzerdetail, Bearbeitung und Einladungen
 
-- Neue Routen: `/users/:userId` (Profil/Detail) und `/users/:userId/edit` (Bearbeitung).
+- Neue Routen: `/users/new` (Erstellung), `/users/:userId` (Profil/Detail) und `/users/:userId/edit` (Bearbeitung).
 - Benutzerdetail zeigt Profil, Teamzugehörigkeiten, Kampagnenbezug, Aufgaben-Zusammenfassung, Aufgabenliste und Einladungen.
 - Benutzer-Bearbeitung nutzt `PATCH /api/users/{user}` mit optionalem Passwort-Update.
 - Nutzer-relevante Aufgaben werden über `/api/users/{user}/tasks` inkl. Statusfilter geladen.
