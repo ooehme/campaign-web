@@ -110,7 +110,7 @@ npm run preview
 ## Feature-Berechtigungsmatrix (Admin)
 
 - Route: `/admin/feature-permissions`.
-- Zugriff auf die Seite erfordert ausschließlich `user.can["feature_permissions.manage"] === true`.
+- Zugriff auf die Seite erfordert ausschließlich die Permission `feature_permissions.manage` aus `user.can` (nested `user.can.feature_permissions.manage` oder flat `user.can["feature_permissions.manage"]`).
 - UI lädt Matrixdaten über `GET /api/feature-permissions` und speichert über `PATCH /api/feature-permissions`.
 - Unterstützte Matrix-Felder sind ausschließlich der kanonische Backend-Contract:
   - `permissions[]` mit `key`, `label`, optional `group`, `action`, `description`
@@ -123,7 +123,7 @@ npm run preview
 
 ## Navigation visibility permissions
 
-Main navigation visibility is controlled only by canonical backend `user.can` keys from `GET /api/user`:
+Main navigation visibility is controlled only by canonical backend permissions from `GET /api/user` (`can` kann nested nach Modul/Aktion oder flat per Dot-Key sein):
 
 - Dashboard: always visible for authenticated users.
 - Campaigns: `campaigns.view`.
@@ -133,6 +133,7 @@ Main navigation visibility is controlled only by canonical backend `user.can` ke
 - Feature-Rechte: `feature_permissions.manage`.
 
 Notes:
+- Nested shape is preferred when present (e.g. `can.campaigns.view`), with flat dot-key fallback (e.g. `can["campaigns.view"]`).
 - Missing permission keys are treated as `false` (fail closed).
 - `false` stays `false`.
 - No legacy fallback keys are supported.

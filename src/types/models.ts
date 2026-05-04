@@ -266,7 +266,11 @@ export interface RolePermissionUpdatePayload {
   matrix: RolePermissionMatrixRow[]
 }
 
-export type UserCan = Partial<Record<string, boolean>>
+export type UserCanValue = boolean | null | undefined | UserCan
+
+export type UserCan = {
+  [key: string]: UserCanValue
+}
 
 export type AppRole = 'app-admin' | 'campaign-manager' | 'app-user'
 
