@@ -3,6 +3,8 @@ export const PERMISSIONS = {
   CAMPAIGNS_CREATE: 'campaigns.create',
   CAMPAIGNS_UPDATE: 'campaigns.update',
   CAMPAIGNS_DELETE: 'campaigns.delete',
+  CAMPAIGNS_ASSIGN_AREAS: 'campaigns.assign_areas',
+  CAMPAIGNS_ASSIGN_TEAMS: 'campaigns.assign_teams',
   AREAS_VIEW: 'areas.view',
   AREAS_CREATE: 'areas.create',
   AREAS_UPDATE: 'areas.update',

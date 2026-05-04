@@ -52,8 +52,9 @@ export function TeamEditPage() {
   const [inviteValidation, setInviteValidation] = useState<Record<string, string[]>>({})
 
   const teamQuery = useQuery({ queryKey: ['team', id], queryFn: () => getTeam(id), enabled: Number.isFinite(id) })
-  const usersQuery = useQuery({ queryKey: ['users'], queryFn: () => listUsers({ per_page: 100 }), retry: false })
+  const usersQuery = useQuery({ queryKey: ['users'], queryFn: () => listUsers({ per_page: 100 }), retry: false, enabled: can((teamQuery.data as Record<string, unknown> | undefined)?.can && ((teamQuery.data as Record<string, unknown>).can as Record<string, unknown>)?.manage_members === true) })
   const team = teamQuery.data as Record<string, unknown> | undefined
+  const canManage = can((team?.can as Record<string, unknown> | undefined)?.manage_members as boolean | undefined)
   const members = useMemo(() => (team ? normalizeMembers(team) : []), [team])
   const campaigns = (team?.campaigns as Campaign[] | undefined) ?? null
   const invitationsQuery = useQuery({ queryKey: ['team-invitations', id], queryFn: () => listTeamInvitations(id), retry: false })
@@ -144,7 +145,6 @@ export function TeamEditPage() {
   }
 
   const canUpdate = can((team.can as Record<string, unknown> | undefined)?.update as boolean | undefined)
-  const canManage = can((team.can as Record<string, unknown> | undefined)?.manage_members as boolean | undefined)
   const canDelete = can((team.can as Record<string, unknown> | undefined)?.delete as boolean | undefined)
   const canDetach = can((team.can as Record<string, unknown> | undefined)?.detach_from_campaign as boolean | undefined)
 

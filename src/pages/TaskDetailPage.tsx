@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useAuth } from '../auth/AuthContext'
 import { z } from 'zod'
 import {
   createTaskPoint,
@@ -19,7 +20,7 @@ import {
 import { ApiError } from '../api/client'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import { MAP_ATTRIBUTION, MAP_TILE_URL, TASK_STATUSES } from '../utils/constants'
-import { can, NO_PERMISSION_MESSAGE, permissionErrorMessage } from '../utils/permissions'
+import { can, canPermission, NO_PERMISSION_MESSAGE, permissionErrorMessage } from '../utils/permissions'
 import { GeoJSON, MapContainer, Marker, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet'
 import type { Area, TaskPoint } from '../types/models'
 
@@ -91,6 +92,7 @@ export function TaskDetailPage() {
   const id = Number(taskId)
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const { user } = useAuth()
   const [eventsPage, setEventsPage] = useState(1)
   const [pointFormError, setPointFormError] = useState<string | null>(null)
 
@@ -149,7 +151,7 @@ export function TaskDetailPage() {
   const boundaryArea = campaignAreas.find((a) => a.id === (task?.boundary_area?.id ?? task?.boundary_area_id))
   const targetArea = campaignAreas.find((a) => a.id === (task?.target_area?.id ?? task?.area?.id ?? task?.area_id))
   const mapAreas = [boundaryArea, targetArea].filter(Boolean) as Area[]
-  const canManagePoints = can(task?.can?.manage_points ?? false)
+  const canManagePoints = canPermission(user?.can, 'task_points.manage') && can(task?.can?.manage_points ?? false)
 
   const pointOutsideHint = useMemo(() => {
     if (!targetArea?.geojson) return false
