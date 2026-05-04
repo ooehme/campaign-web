@@ -11,6 +11,7 @@ import { TeamsPage } from './pages/TeamsPage'
 import { UsersPage } from './pages/UsersPage'
 import { UserDetailPage } from './pages/UserDetailPage'
 import { UserEditPage } from './pages/UserEditPage'
+import { UserCreatePage } from './pages/UserCreatePage'
 import { TeamDetailPage } from './pages/TeamDetailPage'
 import { TeamEditPage } from './pages/TeamEditPage'
 import { LoginPage } from './pages/LoginPage'
@@ -37,6 +38,7 @@ export default function App() {
           <Route path="/teams/:teamId" element={<TeamDetailPage />} />
           <Route path="/teams/:teamId/edit" element={<TeamEditPage />} />
           <Route path="/users" element={<UsersPage />} />
+          <Route path="/users/new" element={<UserCreatePage />} />
           <Route path="/users/:userId" element={<UserDetailPage />} />
           <Route path="/users/:userId/edit" element={<UserEditPage />} />
           <Route path="/admin/feature-permissions" element={<FeaturePermissionsPage />} />

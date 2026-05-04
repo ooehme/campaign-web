@@ -60,7 +60,7 @@ export const detachAreaFromCampaign = (campaignId: number, areaId: number) => ap
 
 export const listUsers = (params?: PaginationParams) => requestPaginated<User>(`/api/users${buildQuery(params)}`)
 export const getUser = (id: number) => requestResource<User>(`/api/users/${id}`)
-export const createUser = (payload: { name: string; email: string; password: string; app_role: 'app-user' | 'campaign-manager' | 'app-admin' }) => apiRequest<User>('/api/users', { method: 'POST', body: JSON.stringify(payload) })
+export const createUser = (payload: { name: string; email: string; password: string; app_role?: 'app-user' | 'campaign-manager' | 'app-admin' }) => apiRequest<User>('/api/users', { method: 'POST', body: JSON.stringify(payload) })
 export const updateUser = (id: number, payload: { name: string; email: string; app_role: 'app-user' | 'campaign-manager' | 'app-admin'; password?: string }) => apiRequest<User>(`/api/users/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
 export const deleteUser = (id: number) => apiRequest<void>(`/api/users/${id}`, { method: 'DELETE' })
 
