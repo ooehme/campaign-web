@@ -1,4 +1,4 @@
-import type { Area, GeoJsonFeature, GeoJsonFeatureCollection, GeoJsonShape } from '../types/models'
+import type { Area, GeoJsonFeatureCollection, GeoJsonInput, GeoJsonShape } from '../types/models'
 
 export type CampaignAreaUsage = 'boundary' | 'target' | 'unknown'
 
@@ -11,27 +11,32 @@ export type SplitCampaignAreas = {
 const isFiniteCoordinatePair = (pair: unknown): pair is [number, number] =>
   Array.isArray(pair) && pair.length >= 2 && Number.isFinite(pair[0]) && Number.isFinite(pair[1])
 
-export const getGeometryFromAreaGeoJson = (geojson?: GeoJsonShape | GeoJsonFeature | null): GeoJsonShape | null => {
+export const getGeometryFromAreaGeoJson = (geojson?: GeoJsonInput | null): GeoJsonShape | GeoJsonFeatureCollection | null => {
   if (!geojson) return null
   if (geojson.type === 'Feature') {
     if (!geojson.geometry || typeof geojson.geometry === 'string') return null
     return geojson.geometry
   }
-  if (geojson.type === 'Polygon' || geojson.type === 'MultiPolygon') return geojson
+  if (geojson.type === 'Polygon' || geojson.type === 'MultiPolygon' || geojson.type === 'FeatureCollection') return geojson
   return null
 }
 
-export const isValidPolygonOrMultiPolygon = (geojson?: GeoJsonShape | GeoJsonFeature | null): boolean => {
+export const isValidPolygonOrMultiPolygon = (geojson?: GeoJsonInput | null): boolean => {
   const geometry = getGeometryFromAreaGeoJson(geojson)
   if (!geometry) return false
+  if (geometry.type === 'FeatureCollection') return geometry.features.every((feature) => isValidPolygonOrMultiPolygon(feature))
   if (geometry.type !== 'Polygon' && geometry.type !== 'MultiPolygon') return false
   const coordinates = geometry.type === 'Polygon' ? geometry.coordinates.flat() : geometry.coordinates.flat(2)
   return coordinates.some((pair) => isFiniteCoordinatePair(pair))
 }
 
-export const getAreaGeometryBoundsSafely = (geojson?: GeoJsonShape | GeoJsonFeature | null): [number, number][] | null => {
+export const getAreaGeometryBoundsSafely = (geojson?: GeoJsonInput | null): [number, number][] | null => {
   const geometry = getGeometryFromAreaGeoJson(geojson)
   if (!geometry || !isValidPolygonOrMultiPolygon(geometry)) return null
+  if (geometry.type === 'FeatureCollection') {
+    const points = geometry.features.flatMap((feature) => getAreaGeometryBoundsSafely(feature) ?? [])
+    return points.length > 2 ? points : null
+  }
 
   const coordinates = geometry.type === 'Polygon' ? geometry.coordinates.flat() : geometry.coordinates.flat(2)
   const points: [number, number][] = []

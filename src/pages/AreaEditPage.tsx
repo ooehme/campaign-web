@@ -6,9 +6,10 @@ import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 import { ApiError } from '../api/client'
 import { deleteArea, getArea, updateArea } from '../api/endpoints'
 import { ErrorState, LoadingState } from '../components/UiState'
-import type { Area, GeoJsonFeature, GeoJsonPolygon, GeoJsonShape } from '../types/models'
+import type { Area, GeoJsonGeometry, GeoJsonInput, GeoJsonPolygon } from '../types/models'
 import { MAP_ATTRIBUTION, MAP_TILE_URL } from '../utils/constants'
 import { can, NO_PERMISSION_MESSAGE } from '../utils/permissions'
+import { getSuggestedAreaName, normalizeGeoJsonInput } from '../utils/geojson'
 
 const DEFAULT_CENTER: [number, number] = [51.1657, 10.4515]
 const FIT_BOUNDS_PADDING: [number, number] = [32, 32]
@@ -36,19 +37,6 @@ const pointsToPolygon = (points: LatLngTuple[]): GeoJsonPolygon | null => {
 
 const getEdgeMidpoint = (first: LatLngTuple, second: LatLngTuple): LatLngTuple => [(first[0] + second[0]) / 2, (first[1] + second[1]) / 2]
 
-const parseGeojsonText = (value: string): { parsed?: GeoJsonFeature; error?: string } => {
-  try {
-    const parsed = JSON.parse(value) as GeoJsonShape | GeoJsonFeature
-    const geometry = parsed?.type === 'Feature' ? parsed.geometry : parsed
-    if (!geometry || typeof geometry === 'string') return { error: 'Ungültige Geometrie: GeoJSON-Objekt erwartet, kein String.' }
-    if (geometry.type !== 'Polygon' && geometry.type !== 'MultiPolygon') return { error: 'Ungültige Geometrie: Polygon oder MultiPolygon erwartet.' }
-    if (!Array.isArray(geometry.coordinates) || geometry.coordinates.length === 0) return { error: 'Ungültige Geometrie: Koordinaten fehlen.' }
-    if (geometry.type === 'Polygon' && (!Array.isArray(geometry.coordinates[0]) || geometry.coordinates[0].length < 4)) return { error: 'Bitte eine gültige Fläche zeichnen.' }
-    return { parsed: parsed.type === 'Feature' ? parsed : { type: 'Feature', geometry, properties: {} } }
-  } catch {
-    return { error: 'GeoJSON ist kein valides JSON.' }
-  }
-}
 
 function EditMapClicks({ enabled, onAdd }: { enabled: boolean; onAdd: (p: LatLngTuple) => void }) {
   useMapEvents({
@@ -59,7 +47,7 @@ function EditMapClicks({ enabled, onAdd }: { enabled: boolean; onAdd: (p: LatLng
   return null
 }
 
-function FitBoundsToGeoJson({ geojson, fitTrigger, autoFitEnabled, onAutoFitDone }: { geojson?: GeoJsonShape; fitTrigger: number; autoFitEnabled: boolean; onAutoFitDone: () => void }) {
+function FitBoundsToGeoJson({ geojson, fitTrigger, autoFitEnabled, onAutoFitDone }: { geojson?: GeoJsonGeometry | GeoJsonInput; fitTrigger: number; autoFitEnabled: boolean; onAutoFitDone: () => void }) {
   const map = useMap()
   const bounds = useMemo(() => {
     if (!geojson) return null
@@ -110,11 +98,12 @@ export function AreaEditPage() {
   const [drawMode, setDrawMode] = useState(false)
   const [singlePolygonMessage, setSinglePolygonMessage] = useState('')
 
-  const parsedResult = useMemo(() => parseGeojsonText(geojsonText), [geojsonText])
+  const parsedResult = useMemo(() => normalizeGeoJsonInput(geojsonText), [geojsonText])
   const area = areaQuery.data as Area | undefined
   const canUpdate = can(area?.can?.update)
   const canDelete = can(area?.can?.delete)
-  const isMultiPolygon = parsedResult.parsed?.geometry?.type === 'MultiPolygon'
+  const previewGeometry = parsedResult.preview
+  const isMultiPolygon = previewGeometry?.type === 'MultiPolygon'
   const hasUnsavedChanges = name.trim() !== originalName.trim() || geojsonText !== originalGeometryText
 
   useEffect(() => {
@@ -141,8 +130,8 @@ export function AreaEditPage() {
   }, [areaQuery.data])
 
   useEffect(() => {
-    if (parsedResult.parsed?.geometry?.type !== 'Polygon') return
-    setPoints(polygonToPoints(parsedResult.parsed.geometry))
+    if (!parsedResult.preview || parsedResult.preview.type !== 'Polygon') return
+    setPoints(polygonToPoints(parsedResult.preview))
   }, [parsedResult.parsed])
 
   useEffect(() => {
@@ -156,7 +145,7 @@ export function AreaEditPage() {
   }, [hasUnsavedChanges])
 
   const edit = useMutation({
-    mutationFn: (payload: { name: string; geojson: GeoJsonFeature }) => updateArea(id, payload),
+    mutationFn: (payload: { name: string; geojson: GeoJsonInput }) => updateArea(id, payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['area', id] })
       qc.invalidateQueries({ queryKey: ['areas-pool'] })
@@ -188,7 +177,7 @@ export function AreaEditPage() {
     const errors: Record<string, string> = {}
     if (!name.trim()) errors.name = 'Name ist erforderlich.'
     if (!parsedResult.parsed) errors.geojson = parsedResult.error ?? 'Die Geometrie ist ungültig.'
-    if (parsedResult.parsed?.geometry?.type === 'MultiPolygon') errors.geojson = 'Die Fläche muss ein Polygon sein.'
+    
 
     setValidation(errors)
     if (Object.keys(errors).length > 0 || !parsedResult.parsed) return
@@ -241,9 +230,9 @@ export function AreaEditPage() {
       {editActive && <p className="text-xs text-slate-600">Punkte des Polygons können jetzt verschoben, hinzugefügt oder entfernt werden.</p>}
       {isMultiPolygon && <p className="rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-700">MultiPolygon-Bearbeitung ist noch nicht unterstützt.</p>}
 
-      {parsedResult.parsed?.geometry && <div className="h-72 overflow-hidden rounded border"><MapContainer center={DEFAULT_CENTER} zoom={6} className="h-full w-full">
+      {parsedResult.preview && <div className="h-72 overflow-hidden rounded border"><MapContainer center={DEFAULT_CENTER} zoom={6} className="h-full w-full">
         <TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} />
-        {parsedResult.parsed.geometry.type === 'MultiPolygon' ? <GeoJSON data={parsedResult.parsed.geometry as GeoJSON.GeoJsonObject} /> : <>
+        {parsedResult.preview.type === 'FeatureCollection' ? <GeoJSON data={parsedResult.preview as GeoJSON.GeoJsonObject} /> : parsedResult.preview.type === 'MultiPolygon' ? <GeoJSON data={parsedResult.preview as GeoJSON.GeoJsonObject} /> : <>
           <EditMapClicks enabled={canUpdate && drawMode} onAdd={(point) => {
             if (points.length >= 3) { setSinglePolygonMessage("Es kann nur ein Polygon pro Fläche bearbeitet werden. Bitte vorhandenes Polygon zuerst löschen."); return }
             const next = [...points, point]
@@ -304,7 +293,7 @@ export function AreaEditPage() {
             />
           })}
         </>}
-        <FitBoundsToGeoJson geojson={parsedResult.parsed.geometry} fitTrigger={fitTrigger} autoFitEnabled={!hasAutoFitted} onAutoFitDone={() => setHasAutoFitted(true)} />
+        <FitBoundsToGeoJson geojson={parsedResult.preview} fitTrigger={fitTrigger} autoFitEnabled={!hasAutoFitted} onAutoFitDone={() => setHasAutoFitted(true)} />
       </MapContainer></div>}
 
       <div className="flex flex-wrap gap-2">
@@ -317,7 +306,7 @@ export function AreaEditPage() {
 
       <details>
         <summary className="cursor-pointer text-sm font-medium">GeoJSON manuell bearbeiten</summary>
-        <textarea rows={12} value={geojsonText} onChange={(event) => setGeojsonText(event.target.value)} disabled={!canUpdate} />
+        <textarea rows={12} value={geojsonText} onChange={(event) => { const next = event.target.value; setGeojsonText(next); if (!name.trim()) { const normalized = normalizeGeoJsonInput(next); if (normalized.parsed) { const suggestion = getSuggestedAreaName(normalized.parsed); if (suggestion) setName(suggestion) } } }} disabled={!canUpdate} />
       </details>
       {singlePolygonMessage && <p className="text-sm text-amber-700">{singlePolygonMessage}</p>}
       {validation.geojson && <p className="text-sm text-red-700">{validation.geojson}</p>}

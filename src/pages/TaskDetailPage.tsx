@@ -74,6 +74,14 @@ function FitMap({ areas, points }: { areas: Area[]; points: TaskPoint[] }) {
     for (const area of areas) {
       const geo = getGeometryFromAreaGeoJson(area.geojson)
       if (!geo) continue
+      if (geo.type === 'FeatureCollection') {
+        for (const feature of geo.features) {
+          if (!feature.geometry) continue
+          const coordinates = feature.geometry.type === 'Polygon' ? feature.geometry.coordinates.flat() : feature.geometry.coordinates.flat(2)
+          for (const [lng, lat] of coordinates) positions.push([lat, lng])
+        }
+        continue
+      }
       const coordinates = geo.type === 'Polygon' ? geo.coordinates.flat() : geo.coordinates.flat(2)
       for (const [lng, lat] of coordinates) positions.push([lat, lng])
     }
