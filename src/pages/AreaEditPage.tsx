@@ -86,7 +86,13 @@ export function AreaEditPage() {
     return preview as GeoJsonGeometry
   }, [parsedResult.preview])
   const normalizedGeometryType = editableGeometry?.type
-  const shouldRenderEditHandles = editActive && Boolean(editableGeometry) && (normalizedGeometryType === 'Polygon' || normalizedGeometryType === 'MultiPolygon')
+  const hasRenderableAreaGeometry = normalizedGeometryType === 'Polygon' || normalizedGeometryType === 'MultiPolygon'
+  const shouldRenderEditHandles = editActive && hasRenderableAreaGeometry
+  const areaGeometryFeature = useMemo<GeoJSON.Feature | null>(() => {
+    if (!editableGeometry || !hasRenderableAreaGeometry) return null
+    return { type: 'Feature', geometry: editableGeometry as GeoJSON.Geometry, properties: {} }
+  }, [editableGeometry, hasRenderableAreaGeometry])
+  const areaGeometryLayerKey = useMemo(() => `${normalizedGeometryType ?? 'none'}-${geojsonText}`, [geojsonText, normalizedGeometryType])
   const vertices = useMemo(() => (shouldRenderEditHandles && editableGeometry ? getEditableVertices(editableGeometry) : []), [editableGeometry, shouldRenderEditHandles])
   const midpoints = useMemo(() => (shouldRenderEditHandles && editableGeometry ? getEditableMidpoints(editableGeometry) : []), [editableGeometry, shouldRenderEditHandles])
   const editDebug = useMemo(
@@ -225,7 +231,16 @@ export function AreaEditPage() {
       </p>
       {parsedResult.preview && <div className="h-72 overflow-hidden rounded border"><MapContainer center={DEFAULT_CENTER} zoom={6} className="h-full w-full">
         <TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} />
-        <GeoJSON data={parsedResult.preview as GeoJSON.GeoJsonObject} />
+        {areaGeometryFeature && <GeoJSON
+          key={areaGeometryLayerKey}
+          data={areaGeometryFeature}
+          style={() => ({
+            color: editActive ? '#0f766e' : '#2563eb',
+            weight: editActive ? 3 : 2,
+            fillColor: editActive ? '#14b8a6' : '#60a5fa',
+            fillOpacity: 0.2,
+          })}
+        />}
         <EditMapClicks enabled={false} onAdd={() => {}} />
         {shouldRenderEditHandles && vertices.map((vertex) => <CircleMarker
             key={`${vertex.geometryType}-${vertex.polygonIndex}-${vertex.ringIndex}-${vertex.vertexIndex}-${vertex.coordinate[0]}-${vertex.coordinate[1]}`}
