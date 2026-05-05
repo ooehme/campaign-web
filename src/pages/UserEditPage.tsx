@@ -6,6 +6,7 @@ import { deleteUser, getUser, updateUser } from '../api/endpoints'
 import { useAuth } from '../auth/AuthContext'
 import { ErrorState, LoadingState } from '../components/UiState'
 import type { AppRole } from '../types/models'
+import { isAppRole, APP_ROLE_OPTIONS } from '../utils/appRoles'
 import { can, NO_PERMISSION_MESSAGE } from '../utils/permissions'
 
 const isValidEmail = (value: string) => /.+@.+\..+/.test(value)
@@ -20,7 +21,7 @@ export function UserEditPage() {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [appRole, setAppRole] = useState<AppRole>('app-user')
+  const [appRole, setAppRole] = useState<AppRole>('user')
   const [errorMessage, setErrorMessage] = useState('')
   const [success, setSuccess] = useState('')
 
@@ -30,7 +31,7 @@ export function UserEditPage() {
     if (!userQuery.data) return
     setName(userQuery.data.name)
     setEmail(userQuery.data.email)
-    setAppRole(userQuery.data.app_role)
+    setAppRole(isAppRole(userQuery.data.app_role) ? userQuery.data.app_role : 'user')
   }, [userQuery.data])
 
   const saveMutation = useMutation({
@@ -88,8 +89,8 @@ export function UserEditPage() {
       <label>E-Mail *</label>
       <input type='email' value={email} onChange={(e) => setEmail(e.target.value)} disabled={!canUpdate} />
       {email.trim().length > 0 && !isValidEmail(email.trim()) && <p className='text-sm text-red-700'>Bitte gültige E-Mail eingeben.</p>}
-      <label>Rolle</label>
-      <select value={appRole} onChange={(e) => setAppRole(e.target.value as AppRole)} disabled={!canUpdate}><option value='app-user'>app-user</option><option value='campaign-manager'>campaign-manager</option><option value='app-admin'>app-admin</option></select>
+      <label>App-Rolle</label>
+      <select value={appRole} onChange={(e) => setAppRole(e.target.value as AppRole)} disabled={!canUpdate}>{APP_ROLE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
       <label>Passwort (optional)</label>
       <input type='password' value={password} onChange={(e) => setPassword(e.target.value)} disabled={!canUpdate} />
       {!passwordValid && <p className='text-sm text-red-700'>Passwort muss mindestens 8 Zeichen lang sein.</p>}
