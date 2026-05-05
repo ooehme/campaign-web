@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import type { PathOptions } from 'leaflet'
 import type { Area, GeoJsonFeatureCollection } from '../types/models'
 import { MAP_ATTRIBUTION, MAP_TILE_URL } from '../utils/constants'
-import { getAreaGeometryBoundsSafely, getAreaUsageLabel, isValidPolygonOrMultiPolygon, splitCampaignAreasByUsage } from '../utils/campaignAreaMap'
+import { getAreaGeometryBoundsSafely, getAreaUsageLabel, isValidPolygonOrMultiPolygon, sanitizeFeatureCollection, splitCampaignAreasByUsage } from '../utils/campaignAreaMap'
 
 const DEFAULT_CENTER: [number, number] = [51.1657, 10.4515]
 
@@ -53,6 +53,8 @@ export function CampaignAreaMap({ areas, mapGeoJson, isLoading, errorMessage }: 
   const invalidGeometryCount = useMemo(() => mapFeatures.filter((feature) => !feature.validGeometry).length, [mapFeatures])
   const hasAnyGeometry = allBounds.length > 0
 
+  const sanitizedMapGeoJson = useMemo(() => (mapGeoJson?.type === 'FeatureCollection' ? sanitizeFeatureCollection(mapGeoJson) : null), [mapGeoJson])
+
   const groupedTargets = useMemo(() => {
     const groups = new Map<number, Area[]>()
     const unassigned: Area[] = []
@@ -77,8 +79,8 @@ export function CampaignAreaMap({ areas, mapGeoJson, isLoading, errorMessage }: 
       <MapContainer center={DEFAULT_CENTER} zoom={6} className="h-full w-full">
         <TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} />
         {hasAnyGeometry && <FitCampaignAreaBounds bounds={allBounds} />}
-        {mapGeoJson?.type === 'FeatureCollection' && mapGeoJson.features.length > 0
-          ? <GeoJSON data={mapGeoJson as GeoJSON.GeoJsonObject} style={(layerFeature) => {
+        {sanitizedMapGeoJson && sanitizedMapGeoJson.features.length > 0
+          ? <GeoJSON data={sanitizedMapGeoJson as GeoJSON.GeoJsonObject} style={(layerFeature) => {
             const props = (layerFeature?.properties ?? {}) as Record<string, unknown>
             const usage = props.usage === 'boundary' || props.usage === 'target' ? props.usage : 'unknown'
             return areaMapStyles[usage]
