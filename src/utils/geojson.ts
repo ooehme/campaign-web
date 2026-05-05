@@ -2,17 +2,30 @@ import type { GeoJsonFeature, GeoJsonFeatureCollection, GeoJsonGeometry, GeoJson
 
 const POLYGON_ERROR = 'Keine darstellbare GeoJSON-Geometrie vorhanden (Polygon/MultiPolygon erwartet).'
 
+export type ImportedAreaItem = {
+  id: string
+  geometry: GeoJsonGeometry
+  feature: GeoJsonFeature
+  properties: Record<string, unknown>
+  renderWarning?: string
+}
+
+export type GeoJsonImportResult = {
+  items: ImportedAreaItem[]
+  skipped: number
+  parseError?: string
+}
+
 const isGeoJsonGeometry = (value: unknown): value is GeoJsonGeometry => {
   if (!value || typeof value !== 'object') return false
   const type = (value as { type?: unknown }).type
-  return type === 'Polygon' || type === 'MultiPolygon'
+  return (type === 'Polygon' || type === 'MultiPolygon') && Array.isArray((value as { coordinates?: unknown }).coordinates)
 }
-
 
 const parseGeometryString = (value: string): GeoJsonGeometry | null => {
   try {
     const parsed = JSON.parse(value) as unknown
-    return isGeoJsonGeometry(parsed) && Array.isArray((parsed as { coordinates?: unknown }).coordinates) ? parsed : null
+    return isGeoJsonGeometry(parsed) ? parsed : null
   } catch {
     return null
   }
@@ -22,50 +35,56 @@ const getFeatureGeometry = (feature: GeoJsonFeature): GeoJsonGeometry | null => 
   const rawGeometry = feature.geometry as unknown
   if (typeof rawGeometry === 'string') return parseGeometryString(rawGeometry)
   if (!isGeoJsonGeometry(rawGeometry)) return null
-  return Array.isArray((rawGeometry as { coordinates?: unknown }).coordinates) ? rawGeometry : null
+  return rawGeometry
 }
 
-const isValidFeatureCollection = (value: unknown): value is GeoJsonFeatureCollection => {
-  if (!value || typeof value !== 'object') return false
-  if ((value as { type?: unknown }).type !== 'FeatureCollection') return false
-  return Array.isArray((value as { features?: unknown }).features)
-}
+const isValidFeatureCollection = (value: unknown): value is GeoJsonFeatureCollection =>
+  Boolean(value && typeof value === 'object' && (value as { type?: unknown }).type === 'FeatureCollection' && Array.isArray((value as { features?: unknown }).features))
 
-const isValidFeature = (value: unknown): value is GeoJsonFeature => {
-  if (!value || typeof value !== 'object') return false
-  return (value as { type?: unknown }).type === 'Feature'
-}
+const isValidFeature = (value: unknown): value is GeoJsonFeature =>
+  Boolean(value && typeof value === 'object' && (value as { type?: unknown }).type === 'Feature')
 
-export const getSuggestedAreaName = (input: GeoJsonInput): string => {
-  const properties = input.type === 'FeatureCollection' ? input.features[0]?.properties : input.type === 'Feature' ? input.properties : null
-  if (!properties || typeof properties !== 'object') return ''
-  const gen = (properties as Record<string, unknown>).GEN
-  const name = (properties as Record<string, unknown>).name
-  if (typeof gen === 'string' && gen.trim()) return gen.trim()
-  if (typeof name === 'string' && name.trim()) return name.trim()
-  return ''
-}
-
-export const normalizeGeoJsonInput = (value: string): { parsed?: GeoJsonInput; preview?: GeoJsonShape | GeoJsonFeature | GeoJsonFeatureCollection; error?: string } => {
+export const parseGeoJsonImport = (raw: string): GeoJsonImportResult => {
   try {
-    const parsed = JSON.parse(value) as unknown
-    if (isGeoJsonGeometry(parsed)) return { parsed, preview: parsed }
+    const parsed = JSON.parse(raw) as unknown
+
+    if (isGeoJsonGeometry(parsed)) {
+      return { items: [{ id: '1', geometry: parsed, feature: { type: 'Feature', geometry: parsed, properties: {} }, properties: {} }], skipped: 0 }
+    }
 
     if (isValidFeature(parsed)) {
       const geometry = getFeatureGeometry(parsed)
-      if (!geometry) return { error: POLYGON_ERROR }
-      return { parsed, preview: geometry }
+      if (!geometry) return { items: [], skipped: 1, parseError: POLYGON_ERROR }
+      return { items: [{ id: '1', geometry, feature: { ...parsed, geometry }, properties: (parsed.properties && typeof parsed.properties === 'object' ? parsed.properties : {}) as Record<string, unknown> }], skipped: 0 }
     }
 
     if (isValidFeatureCollection(parsed)) {
-      if (parsed.features.length === 0) return { error: 'Ungültige Geometrie: FeatureCollection enthält keine Features.' }
-      const hasInvalid = parsed.features.some((feature) => !isValidFeature(feature) || !getFeatureGeometry(feature))
-      if (hasInvalid) return { error: POLYGON_ERROR }
-      return { parsed, preview: parsed }
+      const items = parsed.features.flatMap((feature, index) => {
+        if (!isValidFeature(feature)) return []
+        const geometry = getFeatureGeometry(feature)
+        if (!geometry) return []
+        return [{ id: String(index + 1), geometry, feature: { ...feature, geometry }, properties: (feature.properties && typeof feature.properties === 'object' ? feature.properties : {}) as Record<string, unknown> }]
+      })
+      return { items, skipped: parsed.features.length - items.length, parseError: items.length === 0 ? POLYGON_ERROR : undefined }
     }
 
-    return { error: POLYGON_ERROR }
+    return { items: [], skipped: 0, parseError: POLYGON_ERROR }
+  } catch {
+    return { items: [], skipped: 0, parseError: 'GeoJSON ist kein valides JSON.' }
+  }
+}
+
+export const normalizeGeoJsonInput = (value: string): { parsed?: GeoJsonInput; preview?: GeoJsonShape | GeoJsonFeature | GeoJsonFeatureCollection; error?: string } => {
+  const result = parseGeoJsonImport(value)
+  if (result.parseError || result.items.length === 0) return { error: result.parseError ?? POLYGON_ERROR }
+  try {
+    const parsed = JSON.parse(value) as GeoJsonInput
+    if (parsed.type === 'FeatureCollection') return { parsed, preview: { type: 'FeatureCollection', features: result.items.map((item) => item.feature) } }
+    if (parsed.type === 'Feature') return { parsed, preview: result.items[0].geometry }
+    return { parsed, preview: result.items[0].geometry }
   } catch {
     return { error: 'GeoJSON ist kein valides JSON.' }
   }
 }
+
+export const getSuggestedAreaName = (_input: unknown): string => ''

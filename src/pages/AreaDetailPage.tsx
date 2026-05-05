@@ -7,6 +7,7 @@ import { ApiError } from '../api/client'
 import { deleteArea, getArea } from '../api/endpoints'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import type { Area, AreaAssignmentRef, GeoJsonFeature, GeoJsonFeatureCollection, GeoJsonShape } from '../types/models'
+import { parseGeoJsonImport } from '../utils/geojson'
 import { MAP_ATTRIBUTION, MAP_TILE_URL } from '../utils/constants'
 import { can, NO_PERMISSION_MESSAGE } from '../utils/permissions'
 
@@ -17,10 +18,21 @@ const formatDate = (value?: string | null) => (value ? new Date(value).toLocaleS
 const isFiniteCoordinatePair = (pair: unknown): pair is [number, number] =>
   Array.isArray(pair) && pair.length >= 2 && Number.isFinite(pair[0]) && Number.isFinite(pair[1])
 
-const getAreaGeometry = (geojson?: GeoJsonShape | GeoJsonFeature | GeoJsonFeatureCollection | null): GeoJsonShape | GeoJsonFeatureCollection | null => {
+const getAreaGeometry = (geojson?: unknown): GeoJsonShape | GeoJsonFeatureCollection | null => {
   if (!geojson) return null
-  if (geojson.type === 'Feature') return geojson.geometry ?? null
-  return geojson
+  if (typeof geojson === 'string') {
+    const parsed = parseGeoJsonImport(geojson)
+    return parsed.items[0]?.geometry ?? null
+  }
+  if (typeof geojson === 'object' && (geojson as { type?: unknown }).type === 'Feature') {
+    const feature = geojson as GeoJsonFeature
+    if (typeof feature.geometry === 'string') {
+      const parsed = parseGeoJsonImport(feature.geometry)
+      return parsed.items[0]?.geometry ?? null
+    }
+    return feature.geometry ?? null
+  }
+  return geojson as GeoJsonShape | GeoJsonFeatureCollection
 }
 
 const isPolygonGeometry = (geojson?: GeoJsonShape | GeoJsonFeatureCollection | null): geojson is Extract<GeoJsonShape, { type: 'Polygon' }> =>
