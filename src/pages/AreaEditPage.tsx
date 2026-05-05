@@ -10,6 +10,7 @@ import type { Area, GeoJsonGeometry, GeoJsonInput, GeoJsonPolygon } from '../typ
 import { MAP_ATTRIBUTION, MAP_TILE_URL } from '../utils/constants'
 import { can, NO_PERMISSION_MESSAGE } from '../utils/permissions'
 import { getSuggestedAreaName, normalizeGeoJsonInput } from '../utils/geojson'
+import { extractGeometry } from '../utils/areaGeometry'
 
 const DEFAULT_CENTER: [number, number] = [51.1657, 10.4515]
 const FIT_BOUNDS_PADDING: [number, number] = [32, 32]
@@ -25,8 +26,9 @@ const middleMarkerIcon = L.divIcon({
 type LatLngTuple = [number, number]
 
 const polygonToPoints = (shape: GeoJsonPolygon): LatLngTuple[] => {
-  if (!Array.isArray(shape.coordinates) || !Array.isArray(shape.coordinates[0])) return []
-  return shape.coordinates[0].slice(0, -1).filter((pair) => Array.isArray(pair) && pair.length >= 2 && Number.isFinite(pair[0]) && Number.isFinite(pair[1])).map(([lng, lat]) => [lat, lng])
+  const firstRing = Array.isArray(shape.coordinates) ? shape.coordinates[0] : undefined
+  if (!Array.isArray(firstRing)) return []
+  return firstRing.slice(0, -1).filter((pair) => Array.isArray(pair) && pair.length >= 2 && Number.isFinite(pair[0]) && Number.isFinite(pair[1])).map(([lng, lat]) => [lat, lng])
 }
 
 const pointsToPolygon = (points: LatLngTuple[]): GeoJsonPolygon | null => {
@@ -120,12 +122,8 @@ export function AreaEditPage() {
     setOriginalName(areaQuery.data.name ?? '')
     setGeojsonText(loadedGeometryText)
     setOriginalGeometryText(loadedGeometryText)
-    const loadedShape = loadedGeometry.geometry as { type?: unknown; coordinates?: unknown } | undefined
-    setPoints(
-      loadedShape?.type === 'Polygon' && Array.isArray(loadedShape.coordinates) && Array.isArray(loadedShape.coordinates[0]) && loadedShape.coordinates[0].length > 0
-        ? polygonToPoints(loadedShape as GeoJsonPolygon)
-        : [],
-    )
+    const loadedShape = extractGeometry(loadedGeometry)
+    setPoints(loadedShape?.type === 'Polygon' ? polygonToPoints(loadedShape as GeoJsonPolygon) : [])
     setValidation({})
     setSuccess('')
     setHasAutoFitted(false)
@@ -237,8 +235,7 @@ export function AreaEditPage() {
 
       {parsedResult.preview && <div className="h-72 overflow-hidden rounded border"><MapContainer center={DEFAULT_CENTER} zoom={6} className="h-full w-full">
         <TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} />
-        {parsedResult.preview.type === 'FeatureCollection' ? <GeoJSON data={parsedResult.preview as GeoJSON.GeoJsonObject} /> : parsedResult.preview.type === 'MultiPolygon' ? <GeoJSON data={parsedResult.preview as GeoJSON.GeoJsonObject} /> : <>
-          <EditMapClicks enabled={canUpdate && drawMode} onAdd={(point) => {
+        {parsedResult.preview.type === 'FeatureCollection' || parsedResult.preview.type === 'Feature' || parsedResult.preview.type === 'MultiPolygon' ? <GeoJSON data={parsedResult.preview as GeoJSON.GeoJsonObject} /> : <>          <EditMapClicks enabled={canUpdate && drawMode} onAdd={(point) => {
             if (points.length >= 3) { setSinglePolygonMessage("Es kann nur ein Polygon pro Fläche bearbeitet werden. Bitte vorhandenes Polygon zuerst löschen."); return }
             const next = [...points, point]
             setPoints(next)
