@@ -6,7 +6,7 @@ import type { LatLngBoundsExpression } from 'leaflet'
 import { ApiError } from '../api/client'
 import { deleteArea, getArea } from '../api/endpoints'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
-import type { Area, AreaAssignmentRef, GeoJsonShape } from '../types/models'
+import type { Area, AreaAssignmentRef, GeoJsonFeature, GeoJsonShape } from '../types/models'
 import { MAP_ATTRIBUTION, MAP_TILE_URL } from '../utils/constants'
 import { can, NO_PERMISSION_MESSAGE } from '../utils/permissions'
 
@@ -16,6 +16,15 @@ const formatDate = (value?: string | null) => (value ? new Date(value).toLocaleS
 
 const isFiniteCoordinatePair = (pair: unknown): pair is [number, number] =>
   Array.isArray(pair) && pair.length >= 2 && Number.isFinite(pair[0]) && Number.isFinite(pair[1])
+
+const getAreaGeometry = (geojson?: GeoJsonShape | GeoJsonFeature | null): GeoJsonShape | null => {
+  if (!geojson) return null
+  if (geojson.type === 'Feature') {
+    if (!geojson.geometry || typeof geojson.geometry === 'string') return null
+    return geojson.geometry
+  }
+  return geojson
+}
 
 const isPolygonGeometry = (geojson?: GeoJsonShape | null): geojson is Extract<GeoJsonShape, { type: 'Polygon' }> =>
   Boolean(geojson && geojson.type === 'Polygon' && Array.isArray(geojson.coordinates))
@@ -92,8 +101,9 @@ export function AreaDetailPage() {
   })
 
   const area = areaQuery.data as Area | undefined
-  const summary = useMemo(() => getGeometrySummary(area?.geojson), [area?.geojson])
-  const bounds = useMemo(() => getGeoJsonBoundsSafely(area?.geojson), [area?.geojson])
+  const geometry = useMemo(() => getAreaGeometry(area?.geojson), [area?.geojson])
+  const summary = useMemo(() => getGeometrySummary(geometry), [geometry])
+  const bounds = useMemo(() => getGeoJsonBoundsSafely(geometry), [geometry])
   const canUpdate = can(area?.can?.update)
   const canDelete = can(area?.can?.delete)
   const assignments = (area?.campaigns ?? area?.assignments) as AreaAssignmentRef[] | undefined
@@ -121,7 +131,7 @@ export function AreaDetailPage() {
     <div className="rounded border bg-white p-4 space-y-1"><h2 className="font-medium">Übersicht</h2><p>ID: {area.id}</p><p>Name: {area.name || '—'}</p><p>Erstellt: {formatDate(area.created_at)}</p><p>Aktualisiert: {formatDate(area.updated_at)}</p><p>GeoJSON-Typ: {summary.type}</p>{summary.rings !== null && <p>Anzahl Ringe: {summary.rings}</p>}{summary.points !== null && <p>Punkte (erste Außenlinie): {summary.points}</p>}</div>
 
     <div className="rounded border bg-white p-4 space-y-2"><h2 className="font-medium">Kartenvorschau</h2>
-      {summary.valid && bounds ? <div className="h-80 overflow-hidden rounded border"><MapContainer center={DEFAULT_CENTER} zoom={6} className="h-full w-full"><TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} /><FitBounds bounds={bounds} /><GeoJSON data={area.geojson as GeoJSON.GeoJsonObject} /></MapContainer></div> : <p className="text-sm text-slate-700">Keine gültige Geometrie vorhanden.</p>}
+      {summary.valid && bounds && geometry ? <div className="h-80 overflow-hidden rounded border"><MapContainer center={DEFAULT_CENTER} zoom={6} className="h-full w-full"><TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} /><FitBounds bounds={bounds} /><GeoJSON data={geometry as GeoJSON.GeoJsonObject} /></MapContainer></div> : <p className="text-sm text-slate-700">Keine darstellbare GeoJSON-Geometrie vorhanden (Polygon/MultiPolygon erwartet).</p>}
     </div>
 
     <div className="rounded border bg-white p-4"><details><summary className="cursor-pointer font-medium">GeoJSON</summary><pre className="mt-2 max-h-80 overflow-auto rounded border bg-slate-50 p-3 text-xs">{prettyGeoJson}</pre></details></div>

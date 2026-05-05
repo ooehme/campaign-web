@@ -77,7 +77,7 @@ export interface AreaAssignmentRef {
 export interface Area {
   id: number
   name: string
-  geojson?: GeoJsonShape | null
+  geojson?: GeoJsonShape | GeoJsonFeature | null
   created_at?: string | null
   updated_at?: string | null
   campaigns?: AreaAssignmentRef[]
@@ -199,6 +199,17 @@ export type GeoJsonMultiPolygon = {
 }
 
 export type GeoJsonShape = GeoJsonPolygon | GeoJsonMultiPolygon
+
+export type GeoJsonFeature = {
+  type: 'Feature'
+  geometry: GeoJsonShape | null
+  properties?: Record<string, unknown> | null
+}
+
+export type GeoJsonFeatureCollection = {
+  type: 'FeatureCollection'
+  features: GeoJsonFeature[]
+}
 
 export type CampaignStatus = 'draft' | 'active' | 'archived'
 

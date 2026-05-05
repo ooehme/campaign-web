@@ -1,4 +1,4 @@
-import type { Area, GeoJsonShape } from '../types/models'
+import type { Area, GeoJsonFeature, GeoJsonShape } from '../types/models'
 
 export type CampaignAreaUsage = 'boundary' | 'target' | 'unknown'
 
@@ -11,17 +11,29 @@ export type SplitCampaignAreas = {
 const isFiniteCoordinatePair = (pair: unknown): pair is [number, number] =>
   Array.isArray(pair) && pair.length >= 2 && Number.isFinite(pair[0]) && Number.isFinite(pair[1])
 
-export const isValidPolygonOrMultiPolygon = (geojson?: GeoJsonShape | null): boolean => {
-  if (!geojson) return false
-  if (geojson.type !== 'Polygon' && geojson.type !== 'MultiPolygon') return false
-  const coordinates = geojson.type === 'Polygon' ? geojson.coordinates.flat() : geojson.coordinates.flat(2)
+export const getGeometryFromAreaGeoJson = (geojson?: GeoJsonShape | GeoJsonFeature | null): GeoJsonShape | null => {
+  if (!geojson) return null
+  if (geojson.type === 'Feature') {
+    if (!geojson.geometry || typeof geojson.geometry === 'string') return null
+    return geojson.geometry
+  }
+  if (geojson.type === 'Polygon' || geojson.type === 'MultiPolygon') return geojson
+  return null
+}
+
+export const isValidPolygonOrMultiPolygon = (geojson?: GeoJsonShape | GeoJsonFeature | null): boolean => {
+  const geometry = getGeometryFromAreaGeoJson(geojson)
+  if (!geometry) return false
+  if (geometry.type !== 'Polygon' && geometry.type !== 'MultiPolygon') return false
+  const coordinates = geometry.type === 'Polygon' ? geometry.coordinates.flat() : geometry.coordinates.flat(2)
   return coordinates.some((pair) => isFiniteCoordinatePair(pair))
 }
 
-export const getAreaGeometryBoundsSafely = (geojson?: GeoJsonShape | null): [number, number][] | null => {
-  if (!geojson || !isValidPolygonOrMultiPolygon(geojson)) return null
+export const getAreaGeometryBoundsSafely = (geojson?: GeoJsonShape | GeoJsonFeature | null): [number, number][] | null => {
+  const geometry = getGeometryFromAreaGeoJson(geojson)
+  if (!geometry || !isValidPolygonOrMultiPolygon(geometry)) return null
 
-  const coordinates = geojson.type === 'Polygon' ? geojson.coordinates.flat() : geojson.coordinates.flat(2)
+  const coordinates = geometry.type === 'Polygon' ? geometry.coordinates.flat() : geometry.coordinates.flat(2)
   const points: [number, number][] = []
 
   coordinates.forEach((pair) => {
