@@ -1,5 +1,5 @@
 import { apiRequest } from './client'
-import type { Area, Campaign, RolePermissionMatrixResponse, RolePermissionUpdatePayload, PaginatedResponse, Task, TaskEvent, TaskPoint, Team, TeamInvitation, TeamMembershipPayload, User, UserTeam } from '../types/models'
+import type { Area, Campaign, GeoJsonFeatureCollection, RolePermissionMatrixResponse, RolePermissionUpdatePayload, PaginatedResponse, Task, TaskEvent, TaskPoint, Team, TeamInvitation, TeamMembershipPayload, User, UserTeam } from '../types/models'
 
 export type PaginationParams = { page?: number; per_page?: number }
 export type LoginPayload = { email: string; password: string; device_name?: string }
@@ -54,6 +54,7 @@ export const getArea = (id: number) => requestResource<Area>(`/api/areas/${id}`)
 export const updateArea = (id: number, payload: Partial<Area>) => apiRequest<Area>(`/api/areas/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
 export const deleteArea = (id: number) => apiRequest<void>(`/api/areas/${id}`, { method: 'DELETE' })
 export const listCampaignAreas = (campaignId: number, params?: PaginationParams) => requestPaginated<Area>(`/api/campaigns/${campaignId}/areas${buildQuery(params)}`)
+export const listCampaignAreasMap = (campaignId: number) => requestResource<GeoJsonFeatureCollection>(`/api/campaigns/${campaignId}/areas?map=1`)
 export const createOrAttachAreaToCampaign = (campaignId: number, payload: Partial<Area> & { area_id?: number; usage?: 'boundary' | 'target'; boundary_area_id?: number | null; notes?: string | null }) => apiRequest<Area>(`/api/campaigns/${campaignId}/areas`, { method: 'POST', body: JSON.stringify(payload) })
 export const attachAreaToCampaign = (campaignId: number, areaId: number, payload?: { usage?: 'boundary' | 'target'; boundary_area_id?: number | null; notes?: string | null }) => apiRequest(`/api/campaigns/${campaignId}/areas/${areaId}`, { method: 'POST', body: JSON.stringify(payload ?? {}) })
 export const detachAreaFromCampaign = (campaignId: number, areaId: number) => apiRequest(`/api/campaigns/${campaignId}/areas/${areaId}`, { method: 'DELETE' })

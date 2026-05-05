@@ -6,7 +6,7 @@ import { MapContainer, Marker, Polygon, TileLayer, useMapEvents } from 'react-le
 import { createArea, createOrAttachAreaToCampaign, listCampaignAreas } from '../api/endpoints'
 import { ApiError } from '../api/client'
 import { ErrorState } from '../components/UiState'
-import type { GeoJsonPolygon } from '../types/models'
+import type { GeoJsonFeature, GeoJsonPolygon, GeoJsonShape } from '../types/models'
 import { MAP_ATTRIBUTION, MAP_TILE_URL } from '../utils/constants'
 
 const DEFAULT_CENTER: [number, number] = [51.1657, 10.4515]
@@ -99,14 +99,17 @@ export function AreaCreateMapPage() {
 
   const saveMutation = useMutation({
     mutationFn: async () => {
-      const payloadGeometry = useManual ? JSON.parse(manualGeoJson) : geometry
-      if (!payloadGeometry || payloadGeometry.type !== 'Polygon' || !Array.isArray(payloadGeometry.coordinates) || payloadGeometry.coordinates.length < 1) {
+      const parsedManual = useManual ? JSON.parse(manualGeoJson) as GeoJsonShape | GeoJsonFeature : null
+      const manualGeometry = parsedManual?.type === 'Feature' ? parsedManual.geometry : parsedManual
+      const payloadGeometry = useManual ? manualGeometry : geometry
+      if (!payloadGeometry || typeof payloadGeometry === 'string' || payloadGeometry.type !== 'Polygon' || !Array.isArray(payloadGeometry.coordinates) || payloadGeometry.coordinates.length < 1) {
         throw new Error('invalid-geometry')
       }
+      const payloadFeature: GeoJsonFeature = { type: 'Feature', geometry: payloadGeometry, properties: {} }
       if (isCampaignMode && campaignNumericId) {
-        return createOrAttachAreaToCampaign(campaignNumericId, { name: name.trim(), geojson: payloadGeometry, usage, boundary_area_id: boundaryAreaId ? Number(boundaryAreaId) : null, notes: notes || null })
+        return createOrAttachAreaToCampaign(campaignNumericId, { name: name.trim(), geojson: payloadFeature, usage, boundary_area_id: boundaryAreaId ? Number(boundaryAreaId) : null, notes: notes || null })
       }
-      return createArea({ name: name.trim(), geojson: payloadGeometry })
+      return createArea({ name: name.trim(), geojson: payloadFeature })
     },
     onSuccess: () => {
       invalidate()
@@ -126,7 +129,8 @@ export function AreaCreateMapPage() {
     if (useManual) {
       try {
         const parsed = JSON.parse(manualGeoJson)
-        if (parsed?.type !== 'Polygon' || !Array.isArray(parsed?.coordinates) || parsed.coordinates.length < 1) return 'Die gezeichnete Fläche ist ungültig.'
+        const parsedGeometry = parsed?.type === 'Feature' ? parsed.geometry : parsed
+        if (!parsedGeometry || typeof parsedGeometry === 'string' || parsedGeometry?.type !== 'Polygon' || !Array.isArray(parsedGeometry?.coordinates) || parsedGeometry.coordinates.length < 1) return 'Ungültige Geometrie: Bitte ein Polygon als Objekt angeben.'
       } catch {
         return 'Die gezeichnete Fläche ist ungültig.'
       }

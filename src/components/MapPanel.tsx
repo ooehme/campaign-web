@@ -1,6 +1,7 @@
 import { GeoJSON, MapContainer, Marker, Popup, TileLayer } from 'react-leaflet'
 import type { Area, Task } from '../types/models'
 import { MAP_ATTRIBUTION, MAP_TILE_URL } from '../utils/constants'
+import { getGeometryFromAreaGeoJson } from '../utils/campaignAreaMap'
 
 const DEFAULT_CENTER: [number, number] = [51.1657, 10.4515]
 
@@ -21,7 +22,7 @@ export function MapPanel({ tasks, areas }: { tasks: Task[]; areas: Area[] }) {
             </Popup>
           </Marker>
         ))}
-        {areas.filter((area) => area.geojson && Array.isArray(area.geojson.coordinates)).map((area) => <GeoJSON key={area.id} data={area.geojson as GeoJSON.GeoJsonObject} />)}
+        {areas.map((area) => ({ id: area.id, geometry: getGeometryFromAreaGeoJson(area.geojson) })).filter((entry) => entry.geometry).map((entry) => <GeoJSON key={entry.id} data={entry.geometry as GeoJSON.GeoJsonObject} />)}
       </MapContainer>
     </div>
   )

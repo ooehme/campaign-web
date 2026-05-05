@@ -21,6 +21,7 @@ import { ApiError } from '../api/client'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import { MAP_ATTRIBUTION, MAP_TILE_URL, TASK_STATUSES } from '../utils/constants'
 import { can, canPermission, NO_PERMISSION_MESSAGE, permissionErrorMessage } from '../utils/permissions'
+import { getGeometryFromAreaGeoJson } from '../utils/campaignAreaMap'
 import { GeoJSON, MapContainer, Marker, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet'
 import type { Area, TaskPoint } from '../types/models'
 
@@ -71,7 +72,7 @@ function FitMap({ areas, points }: { areas: Area[]; points: TaskPoint[] }) {
   useEffect(() => {
     const positions: [number, number][] = []
     for (const area of areas) {
-      const geo = area.geojson
+      const geo = getGeometryFromAreaGeoJson(area.geojson)
       if (!geo) continue
       const coordinates = geo.type === 'Polygon' ? geo.coordinates.flat() : geo.coordinates.flat(2)
       for (const [lng, lat] of coordinates) positions.push([lat, lng])
