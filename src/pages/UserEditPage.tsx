@@ -20,7 +20,7 @@ export function UserEditPage() {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [appRole, setAppRole] = useState<AppRole>('app-user')
+  const [appRole, setAppRole] = useState<AppRole>('user')
   const [errorMessage, setErrorMessage] = useState('')
   const [success, setSuccess] = useState('')
 
@@ -88,8 +88,8 @@ export function UserEditPage() {
       <label>E-Mail *</label>
       <input type='email' value={email} onChange={(e) => setEmail(e.target.value)} disabled={!canUpdate} />
       {email.trim().length > 0 && !isValidEmail(email.trim()) && <p className='text-sm text-red-700'>Bitte gültige E-Mail eingeben.</p>}
-      <label>Rolle</label>
-      <select value={appRole} onChange={(e) => setAppRole(e.target.value as AppRole)} disabled={!canUpdate}><option value='app-user'>app-user</option><option value='campaign-manager'>campaign-manager</option><option value='app-admin'>app-admin</option></select>
+      <label>App-Rolle</label>
+      <select value={appRole} onChange={(e) => setAppRole(e.target.value as AppRole)} disabled={!canUpdate}><option value='user'>Benutzer</option><option value='admin'>Administrator</option></select>
       <label>Passwort (optional)</label>
       <input type='password' value={password} onChange={(e) => setPassword(e.target.value)} disabled={!canUpdate} />
       {!passwordValid && <p className='text-sm text-red-700'>Passwort muss mindestens 8 Zeichen lang sein.</p>}

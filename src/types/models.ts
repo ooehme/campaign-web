@@ -284,7 +284,7 @@ export type UserCan = {
   [key: string]: UserCanValue
 }
 
-export type AppRole = 'app-admin' | 'campaign-manager' | 'app-user'
+export type AppRole = 'admin' | 'user'
 
 export interface User {
   id: number

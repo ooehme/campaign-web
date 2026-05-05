@@ -39,7 +39,7 @@ export function UserCreatePage() {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [appRole, setAppRole] = useState<AppRole>('app-user')
+  const [appRole, setAppRole] = useState<AppRole>('user')
   const [includeAppRole, setIncludeAppRole] = useState(true)
   const [topError, setTopError] = useState('')
   const [fieldErrors, setFieldErrors] = useState<ValidationErrors>({})
@@ -117,9 +117,8 @@ export function UserCreatePage() {
       {includeAppRole && <>
         <label>App-Rolle</label>
         <select value={appRole} onChange={(e) => setAppRole(e.target.value as AppRole)}>
-          <option value='app-user'>app-user</option>
-          <option value='campaign-manager'>campaign-manager</option>
-          <option value='app-admin'>app-admin</option>
+          <option value='user'>Benutzer</option>
+          <option value='admin'>Administrator</option>
         </select>
         {fieldErrors.app_role && <p className='text-sm text-red-700'>{fieldErrors.app_role}</p>}
       </>}
