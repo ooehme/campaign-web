@@ -264,3 +264,22 @@ Die Karten-basierte Flächenerstellung unterstützt im Kampagnenkontext zusätzl
 - Team roles in UI are limited to `lead` and `member` (no `team-admin` UI).
 - Global app roles in user edit flows are limited to `app-admin`, `campaign-manager`, `app-user`.
 - Authorization decisions in navigation/actions continue to use backend `can` flags only; role strings are display data only.
+
+### Unterstützte GeoJSON-Formate für Flächenimport/-eingabe
+
+Für Flächenerstellung und -bearbeitung akzeptiert die UI jetzt folgende GeoJSON-Objektformen:
+
+- `Polygon` (Geometry)
+- `MultiPolygon` (Geometry)
+- `Feature` mit `geometry.type` = `Polygon` oder `MultiPolygon`
+- `FeatureCollection` mit einem oder mehreren `Feature`-Einträgen, jeweils `Polygon`/`MultiPolygon`
+
+Verhalten:
+- Kartenvorschau rendert `FeatureCollection` direkt.
+- Bei `Feature` wird dessen `geometry` gerendert.
+- Bei reiner Geometry wird diese direkt gerendert.
+- Nicht-Polygon-Geometrien werden mit der Meldung abgewiesen: „Nur Polygon- oder MultiPolygon-Geometrien werden unterstützt.“
+- Falls `properties.GEN` oder `properties.name` vorhanden ist und das Namensfeld leer ist, wird dieser Name als Vorschlag übernommen.
+
+Koordinaten-Referenzsystem:
+- Erwartet wird WGS84 / EPSG:4326 (Longitude, Latitude in GeoJSON-Koordinaten).

@@ -6,7 +6,7 @@ import type { LatLngBoundsExpression } from 'leaflet'
 import { ApiError } from '../api/client'
 import { deleteArea, getArea } from '../api/endpoints'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
-import type { Area, AreaAssignmentRef, GeoJsonFeature, GeoJsonShape } from '../types/models'
+import type { Area, AreaAssignmentRef, GeoJsonFeature, GeoJsonFeatureCollection, GeoJsonShape } from '../types/models'
 import { MAP_ATTRIBUTION, MAP_TILE_URL } from '../utils/constants'
 import { can, NO_PERMISSION_MESSAGE } from '../utils/permissions'
 
@@ -17,22 +17,19 @@ const formatDate = (value?: string | null) => (value ? new Date(value).toLocaleS
 const isFiniteCoordinatePair = (pair: unknown): pair is [number, number] =>
   Array.isArray(pair) && pair.length >= 2 && Number.isFinite(pair[0]) && Number.isFinite(pair[1])
 
-const getAreaGeometry = (geojson?: GeoJsonShape | GeoJsonFeature | null): GeoJsonShape | null => {
+const getAreaGeometry = (geojson?: GeoJsonShape | GeoJsonFeature | GeoJsonFeatureCollection | null): GeoJsonShape | GeoJsonFeatureCollection | null => {
   if (!geojson) return null
-  if (geojson.type === 'Feature') {
-    if (!geojson.geometry || typeof geojson.geometry === 'string') return null
-    return geojson.geometry
-  }
+  if (geojson.type === 'Feature') return geojson.geometry ?? null
   return geojson
 }
 
-const isPolygonGeometry = (geojson?: GeoJsonShape | null): geojson is Extract<GeoJsonShape, { type: 'Polygon' }> =>
+const isPolygonGeometry = (geojson?: GeoJsonShape | GeoJsonFeatureCollection | null): geojson is Extract<GeoJsonShape, { type: 'Polygon' }> =>
   Boolean(geojson && geojson.type === 'Polygon' && Array.isArray(geojson.coordinates))
 
-const isMultiPolygonGeometry = (geojson?: GeoJsonShape | null): geojson is Extract<GeoJsonShape, { type: 'MultiPolygon' }> =>
+const isMultiPolygonGeometry = (geojson?: GeoJsonShape | GeoJsonFeatureCollection | null): geojson is Extract<GeoJsonShape, { type: 'MultiPolygon' }> =>
   Boolean(geojson && geojson.type === 'MultiPolygon' && Array.isArray(geojson.coordinates))
 
-const getGeoJsonBoundsSafely = (geojson?: GeoJsonShape | null): LatLngBoundsExpression | null => {
+const getGeoJsonBoundsSafely = (geojson?: GeoJsonShape | GeoJsonFeatureCollection | null): LatLngBoundsExpression | null => {
   const points: [number, number][] = []
 
   if (isPolygonGeometry(geojson)) {
@@ -51,10 +48,18 @@ const getGeoJsonBoundsSafely = (geojson?: GeoJsonShape | null): LatLngBoundsExpr
     })
   }
 
+  if (geojson && geojson.type === 'FeatureCollection') {
+    geojson.features.forEach((feature) => {
+      if (!feature.geometry) return
+      const bounds = getGeoJsonBoundsSafely(feature.geometry)
+      if (Array.isArray(bounds)) points.push(...(bounds as [number, number][]))
+    })
+  }
+
   return points.length > 2 ? points : null
 }
 
-const getGeometrySummary = (geojson?: GeoJsonShape | null) => {
+const getGeometrySummary = (geojson?: GeoJsonShape | GeoJsonFeatureCollection | null) => {
   if (isPolygonGeometry(geojson)) {
     return {
       valid: Boolean(getGeoJsonBoundsSafely(geojson)),
@@ -73,6 +78,7 @@ const getGeometrySummary = (geojson?: GeoJsonShape | null) => {
     }
   }
 
+  if (geojson?.type === 'FeatureCollection') return { valid: Boolean(getGeoJsonBoundsSafely(geojson)), type: 'FeatureCollection', rings: geojson.features.length, points: null as number | null }
   return { valid: false, type: 'unbekannt', rings: null as number | null, points: null as number | null }
 }
 

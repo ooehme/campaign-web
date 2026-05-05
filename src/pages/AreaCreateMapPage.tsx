@@ -6,8 +6,9 @@ import { MapContainer, Marker, Polygon, TileLayer, useMapEvents } from 'react-le
 import { createArea, createOrAttachAreaToCampaign, listCampaignAreas } from '../api/endpoints'
 import { ApiError } from '../api/client'
 import { ErrorState } from '../components/UiState'
-import type { GeoJsonFeature, GeoJsonPolygon, GeoJsonShape } from '../types/models'
+import type { GeoJsonInput, GeoJsonPolygon } from '../types/models'
 import { MAP_ATTRIBUTION, MAP_TILE_URL } from '../utils/constants'
+import { getSuggestedAreaName, normalizeGeoJsonInput } from '../utils/geojson'
 
 const DEFAULT_CENTER: [number, number] = [51.1657, 10.4515]
 
@@ -82,7 +83,8 @@ export function AreaCreateMapPage() {
   const boundaryAreas = (campaignAreasQuery.data?.data ?? []).filter((a) => a.pivot?.usage === 'boundary')
 
   const geometry = useMemo(() => (useManual ? null : toGeoJson(points)), [points, useManual])
-  const canSave = name.trim().length > 0 && (!!geometry || (useManual && manualGeoJson.trim().length > 0))
+  const parsedManual = useMemo(() => (useManual ? normalizeGeoJsonInput(manualGeoJson) : undefined), [useManual, manualGeoJson])
+  const canSave = name.trim().length > 0 && (!!geometry || (useManual && !!parsedManual?.parsed))
 
   const formatError = (error: unknown) => {
     if (!(error instanceof ApiError)) return 'Speichern fehlgeschlagen.'
@@ -99,17 +101,12 @@ export function AreaCreateMapPage() {
 
   const saveMutation = useMutation({
     mutationFn: async () => {
-      const parsedManual = useManual ? JSON.parse(manualGeoJson) as GeoJsonShape | GeoJsonFeature : null
-      const manualGeometry = parsedManual?.type === 'Feature' ? parsedManual.geometry : parsedManual
-      const payloadGeometry = useManual ? manualGeometry : geometry
-      if (!payloadGeometry || typeof payloadGeometry === 'string' || payloadGeometry.type !== 'Polygon' || !Array.isArray(payloadGeometry.coordinates) || payloadGeometry.coordinates.length < 1) {
-        throw new Error('invalid-geometry')
-      }
-      const payloadFeature: GeoJsonFeature = { type: 'Feature', geometry: payloadGeometry, properties: {} }
+      const payloadGeometry = useManual ? parsedManual?.parsed : geometry
+      if (!payloadGeometry) throw new Error('invalid-geometry')
       if (isCampaignMode && campaignNumericId) {
-        return createOrAttachAreaToCampaign(campaignNumericId, { name: name.trim(), geojson: payloadFeature, usage, boundary_area_id: boundaryAreaId ? Number(boundaryAreaId) : null, notes: notes || null })
+        return createOrAttachAreaToCampaign(campaignNumericId, { name: name.trim(), geojson: payloadGeometry as GeoJsonInput, usage, boundary_area_id: boundaryAreaId ? Number(boundaryAreaId) : null, notes: notes || null })
       }
-      return createArea({ name: name.trim(), geojson: payloadFeature })
+      return createArea({ name: name.trim(), geojson: payloadGeometry as GeoJsonInput })
     },
     onSuccess: () => {
       invalidate()
@@ -126,15 +123,7 @@ export function AreaCreateMapPage() {
     if (!name.trim()) return 'Name ist erforderlich.'
     if (!useManual && !geometry) return 'Bitte eine Fläche auf der Karte zeichnen.'
     if (!useManual && hasSelfIntersection(points)) return 'Die gezeichnete Fläche ist ungültig.'
-    if (useManual) {
-      try {
-        const parsed = JSON.parse(manualGeoJson)
-        const parsedGeometry = parsed?.type === 'Feature' ? parsed.geometry : parsed
-        if (!parsedGeometry || typeof parsedGeometry === 'string' || parsedGeometry?.type !== 'Polygon' || !Array.isArray(parsedGeometry?.coordinates) || parsedGeometry.coordinates.length < 1) return 'Ungültige Geometrie: Bitte ein Polygon als Objekt angeben.'
-      } catch {
-        return 'Die gezeichnete Fläche ist ungültig.'
-      }
-    }
+    if (useManual && parsedManual?.error) return parsedManual.error
     return ''
   }, [name, geometry, useManual, manualGeoJson, points])
 
@@ -168,13 +157,13 @@ export function AreaCreateMapPage() {
         <summary className="cursor-pointer text-sm font-medium">Für Experten: GeoJSON manuell bearbeiten</summary>
         <div className="mt-2 space-y-2">
           <label className="inline-flex items-center gap-2 text-sm"><input type="checkbox" checked={useManual} onChange={(e) => setUseManual(e.target.checked)} />Manuellen GeoJSON-Modus verwenden</label>
-          <textarea rows={8} value={manualGeoJson} onChange={(e) => setManualGeoJson(e.target.value)} />
+          <textarea rows={8} value={manualGeoJson} onChange={(e) => { const next = e.target.value; setManualGeoJson(next); const normalized = normalizeGeoJsonInput(next); if (normalized.parsed && !name.trim()) { const suggestion = getSuggestedAreaName(normalized.parsed); if (suggestion) setName(suggestion) } }} />
         </div>
       </details>
 
       <div>
         <p className="text-sm font-medium">GeoJSON Vorschau</p>
-        <pre className="max-h-64 overflow-auto rounded border bg-slate-50 p-3 text-xs">{JSON.stringify(useManual ? (() => { try { return JSON.parse(manualGeoJson) } catch { return { error: 'Ungültiges JSON' } } })() : (geometry ?? { hint: 'Polygon mit mindestens 3 Punkten zeichnen.' }), null, 2)}</pre>
+        <pre className="max-h-64 overflow-auto rounded border bg-slate-50 p-3 text-xs">{JSON.stringify(useManual ? (parsedManual?.preview ?? { error: parsedManual?.error ?? 'Ungültiges JSON' }) : (geometry ?? { hint: 'Polygon mit mindestens 3 Punkten zeichnen.' }), null, 2)}</pre>
       </div>
 
       {validationMessage && <ErrorState message={validationMessage} />}
