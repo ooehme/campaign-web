@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import L from 'leaflet'
-import { GeoJSON, MapContainer, Marker, TileLayer, useMap, useMapEvents } from 'react-leaflet'
+import { CircleMarker, GeoJSON, MapContainer, TileLayer, useMap, useMapEvents } from 'react-leaflet'
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 import { ApiError } from '../api/client'
 import { deleteArea, getArea, updateArea } from '../api/endpoints'
@@ -16,13 +16,6 @@ const DEFAULT_CENTER: [number, number] = [51.1657, 10.4515]
 const FIT_BOUNDS_PADDING: [number, number] = [32, 32]
 const FIT_BOUNDS_MAX_ZOOM = 18
 const EMPTY_POLYGON_TEXT = '{"type":"Polygon","coordinates":[]}'
-const markerIcon = L.divIcon({ className: 'rounded-full border border-slate-700 bg-white text-xs', html: '⬤', iconSize: [18, 18], iconAnchor: [9, 9] })
-const middleMarkerIcon = L.divIcon({
-  className: 'rounded-full border-2 border-blue-700 bg-blue-100 shadow',
-  iconSize: [14, 14],
-  iconAnchor: [7, 7],
-})
-
 type LatLngTuple = [number, number]
 
 
@@ -85,6 +78,30 @@ export function AreaEditPage() {
   const [drawMode, setDrawMode] = useState(false)
 
   const parsedResult = useMemo(() => normalizeGeoJsonInput(geojsonText), [geojsonText])
+  const editableGeometry = useMemo<GeoJsonGeometry | null>(() => {
+    const preview = parsedResult.preview as GeoJsonInput | undefined
+    if (!preview) return null
+    if (preview.type === 'Feature') return (preview.geometry as GeoJsonGeometry | null) ?? null
+    if (preview.type === 'FeatureCollection') return (preview.features?.[0]?.geometry as GeoJsonGeometry | null) ?? null
+    return preview as GeoJsonGeometry
+  }, [parsedResult.preview])
+  const normalizedGeometryType = editableGeometry?.type
+  const shouldRenderEditHandles = editActive && Boolean(editableGeometry) && (normalizedGeometryType === 'Polygon' || normalizedGeometryType === 'MultiPolygon')
+  const vertices = useMemo(() => (shouldRenderEditHandles && editableGeometry ? getEditableVertices(editableGeometry) : []), [editableGeometry, shouldRenderEditHandles])
+  const midpoints = useMemo(() => (shouldRenderEditHandles && editableGeometry ? getEditableMidpoints(editableGeometry) : []), [editableGeometry, shouldRenderEditHandles])
+  const editDebug = useMemo(
+    () => ({
+      parsedGeometryType: parsedResult.parsed?.type === 'Feature'
+        ? parsedResult.parsed.geometry?.type
+        : parsedResult.parsed?.type === 'FeatureCollection'
+          ? parsedResult.parsed.features?.[0]?.geometry?.type
+          : parsedResult.parsed?.type,
+      normalizedGeometryType,
+      verticesLength: vertices.length,
+      midpointsLength: midpoints.length,
+    }),
+    [midpoints.length, normalizedGeometryType, parsedResult.parsed, vertices.length],
+  )
   const area = areaQuery.data as Area | undefined
   const canUpdate = can(area?.can?.update)
   const canDelete = can(area?.can?.delete)
@@ -203,48 +220,62 @@ export function AreaEditPage() {
       <p className="text-xs text-slate-600">Zum Hinzufügen eines Punktes den Zwischenpunkt auf einer Polygonkante ziehen oder anklicken.</p>
       <p className={`text-sm ${editActive ? "font-medium text-emerald-700" : "text-slate-600"}`}>{editActive ? "Bearbeitungsmodus aktiv" : "Bearbeitungsmodus aus"}</p>
       {editActive && <p className="text-xs text-slate-600">Punkte des Polygons können jetzt verschoben, hinzugefügt oder entfernt werden.</p>}
+      <p className="text-xs text-slate-500">
+        Debug: parsed={editDebug.parsedGeometryType ?? 'n/a'} | normalized={editDebug.normalizedGeometryType ?? 'n/a'} | vertices={editDebug.verticesLength} | midpoints={editDebug.midpointsLength}
+      </p>
       {parsedResult.preview && <div className="h-72 overflow-hidden rounded border"><MapContainer center={DEFAULT_CENTER} zoom={6} className="h-full w-full">
         <TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} />
-        {parsedResult.preview.type === 'FeatureCollection' || parsedResult.preview.type === 'Feature' ? <GeoJSON data={parsedResult.preview as GeoJSON.GeoJsonObject} /> : <>
-          <GeoJSON data={parsedResult.preview as GeoJSON.GeoJsonObject} />
-          <EditMapClicks enabled={false} onAdd={() => {}} />
-          {getEditableVertices(parsedResult.preview as GeoJsonGeometry).map((vertex) => <Marker
+        <GeoJSON data={parsedResult.preview as GeoJSON.GeoJsonObject} />
+        <EditMapClicks enabled={false} onAdd={() => {}} />
+        {shouldRenderEditHandles && vertices.map((vertex) => <CircleMarker
             key={`${vertex.geometryType}-${vertex.polygonIndex}-${vertex.ringIndex}-${vertex.vertexIndex}-${vertex.coordinate[0]}-${vertex.coordinate[1]}`}
-            icon={markerIcon}
-            position={[vertex.coordinate[1], vertex.coordinate[0]]}
-            draggable={canUpdate && editActive}
+            center={[vertex.coordinate[1], vertex.coordinate[0]]}
+            radius={6}
+            pathOptions={{ color: '#1e293b', fillColor: '#ffffff', fillOpacity: 1, weight: 2 }}
             eventHandlers={{
               click: () => {
                 if (!canUpdate || !editActive) return
-                const geometry = deleteVertex(parsedResult.preview as GeoJsonGeometry, vertex)
+                if (!editableGeometry) return
+                const geometry = deleteVertex(editableGeometry, vertex)
                 setGeojsonText(JSON.stringify(geometry, null, 2))
               },
-              dragend: (event) => {
-                const latLng = (event.target as L.Marker).getLatLng()
-                const geometry = moveVertex(parsedResult.preview as GeoJsonGeometry, vertex, [latLng.lng, latLng.lat])
-                setGeojsonText(JSON.stringify(geometry, null, 2))
+              mousedown: (event) => {
+                if (!canUpdate || !editActive || !editableGeometry) return
+                const marker = event.target
+                marker.dragging?.enable()
+                marker.once('dragend', () => {
+                  const latLng = marker.getLatLng()
+                  const geometry = moveVertex(editableGeometry, vertex, [latLng.lng, latLng.lat])
+                  setGeojsonText(JSON.stringify(geometry, null, 2))
+                  marker.dragging?.disable()
+                })
               },
             }}
           />)}
-          {canUpdate && editActive && getEditableMidpoints(parsedResult.preview as GeoJsonGeometry).map((midpoint) => <Marker
+        {shouldRenderEditHandles && midpoints.map((midpoint) => <CircleMarker
               key={`mid-${midpoint.geometryType}-${midpoint.polygonIndex}-${midpoint.ringIndex}-${midpoint.vertexIndex}-${midpoint.coordinate[0]}-${midpoint.coordinate[1]}`}
-              icon={middleMarkerIcon}
-              position={[midpoint.coordinate[1], midpoint.coordinate[0]]}
-              draggable
-              zIndexOffset={1000}
+              center={[midpoint.coordinate[1], midpoint.coordinate[0]]}
+              radius={5}
+              pathOptions={{ color: '#1d4ed8', fillColor: '#bfdbfe', fillOpacity: 1, weight: 2 }}
               eventHandlers={{
                 click: () => {
-                  const geometry = insertMidpoint(parsedResult.preview as GeoJsonGeometry, midpoint)
+                  if (!editableGeometry || !canUpdate || !editActive) return
+                  const geometry = insertMidpoint(editableGeometry, midpoint)
                   setGeojsonText(JSON.stringify(geometry, null, 2))
                 },
-                dragend: (event) => {
-                  const latLng = (event.target as L.Marker).getLatLng()
-                  const geometry = insertMidpoint(parsedResult.preview as GeoJsonGeometry, midpoint, [latLng.lng, latLng.lat])
-                  setGeojsonText(JSON.stringify(geometry, null, 2))
+                mousedown: (event) => {
+                  if (!canUpdate || !editActive || !editableGeometry) return
+                  const marker = event.target
+                  marker.dragging?.enable()
+                  marker.once('dragend', () => {
+                    const latLng = marker.getLatLng()
+                    const geometry = insertMidpoint(editableGeometry, midpoint, [latLng.lng, latLng.lat])
+                    setGeojsonText(JSON.stringify(geometry, null, 2))
+                    marker.dragging?.disable()
+                  })
                 },
               }}
             />)}
-        </>}
         <FitBoundsToGeoJson geojson={parsedResult.preview} fitTrigger={fitTrigger} autoFitEnabled={!hasAutoFitted} onAutoFitDone={() => setHasAutoFitted(true)} />
       </MapContainer></div>}
 
