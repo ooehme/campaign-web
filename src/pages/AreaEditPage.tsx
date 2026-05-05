@@ -1,16 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import L from 'leaflet'
-import { GeoJSON, MapContainer, Marker, Polygon, TileLayer, useMap, useMapEvents } from 'react-leaflet'
+import { GeoJSON, MapContainer, Marker, TileLayer, useMap, useMapEvents } from 'react-leaflet'
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 import { ApiError } from '../api/client'
 import { deleteArea, getArea, updateArea } from '../api/endpoints'
 import { ErrorState, LoadingState } from '../components/UiState'
-import type { Area, GeoJsonGeometry, GeoJsonInput, GeoJsonPolygon } from '../types/models'
+import type { Area, GeoJsonGeometry, GeoJsonInput } from '../types/models'
 import { MAP_ATTRIBUTION, MAP_TILE_URL } from '../utils/constants'
 import { can, NO_PERMISSION_MESSAGE } from '../utils/permissions'
 import { getSuggestedAreaName, normalizeGeoJsonInput } from '../utils/geojson'
-import { extractGeometry } from '../utils/areaGeometry'
+import { deleteVertex, getEditableMidpoints, getEditableVertices, insertMidpoint, moveVertex } from '../utils/areaEditorGeometry'
 
 const DEFAULT_CENTER: [number, number] = [51.1657, 10.4515]
 const FIT_BOUNDS_PADDING: [number, number] = [32, 32]
@@ -24,23 +24,6 @@ const middleMarkerIcon = L.divIcon({
 })
 
 type LatLngTuple = [number, number]
-
-const polygonToPoints = (shape: GeoJsonPolygon): LatLngTuple[] => {
-  const firstRing = Array.isArray(shape.coordinates) ? shape.coordinates[0] : undefined
-  if (!Array.isArray(firstRing)) return []
-  return firstRing.slice(0, -1).filter((pair) => Array.isArray(pair) && pair.length >= 2 && Number.isFinite(pair[0]) && Number.isFinite(pair[1])).map(([lng, lat]) => [lat, lng])
-}
-
-const pointsToPolygon = (points: LatLngTuple[]): GeoJsonPolygon | null => {
-  if (points.length < 3) return null
-  const ring = points.map(([lat, lng]) => [lng, lat] as [number, number])
-  const first = ring[0]
-  const last = ring[ring.length - 1]
-  if (first[0] !== last[0] || first[1] !== last[1]) ring.push(first)
-  return ring.length >= 4 ? { type: 'Polygon', coordinates: [ring] } : null
-}
-
-const getEdgeMidpoint = (first: LatLngTuple, second: LatLngTuple): LatLngTuple => [(first[0] + second[0]) / 2, (first[1] + second[1]) / 2]
 
 
 function EditMapClicks({ enabled, onAdd }: { enabled: boolean; onAdd: (p: LatLngTuple) => void }) {
@@ -94,21 +77,17 @@ export function AreaEditPage() {
   const [originalName, setOriginalName] = useState('')
   const [geojsonText, setGeojsonText] = useState(EMPTY_POLYGON_TEXT)
   const [originalGeometryText, setOriginalGeometryText] = useState(EMPTY_POLYGON_TEXT)
-  const [points, setPoints] = useState<LatLngTuple[]>([])
   const [validation, setValidation] = useState<Record<string, string>>({})
   const [success, setSuccess] = useState('')
   const [hasAutoFitted, setHasAutoFitted] = useState(false)
   const [fitTrigger, setFitTrigger] = useState(0)
   const [editActive, setEditActive] = useState(false)
   const [drawMode, setDrawMode] = useState(false)
-  const [singlePolygonMessage, setSinglePolygonMessage] = useState('')
 
   const parsedResult = useMemo(() => normalizeGeoJsonInput(geojsonText), [geojsonText])
   const area = areaQuery.data as Area | undefined
   const canUpdate = can(area?.can?.update)
   const canDelete = can(area?.can?.delete)
-  const previewGeometry = parsedResult.preview
-  const isMultiPolygon = previewGeometry?.type === 'MultiPolygon'
   const hasUnsavedChanges = name.trim() !== originalName.trim() || geojsonText !== originalGeometryText
 
   useEffect(() => {
@@ -122,8 +101,6 @@ export function AreaEditPage() {
     setOriginalName(areaQuery.data.name ?? '')
     setGeojsonText(loadedGeometryText)
     setOriginalGeometryText(loadedGeometryText)
-    const loadedShape = extractGeometry(loadedGeometry)
-    setPoints(loadedShape?.type === 'Polygon' ? polygonToPoints(loadedShape as GeoJsonPolygon) : [])
     setValidation({})
     setSuccess('')
     setHasAutoFitted(false)
@@ -131,11 +108,6 @@ export function AreaEditPage() {
     setEditActive(false)
     setDrawMode(false)
   }, [areaQuery.data])
-
-  useEffect(() => {
-    if (!parsedResult.preview || parsedResult.preview.type !== 'Polygon') return
-    setPoints(polygonToPoints(parsedResult.preview))
-  }, [parsedResult.parsed])
 
   useEffect(() => {
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -231,86 +203,63 @@ export function AreaEditPage() {
       <p className="text-xs text-slate-600">Zum Hinzufügen eines Punktes den Zwischenpunkt auf einer Polygonkante ziehen oder anklicken.</p>
       <p className={`text-sm ${editActive ? "font-medium text-emerald-700" : "text-slate-600"}`}>{editActive ? "Bearbeitungsmodus aktiv" : "Bearbeitungsmodus aus"}</p>
       {editActive && <p className="text-xs text-slate-600">Punkte des Polygons können jetzt verschoben, hinzugefügt oder entfernt werden.</p>}
-      {isMultiPolygon && <p className="rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-700">MultiPolygon-Bearbeitung ist noch nicht unterstützt.</p>}
-
       {parsedResult.preview && <div className="h-72 overflow-hidden rounded border"><MapContainer center={DEFAULT_CENTER} zoom={6} className="h-full w-full">
         <TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} />
-        {parsedResult.preview.type === 'FeatureCollection' || parsedResult.preview.type === 'Feature' || parsedResult.preview.type === 'MultiPolygon' ? <GeoJSON data={parsedResult.preview as GeoJSON.GeoJsonObject} /> : <>          <EditMapClicks enabled={canUpdate && drawMode} onAdd={(point) => {
-            if (points.length >= 3) { setSinglePolygonMessage("Es kann nur ein Polygon pro Fläche bearbeitet werden. Bitte vorhandenes Polygon zuerst löschen."); return }
-            const next = [...points, point]
-            setPoints(next)
-            const polygon = pointsToPolygon(next)
-            if (polygon) { setGeojsonText(JSON.stringify(polygon, null, 2)); setSinglePolygonMessage('') }
-          }} />
-          {points.length >= 3 && <Polygon positions={points} pathOptions={{ color: '#0f172a' }} />}
-          {points.map((point, index) => <Marker
-            key={`${index}-${point[0]}-${point[1]}`}
+        {parsedResult.preview.type === 'FeatureCollection' || parsedResult.preview.type === 'Feature' ? <GeoJSON data={parsedResult.preview as GeoJSON.GeoJsonObject} /> : <>
+          <GeoJSON data={parsedResult.preview as GeoJSON.GeoJsonObject} />
+          <EditMapClicks enabled={false} onAdd={() => {}} />
+          {getEditableVertices(parsedResult.preview as GeoJsonGeometry).map((vertex) => <Marker
+            key={`${vertex.geometryType}-${vertex.polygonIndex}-${vertex.ringIndex}-${vertex.vertexIndex}-${vertex.coordinate[0]}-${vertex.coordinate[1]}`}
             icon={markerIcon}
-            position={point}
+            position={[vertex.coordinate[1], vertex.coordinate[0]]}
             draggable={canUpdate && editActive}
             eventHandlers={{
               click: () => {
-                if (!canUpdate || !editActive || points.length <= 3) return
-                const next = points.filter((_, pointIndex) => pointIndex !== index)
-                setPoints(next)
-                const polygon = pointsToPolygon(next)
-                if (polygon) { setGeojsonText(JSON.stringify(polygon, null, 2)); setSinglePolygonMessage('') }
+                if (!canUpdate || !editActive) return
+                const geometry = deleteVertex(parsedResult.preview as GeoJsonGeometry, vertex)
+                setGeojsonText(JSON.stringify(geometry, null, 2))
               },
               dragend: (event) => {
                 const latLng = (event.target as L.Marker).getLatLng()
-                const next = [...points]
-                next[index] = [latLng.lat, latLng.lng]
-                setPoints(next)
-                const polygon = pointsToPolygon(next)
-                if (polygon) { setGeojsonText(JSON.stringify(polygon, null, 2)); setSinglePolygonMessage('') }
+                const geometry = moveVertex(parsedResult.preview as GeoJsonGeometry, vertex, [latLng.lng, latLng.lat])
+                setGeojsonText(JSON.stringify(geometry, null, 2))
               },
             }}
           />)}
-          {canUpdate && editActive && points.length >= 3 && points.map((point, index) => {
-            const nextIndex = (index + 1) % points.length
-            const midpoint = getEdgeMidpoint(point, points[nextIndex])
-            return <Marker
-              key={`mid-${index}-${midpoint[0]}-${midpoint[1]}`}
+          {canUpdate && editActive && getEditableMidpoints(parsedResult.preview as GeoJsonGeometry).map((midpoint) => <Marker
+              key={`mid-${midpoint.geometryType}-${midpoint.polygonIndex}-${midpoint.ringIndex}-${midpoint.vertexIndex}-${midpoint.coordinate[0]}-${midpoint.coordinate[1]}`}
               icon={middleMarkerIcon}
-              position={midpoint}
+              position={[midpoint.coordinate[1], midpoint.coordinate[0]]}
               draggable
               zIndexOffset={1000}
               eventHandlers={{
                 click: () => {
-                  const next = [...points]
-                  next.splice(index + 1, 0, midpoint)
-                  setPoints(next)
-                  const polygon = pointsToPolygon(next)
-                  if (polygon) { setGeojsonText(JSON.stringify(polygon, null, 2)); setSinglePolygonMessage('') }
+                  const geometry = insertMidpoint(parsedResult.preview as GeoJsonGeometry, midpoint)
+                  setGeojsonText(JSON.stringify(geometry, null, 2))
                 },
                 dragend: (event) => {
                   const latLng = (event.target as L.Marker).getLatLng()
-                  const next = [...points]
-                  next.splice(index + 1, 0, [latLng.lat, latLng.lng])
-                  setPoints(next)
-                  const polygon = pointsToPolygon(next)
-                  if (polygon) { setGeojsonText(JSON.stringify(polygon, null, 2)); setSinglePolygonMessage('') }
+                  const geometry = insertMidpoint(parsedResult.preview as GeoJsonGeometry, midpoint, [latLng.lng, latLng.lat])
+                  setGeojsonText(JSON.stringify(geometry, null, 2))
                 },
               }}
-            />
-          })}
+            />)}
         </>}
         <FitBoundsToGeoJson geojson={parsedResult.preview} fitTrigger={fitTrigger} autoFitEnabled={!hasAutoFitted} onAutoFitDone={() => setHasAutoFitted(true)} />
       </MapContainer></div>}
 
       <div className="flex flex-wrap gap-2">
-        <button type="button" aria-pressed={editActive} title={!canUpdate ? NO_PERMISSION_MESSAGE : undefined} className={`border px-3 py-2 disabled:opacity-50 ${editActive ? "bg-slate-900 text-white" : "bg-white"}`} disabled={!canUpdate || isMultiPolygon} onClick={() => { setEditActive((value) => !value); setDrawMode(false) }}>{editActive ? "Bearbeitung aktiv" : "Polygon bearbeiten"}</button>
-        <button type="button" className={`border px-3 py-2 disabled:opacity-50 ${drawMode ? "bg-blue-900 text-white" : "bg-white"}`} title={!canUpdate ? NO_PERMISSION_MESSAGE : undefined} disabled={!canUpdate || isMultiPolygon} onClick={() => { setDrawMode((value) => !value); setEditActive(false) }}>{drawMode ? "Zeichnen aktiv" : "Polygon zeichnen"}</button>
+        <button type="button" aria-pressed={editActive} title={!canUpdate ? NO_PERMISSION_MESSAGE : undefined} className={`border px-3 py-2 disabled:opacity-50 ${editActive ? "bg-slate-900 text-white" : "bg-white"}`} disabled={!canUpdate} onClick={() => { setEditActive((value) => !value); setDrawMode(false) }}>{editActive ? "Bearbeitung aktiv" : "Polygon bearbeiten"}</button>
+        <button type="button" className={`border px-3 py-2 disabled:opacity-50 ${drawMode ? "bg-blue-900 text-white" : "bg-white"}`} title={!canUpdate ? NO_PERMISSION_MESSAGE : undefined} disabled onClick={() => { setDrawMode((value) => !value); setEditActive(false) }}>{drawMode ? "Zeichnen aktiv" : "Polygon zeichnen"}</button>
         <button type="button" className="border px-3 py-2" onClick={() => setFitTrigger((value) => value + 1)}>Auf Fläche zentrieren</button>
         <button type="button" className="border px-3 py-2 disabled:opacity-50" disabled={!canUpdate} onClick={() => { setName(originalName); setGeojsonText(originalGeometryText); setValidation({}) }}>Polygon zurücksetzen</button>
-        <button type="button" className="border px-3 py-2 disabled:opacity-50" disabled={!canUpdate || isMultiPolygon} title={!canUpdate ? NO_PERMISSION_MESSAGE : undefined} onClick={() => { if (!window.confirm('Polygon wirklich löschen?')) return; setPoints([]); setGeojsonText(EMPTY_POLYGON_TEXT); setDrawMode(true); setEditActive(false) }}>Polygon löschen</button>
+        <button type="button" className="border px-3 py-2 disabled:opacity-50" disabled={!canUpdate} title={!canUpdate ? NO_PERMISSION_MESSAGE : undefined} onClick={() => { if (!window.confirm('Polygon wirklich löschen?')) return; setGeojsonText(EMPTY_POLYGON_TEXT); setDrawMode(true); setEditActive(false) }}>Polygon löschen</button>
       </div>
 
       <details>
         <summary className="cursor-pointer text-sm font-medium">GeoJSON manuell bearbeiten</summary>
         <textarea rows={12} value={geojsonText} onChange={(event) => { const next = event.target.value; setGeojsonText(next); if (!name.trim()) { const normalized = normalizeGeoJsonInput(next); if (normalized.parsed) { const suggestion = getSuggestedAreaName(normalized.parsed); if (suggestion) setName(suggestion) } } }} disabled={!canUpdate} />
       </details>
-      {singlePolygonMessage && <p className="text-sm text-amber-700">{singlePolygonMessage}</p>}
       {validation.geojson && <p className="text-sm text-red-700">{validation.geojson}</p>}
       {edit.isError && (edit.error as ApiError)?.status !== 422 && <ErrorState message="Serverfehler beim Laden oder Speichern der Fläche." />}
     </div>
