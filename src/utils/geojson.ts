@@ -1,4 +1,5 @@
 import type { GeoJsonFeature, GeoJsonFeatureCollection, GeoJsonGeometry, GeoJsonInput, GeoJsonShape } from '../types/models'
+import { isGeoJsonGeometry } from './areaGeometry'
 
 const POLYGON_ERROR = 'Keine darstellbare GeoJSON-Geometrie vorhanden (Polygon/MultiPolygon erwartet).'
 
@@ -14,12 +15,6 @@ export type GeoJsonImportResult = {
   items: ImportedAreaItem[]
   skipped: number
   parseError?: string
-}
-
-const isGeoJsonGeometry = (value: unknown): value is GeoJsonGeometry => {
-  if (!value || typeof value !== 'object') return false
-  const type = (value as { type?: unknown }).type
-  return (type === 'Polygon' || type === 'MultiPolygon') && Array.isArray((value as { coordinates?: unknown }).coordinates)
 }
 
 const parseGeometryString = (value: string): GeoJsonGeometry | null => {
@@ -80,7 +75,7 @@ export const normalizeGeoJsonInput = (value: string): { parsed?: GeoJsonInput; p
   try {
     const parsed = JSON.parse(value) as GeoJsonInput
     if (parsed.type === 'FeatureCollection') return { parsed, preview: { type: 'FeatureCollection', features: result.items.map((item) => item.feature) } }
-    if (parsed.type === 'Feature') return { parsed, preview: result.items[0].geometry }
+    if (parsed.type === 'Feature') return { parsed, preview: { ...parsed, geometry: result.items[0].geometry } }
     return { parsed, preview: result.items[0].geometry }
   } catch {
     return { error: 'GeoJSON ist kein valides JSON.' }
