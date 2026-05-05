@@ -15,3 +15,15 @@ textarea {
 button {
   @apply rounded px-3 py-2 text-sm font-medium;
 }
+
+
+th,
+td {
+  @apply align-top px-2 py-2;
+}
+
+@media (max-width: 640px) {
+  table {
+    @apply text-xs;
+  }
+}
