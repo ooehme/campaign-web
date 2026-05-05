@@ -107,9 +107,9 @@ export function FeaturePermissionsPage() {
 
   return (
     <section className="space-y-4">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-col items-start justify-between gap-2 sm:flex-row sm:items-center">
         <h1 className="text-2xl font-semibold">Feature-Rechte</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
           <button
             type="button"
             className="rounded border border-slate-300 px-3 py-2 text-sm disabled:opacity-50"
@@ -143,7 +143,7 @@ export function FeaturePermissionsPage() {
       )}
 
       <div className="overflow-auto rounded border bg-white">
-        <table className="min-w-full text-sm">
+        <table className="min-w-[760px] w-full text-sm">
           <thead>
             <tr className="border-b bg-slate-50 text-left">
               <th className="p-2">Berechtigung</th>
@@ -164,7 +164,7 @@ export function FeaturePermissionsPage() {
                   const missing = !cell
                   return (
                     <td key={key} className="p-2">
-                      <label className="inline-flex items-center gap-2">
+                      <label className="inline-flex min-h-10 items-center gap-2">
                         <input
                           type="checkbox"
                           checked={cell?.enabled === true}
