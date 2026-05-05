@@ -7,6 +7,7 @@ import { createArea, createOrAttachAreaToCampaign, listCampaignAreas } from '../
 import { ApiError } from '../api/client'
 import { ErrorState } from '../components/UiState'
 import type { GeoJsonPolygon } from '../types/models'
+import { ENCODED_GEOMETRY_MESSAGE, INVALID_GEOMETRY_MESSAGE, isGeoJsonFeature, isGeometryObject, toFeaturePayload } from '../utils/geojson'
 import { MAP_ATTRIBUTION, MAP_TILE_URL } from '../utils/constants'
 
 const DEFAULT_CENTER: [number, number] = [51.1657, 10.4515]
@@ -99,10 +100,9 @@ export function AreaCreateMapPage() {
 
   const saveMutation = useMutation({
     mutationFn: async () => {
-      const payloadGeometry = useManual ? JSON.parse(manualGeoJson) : geometry
-      if (!payloadGeometry || payloadGeometry.type !== 'Polygon' || !Array.isArray(payloadGeometry.coordinates) || payloadGeometry.coordinates.length < 1) {
-        throw new Error('invalid-geometry')
-      }
+      const payloadGeometry = useManual ? JSON.parse(manualGeoJson) : toFeaturePayload(geometry as GeoJsonPolygon, { name: name.trim(), kind: usage })
+      if (typeof payloadGeometry === 'string') throw new Error(ENCODED_GEOMETRY_MESSAGE)
+      if (!(isGeoJsonFeature(payloadGeometry) || isGeometryObject(payloadGeometry))) throw new Error(INVALID_GEOMETRY_MESSAGE)
       if (isCampaignMode && campaignNumericId) {
         return createOrAttachAreaToCampaign(campaignNumericId, { name: name.trim(), geojson: payloadGeometry, usage, boundary_area_id: boundaryAreaId ? Number(boundaryAreaId) : null, notes: notes || null })
       }
@@ -126,7 +126,8 @@ export function AreaCreateMapPage() {
     if (useManual) {
       try {
         const parsed = JSON.parse(manualGeoJson)
-        if (parsed?.type !== 'Polygon' || !Array.isArray(parsed?.coordinates) || parsed.coordinates.length < 1) return 'Die gezeichnete Fläche ist ungültig.'
+        if (typeof parsed === 'string') return ENCODED_GEOMETRY_MESSAGE
+        if (!(isGeoJsonFeature(parsed) || isGeometryObject(parsed))) return INVALID_GEOMETRY_MESSAGE
       } catch {
         return 'Die gezeichnete Fläche ist ungültig.'
       }

@@ -6,9 +6,10 @@ import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 import { ApiError } from '../api/client'
 import { deleteArea, getArea, updateArea } from '../api/endpoints'
 import { ErrorState, LoadingState } from '../components/UiState'
-import type { Area, GeoJsonPolygon, GeoJsonShape } from '../types/models'
+import type { Area, GeoJsonGeometry, GeoJsonPayload, GeoJsonPolygon } from '../types/models'
 import { MAP_ATTRIBUTION, MAP_TILE_URL } from '../utils/constants'
 import { can, NO_PERMISSION_MESSAGE } from '../utils/permissions'
+import { ENCODED_GEOMETRY_MESSAGE, getGeometryFromPayload, INVALID_GEOMETRY_MESSAGE, isGeoJsonFeature, isGeometryObject, toFeaturePayload } from '../utils/geojson'
 
 const DEFAULT_CENTER: [number, number] = [51.1657, 10.4515]
 const FIT_BOUNDS_PADDING: [number, number] = [32, 32]
@@ -36,10 +37,12 @@ const pointsToPolygon = (points: LatLngTuple[]): GeoJsonPolygon | null => {
 
 const getEdgeMidpoint = (first: LatLngTuple, second: LatLngTuple): LatLngTuple => [(first[0] + second[0]) / 2, (first[1] + second[1]) / 2]
 
-const parseGeojsonText = (value: string): { parsed?: GeoJsonShape; error?: string } => {
+const parseGeojsonText = (value: string): { parsed?: GeoJsonGeometry; error?: string } => {
   try {
-    const parsed = JSON.parse(value) as GeoJsonShape
-    if (!parsed || (parsed.type !== 'Polygon' && parsed.type !== 'MultiPolygon')) return { error: 'Die Geometrie ist ungültig.' }
+    const raw = JSON.parse(value) as unknown
+    if (typeof raw === 'string') return { error: ENCODED_GEOMETRY_MESSAGE }
+    const parsed = isGeoJsonFeature(raw) ? raw.geometry : isGeometryObject(raw) ? raw : null
+    if (!parsed || (parsed.type !== 'Polygon' && parsed.type !== 'MultiPolygon')) return { error: INVALID_GEOMETRY_MESSAGE }
     if (!Array.isArray(parsed.coordinates) || parsed.coordinates.length === 0) return { error: 'Die Geometrie ist ungültig.' }
     if (parsed.type === 'Polygon' && (!Array.isArray(parsed.coordinates[0]) || parsed.coordinates[0].length < 4)) return { error: 'Bitte eine gültige Fläche zeichnen.' }
     return { parsed }
@@ -57,7 +60,7 @@ function EditMapClicks({ enabled, onAdd }: { enabled: boolean; onAdd: (p: LatLng
   return null
 }
 
-function FitBoundsToGeoJson({ geojson, fitTrigger, autoFitEnabled, onAutoFitDone }: { geojson?: GeoJsonShape; fitTrigger: number; autoFitEnabled: boolean; onAutoFitDone: () => void }) {
+function FitBoundsToGeoJson({ geojson, fitTrigger, autoFitEnabled, onAutoFitDone }: { geojson?: GeoJsonGeometry; fitTrigger: number; autoFitEnabled: boolean; onAutoFitDone: () => void }) {
   const map = useMap()
   const bounds = useMemo(() => {
     if (!geojson) return null
@@ -117,7 +120,7 @@ export function AreaEditPage() {
 
   useEffect(() => {
     if (!areaQuery.data) return
-    const loadedGeometry = areaQuery.data.geojson ?? { type: 'Polygon', coordinates: [] }
+    const loadedGeometry = getGeometryFromPayload(areaQuery.data.geojson) ?? { type: 'Polygon', coordinates: [] }
     const loadedGeometryText = JSON.stringify(loadedGeometry, null, 2)
     setName(areaQuery.data.name ?? '')
     setOriginalName(areaQuery.data.name ?? '')
@@ -152,7 +155,7 @@ export function AreaEditPage() {
   }, [hasUnsavedChanges])
 
   const edit = useMutation({
-    mutationFn: (payload: { name: string; geojson: GeoJsonShape }) => updateArea(id, payload),
+    mutationFn: (payload: { name: string; geojson: GeoJsonPayload }) => updateArea(id, payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['area', id] })
       qc.invalidateQueries({ queryKey: ['areas-pool'] })
@@ -190,7 +193,7 @@ export function AreaEditPage() {
     if (Object.keys(errors).length > 0 || !parsedResult.parsed) return
 
     edit.mutate(
-      { name: name.trim(), geojson: parsedResult.parsed },
+      { name: name.trim(), geojson: toFeaturePayload(parsedResult.parsed, { id, name: name.trim() }) },
       {
         onSuccess: () => {
           setOriginalName(name.trim())

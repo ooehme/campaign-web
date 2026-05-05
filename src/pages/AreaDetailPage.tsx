@@ -6,9 +6,10 @@ import type { LatLngBoundsExpression } from 'leaflet'
 import { ApiError } from '../api/client'
 import { deleteArea, getArea } from '../api/endpoints'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
-import type { Area, AreaAssignmentRef, GeoJsonShape } from '../types/models'
+import type { Area, AreaAssignmentRef } from '../types/models'
 import { MAP_ATTRIBUTION, MAP_TILE_URL } from '../utils/constants'
 import { can, NO_PERMISSION_MESSAGE } from '../utils/permissions'
+import { getGeometryFromPayload, INVALID_GEOMETRY_MESSAGE, isValidPolygonGeometry } from '../utils/geojson'
 
 const DEFAULT_CENTER: [number, number] = [51.1657, 10.4515]
 
@@ -17,54 +18,24 @@ const formatDate = (value?: string | null) => (value ? new Date(value).toLocaleS
 const isFiniteCoordinatePair = (pair: unknown): pair is [number, number] =>
   Array.isArray(pair) && pair.length >= 2 && Number.isFinite(pair[0]) && Number.isFinite(pair[1])
 
-const isPolygonGeometry = (geojson?: GeoJsonShape | null): geojson is Extract<GeoJsonShape, { type: 'Polygon' }> =>
-  Boolean(geojson && geojson.type === 'Polygon' && Array.isArray(geojson.coordinates))
+import type { GeoJsonGeometry } from '../types/models'
 
-const isMultiPolygonGeometry = (geojson?: GeoJsonShape | null): geojson is Extract<GeoJsonShape, { type: 'MultiPolygon' }> =>
-  Boolean(geojson && geojson.type === 'MultiPolygon' && Array.isArray(geojson.coordinates))
-
-const getGeoJsonBoundsSafely = (geojson?: GeoJsonShape | null): LatLngBoundsExpression | null => {
+const getGeoJsonBoundsSafely = (geometry: GeoJsonGeometry | null): LatLngBoundsExpression | null => {
+  if (!isValidPolygonGeometry(geometry)) return null
   const points: [number, number][] = []
-
-  if (isPolygonGeometry(geojson)) {
-    geojson.coordinates.flat().forEach((pair) => {
-      if (!isFiniteCoordinatePair(pair)) return
-      const [lng, lat] = pair
-      points.push([lat, lng])
-    })
-  }
-
-  if (isMultiPolygonGeometry(geojson)) {
-    geojson.coordinates.flat(2).forEach((pair) => {
-      if (!isFiniteCoordinatePair(pair)) return
-      const [lng, lat] = pair
-      points.push([lat, lng])
-    })
-  }
-
+  const coordinates = geometry.type === 'Polygon' ? geometry.coordinates.flat() : geometry.coordinates.flat(2)
+  coordinates.forEach((pair) => {
+    if (!isFiniteCoordinatePair(pair)) return
+    const [lng, lat] = pair
+    points.push([lat, lng])
+  })
   return points.length > 2 ? points : null
 }
 
-const getGeometrySummary = (geojson?: GeoJsonShape | null) => {
-  if (isPolygonGeometry(geojson)) {
-    return {
-      valid: Boolean(getGeoJsonBoundsSafely(geojson)),
-      type: 'Polygon',
-      rings: geojson.coordinates.length,
-      points: geojson.coordinates[0]?.length ?? 0,
-    }
-  }
-
-  if (isMultiPolygonGeometry(geojson)) {
-    return {
-      valid: Boolean(getGeoJsonBoundsSafely(geojson)),
-      type: 'MultiPolygon',
-      rings: geojson.coordinates.reduce((acc, polygon) => acc + polygon.length, 0),
-      points: geojson.coordinates[0]?.[0]?.length ?? 0,
-    }
-  }
-
-  return { valid: false, type: 'unbekannt', rings: null as number | null, points: null as number | null }
+const getGeometrySummary = (geometry: GeoJsonGeometry | null) => {
+  if (!isValidPolygonGeometry(geometry)) return { valid: false, type: 'unbekannt', rings: null as number | null, points: null as number | null }
+  if (geometry.type === 'Polygon') return { valid: Boolean(getGeoJsonBoundsSafely(geometry)), type: 'Polygon', rings: geometry.coordinates.length, points: geometry.coordinates[0]?.length ?? 0 }
+  return { valid: Boolean(getGeoJsonBoundsSafely(geometry)), type: 'MultiPolygon', rings: geometry.coordinates.reduce((acc, polygon) => acc + polygon.length, 0), points: geometry.coordinates[0]?.[0]?.length ?? 0 }
 }
 
 function FitBounds({ bounds }: { bounds: LatLngBoundsExpression | null }) {
@@ -92,8 +63,10 @@ export function AreaDetailPage() {
   })
 
   const area = areaQuery.data as Area | undefined
-  const summary = useMemo(() => getGeometrySummary(area?.geojson), [area?.geojson])
-  const bounds = useMemo(() => getGeoJsonBoundsSafely(area?.geojson), [area?.geojson])
+  const mapPayload = area?.geojson ?? null
+  const mapGeometry = useMemo(() => getGeometryFromPayload(mapPayload), [mapPayload])
+  const summary = useMemo(() => getGeometrySummary(mapGeometry), [mapGeometry])
+  const bounds = useMemo(() => getGeoJsonBoundsSafely(mapGeometry), [mapGeometry])
   const canUpdate = can(area?.can?.update)
   const canDelete = can(area?.can?.delete)
   const assignments = (area?.campaigns ?? area?.assignments) as AreaAssignmentRef[] | undefined
@@ -121,7 +94,7 @@ export function AreaDetailPage() {
     <div className="rounded border bg-white p-4 space-y-1"><h2 className="font-medium">Übersicht</h2><p>ID: {area.id}</p><p>Name: {area.name || '—'}</p><p>Erstellt: {formatDate(area.created_at)}</p><p>Aktualisiert: {formatDate(area.updated_at)}</p><p>GeoJSON-Typ: {summary.type}</p>{summary.rings !== null && <p>Anzahl Ringe: {summary.rings}</p>}{summary.points !== null && <p>Punkte (erste Außenlinie): {summary.points}</p>}</div>
 
     <div className="rounded border bg-white p-4 space-y-2"><h2 className="font-medium">Kartenvorschau</h2>
-      {summary.valid && bounds ? <div className="h-80 overflow-hidden rounded border"><MapContainer center={DEFAULT_CENTER} zoom={6} className="h-full w-full"><TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} /><FitBounds bounds={bounds} /><GeoJSON data={area.geojson as GeoJSON.GeoJsonObject} /></MapContainer></div> : <p className="text-sm text-slate-700">Keine gültige Geometrie vorhanden.</p>}
+      {summary.valid && bounds ? <div className="h-80 overflow-hidden rounded border"><MapContainer center={DEFAULT_CENTER} zoom={6} className="h-full w-full"><TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} /><FitBounds bounds={bounds} /><GeoJSON data={area.geojson as GeoJSON.GeoJsonObject} /></MapContainer></div> : <p className="text-sm text-slate-700">{INVALID_GEOMETRY_MESSAGE}</p>}
     </div>
 
     <div className="rounded border bg-white p-4"><details><summary className="cursor-pointer font-medium">GeoJSON</summary><pre className="mt-2 max-h-80 overflow-auto rounded border bg-slate-50 p-3 text-xs">{prettyGeoJson}</pre></details></div>

@@ -264,3 +264,7 @@ Die Karten-basierte Flächenerstellung unterstützt im Kampagnenkontext zusätzl
 - Team roles in UI are limited to `lead` and `member` (no `team-admin` UI).
 - Global app roles in user edit flows are limited to `app-admin`, `campaign-manager`, `app-user`.
 - Authorization decisions in navigation/actions continue to use backend `can` flags only; role strings are display data only.
+
+
+- API-Geometrien werden als GeoJSON `Feature` oder `FeatureCollection` konsumiert; reine Geometry-Objekte bleiben nur als defensiver Legacy-Fallback erlaubt.
+- PostGIS ist ausschließlich Backend-Implementierungsdetail; das Frontend verarbeitet ausschließlich GeoJSON-Strukturen.
