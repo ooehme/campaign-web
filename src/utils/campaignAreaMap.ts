@@ -1,4 +1,4 @@
-import type { Area, GeoJsonFeature, GeoJsonShape } from '../types/models'
+import type { Area, GeoJsonFeature, GeoJsonFeatureCollection, GeoJsonShape } from '../types/models'
 
 export type CampaignAreaUsage = 'boundary' | 'target' | 'unknown'
 
@@ -60,3 +60,9 @@ export const getAreaUsageLabel = (usage: CampaignAreaUsage) => {
   if (usage === 'target') return 'Zielgebiet'
   return 'Unbekannt'
 }
+
+
+export const sanitizeFeatureCollection = (collection: GeoJsonFeatureCollection): GeoJsonFeatureCollection => ({
+  type: 'FeatureCollection',
+  features: collection.features.filter((feature) => isValidPolygonOrMultiPolygon(feature)),
+})
