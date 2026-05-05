@@ -1,6 +1,6 @@
 import type { GeoJsonFeature, GeoJsonFeatureCollection, GeoJsonGeometry, GeoJsonInput, GeoJsonShape } from '../types/models'
 
-const POLYGON_ERROR = 'Nur Polygon- oder MultiPolygon-Geometrien werden unterstützt.'
+const POLYGON_ERROR = 'Keine darstellbare GeoJSON-Geometrie vorhanden (Polygon/MultiPolygon erwartet).'
 
 const isGeoJsonGeometry = (value: unknown): value is GeoJsonGeometry => {
   if (!value || typeof value !== 'object') return false
@@ -8,9 +8,21 @@ const isGeoJsonGeometry = (value: unknown): value is GeoJsonGeometry => {
   return type === 'Polygon' || type === 'MultiPolygon'
 }
 
-const geometryFromFeature = (feature: GeoJsonFeature): GeoJsonGeometry | null => {
-  const geometry = feature.geometry
-  return geometry && isGeoJsonGeometry(geometry) ? geometry : null
+
+const parseGeometryString = (value: string): GeoJsonGeometry | null => {
+  try {
+    const parsed = JSON.parse(value) as unknown
+    return isGeoJsonGeometry(parsed) && Array.isArray((parsed as { coordinates?: unknown }).coordinates) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+const getFeatureGeometry = (feature: GeoJsonFeature): GeoJsonGeometry | null => {
+  const rawGeometry = feature.geometry as unknown
+  if (typeof rawGeometry === 'string') return parseGeometryString(rawGeometry)
+  if (!isGeoJsonGeometry(rawGeometry)) return null
+  return Array.isArray((rawGeometry as { coordinates?: unknown }).coordinates) ? rawGeometry : null
 }
 
 const isValidFeatureCollection = (value: unknown): value is GeoJsonFeatureCollection => {
@@ -40,14 +52,14 @@ export const normalizeGeoJsonInput = (value: string): { parsed?: GeoJsonInput; p
     if (isGeoJsonGeometry(parsed)) return { parsed, preview: parsed }
 
     if (isValidFeature(parsed)) {
-      const geometry = geometryFromFeature(parsed)
+      const geometry = getFeatureGeometry(parsed)
       if (!geometry) return { error: POLYGON_ERROR }
       return { parsed, preview: geometry }
     }
 
     if (isValidFeatureCollection(parsed)) {
       if (parsed.features.length === 0) return { error: 'Ungültige Geometrie: FeatureCollection enthält keine Features.' }
-      const hasInvalid = parsed.features.some((feature) => !isValidFeature(feature) || !geometryFromFeature(feature))
+      const hasInvalid = parsed.features.some((feature) => !isValidFeature(feature) || !getFeatureGeometry(feature))
       if (hasInvalid) return { error: POLYGON_ERROR }
       return { parsed, preview: parsed }
     }

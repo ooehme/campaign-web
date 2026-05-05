@@ -24,7 +24,10 @@ const middleMarkerIcon = L.divIcon({
 
 type LatLngTuple = [number, number]
 
-const polygonToPoints = (shape: GeoJsonPolygon): LatLngTuple[] => shape.coordinates[0].slice(0, -1).map(([lng, lat]) => [lat, lng])
+const polygonToPoints = (shape: GeoJsonPolygon): LatLngTuple[] => {
+  if (!Array.isArray(shape.coordinates) || !Array.isArray(shape.coordinates[0])) return []
+  return shape.coordinates[0].slice(0, -1).filter((pair) => Array.isArray(pair) && pair.length >= 2 && Number.isFinite(pair[0]) && Number.isFinite(pair[1])).map(([lng, lat]) => [lat, lng])
+}
 
 const pointsToPolygon = (points: LatLngTuple[]): GeoJsonPolygon | null => {
   if (points.length < 3) return null
@@ -108,17 +111,19 @@ export function AreaEditPage() {
 
   useEffect(() => {
     if (!areaQuery.data) return
-    const loadedGeometry = areaQuery.data.geojson && areaQuery.data.geojson.type === 'Feature'
-      ? areaQuery.data.geojson
-      : { type: 'Feature', geometry: areaQuery.data.geojson ?? { type: 'Polygon', coordinates: [] }, properties: {} }
+    const sourceGeoJson = areaQuery.data.geojson as unknown
+    const loadedGeometry = (sourceGeoJson && typeof sourceGeoJson === 'object' && (sourceGeoJson as { type?: unknown }).type === 'Feature'
+      ? sourceGeoJson
+      : { type: 'Feature', geometry: sourceGeoJson ?? { type: 'Polygon', coordinates: [] }, properties: {} }) as { type: 'Feature'; geometry?: unknown }
     const loadedGeometryText = JSON.stringify(loadedGeometry, null, 2)
     setName(areaQuery.data.name ?? '')
     setOriginalName(areaQuery.data.name ?? '')
     setGeojsonText(loadedGeometryText)
     setOriginalGeometryText(loadedGeometryText)
+    const loadedShape = loadedGeometry.geometry as { type?: unknown; coordinates?: unknown } | undefined
     setPoints(
-      loadedGeometry.geometry?.type === 'Polygon' && Array.isArray(loadedGeometry.geometry.coordinates[0]) && loadedGeometry.geometry.coordinates[0].length > 0
-        ? polygonToPoints(loadedGeometry.geometry as GeoJsonPolygon)
+      loadedShape?.type === 'Polygon' && Array.isArray(loadedShape.coordinates) && Array.isArray(loadedShape.coordinates[0]) && loadedShape.coordinates[0].length > 0
+        ? polygonToPoints(loadedShape as GeoJsonPolygon)
         : [],
     )
     setValidation({})
