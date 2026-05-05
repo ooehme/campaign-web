@@ -7,6 +7,7 @@ import { useAuth } from '../auth/AuthContext'
 import { ErrorState } from '../components/UiState'
 import type { AppRole } from '../types/models'
 import { PERMISSIONS } from '../utils/permissionKeys'
+import { APP_ROLE_OPTIONS } from '../utils/appRoles'
 import { hasPermission, NO_PERMISSION_MESSAGE } from '../utils/permissions'
 
 type ValidationErrors = Partial<Record<'name' | 'email' | 'password' | 'app_role', string>>
@@ -39,8 +40,7 @@ export function UserCreatePage() {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [appRole, setAppRole] = useState<AppRole>('app-user')
-  const [includeAppRole, setIncludeAppRole] = useState(true)
+  const [appRole, setAppRole] = useState<AppRole>('user')
   const [topError, setTopError] = useState('')
   const [fieldErrors, setFieldErrors] = useState<ValidationErrors>({})
 
@@ -48,12 +48,12 @@ export function UserCreatePage() {
 
   const mutation = useMutation({
     mutationFn: async () => {
-      const payload: { name: string; email: string; password: string; app_role?: AppRole } = {
+      const payload: { name: string; email: string; password: string; app_role: AppRole } = {
         name: name.trim(),
         email: email.trim(),
         password,
+        app_role: appRole,
       }
-      if (includeAppRole) payload.app_role = appRole
       return createUser(payload)
     },
     onSuccess: (createdUser) => {
@@ -77,10 +77,6 @@ export function UserCreatePage() {
         Object.entries(details).forEach(([field, value]) => {
           const message = Array.isArray(value) ? value[0] : value
           const german = toGermanError(field, message)
-          if (field === 'app_role' && message.toLowerCase().includes('not') && message.toLowerCase().includes('exist')) {
-            setIncludeAppRole(false)
-            return
-          }
           if (field in next || !(field in fieldLabel)) return
           next[field as keyof ValidationErrors] = german
         })
@@ -114,15 +110,11 @@ export function UserCreatePage() {
       <input type='password' value={password} onChange={(e) => setPassword(e.target.value)} autoComplete='new-password' />
       {fieldErrors.password && <p className='text-sm text-red-700'>{fieldErrors.password}</p>}
 
-      {includeAppRole && <>
-        <label>App-Rolle</label>
-        <select value={appRole} onChange={(e) => setAppRole(e.target.value as AppRole)}>
-          <option value='app-user'>app-user</option>
-          <option value='campaign-manager'>campaign-manager</option>
-          <option value='app-admin'>app-admin</option>
-        </select>
-        {fieldErrors.app_role && <p className='text-sm text-red-700'>{fieldErrors.app_role}</p>}
-      </>}
+      <label>App-Rolle</label>
+      <select value={appRole} onChange={(e) => setAppRole(e.target.value as AppRole)}>
+        {APP_ROLE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+      </select>
+      {fieldErrors.app_role && <p className='text-sm text-red-700'>{fieldErrors.app_role}</p>}
 
       <button className='bg-slate-900 px-3 py-1 text-white disabled:opacity-50' type='submit' disabled={!formValid || mutation.isPending} title={!formValid ? NO_PERMISSION_MESSAGE : undefined}>Benutzer erstellen</button>
     </form>

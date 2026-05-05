@@ -6,6 +6,7 @@ import { deleteUser, getUser, listCurrentUserInvitations, listUserTasks, listUse
 import { useAuth } from '../auth/AuthContext'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import type { TaskStatus, TeamInvitation, TeamRole, UserTaskSummary } from '../types/models'
+import { appRoleLabel } from '../utils/appRoles'
 import { can, hasPermission, NO_PERMISSION_MESSAGE } from '../utils/permissions'
 import { PERMISSIONS } from '../utils/permissionKeys'
 
@@ -70,7 +71,7 @@ export function UserDetailPage() {
       <div>
         <h1 className="text-3xl font-semibold">{user.name}</h1>
         <p>{user.email}</p>
-        <span className="rounded border px-2 py-0.5 text-xs">Rolle: {user.app_role}</span>
+        <span className="rounded border px-2 py-0.5 text-xs">App-Rolle: {appRoleLabel(user.app_role)}</span>
       </div>
       <div className="flex gap-2">
         <Link className={`border px-3 py-2 ${!can(user.can?.update) ? 'pointer-events-none opacity-50' : ''}`} title={!can(user.can?.update) ? NO_PERMISSION_MESSAGE : undefined} to={`/users/${id}/edit`}>Bearbeiten</Link>
@@ -80,7 +81,7 @@ export function UserDetailPage() {
 
     <div className="rounded border bg-white p-4">
       <h2 className="font-medium">Profil</h2>
-      <p>ID: {user.id}</p><p>Name: {user.name}</p><p>E-Mail: {user.email}</p><p>Rolle: {user.app_role}</p>
+      <p>ID: {user.id}</p><p>Name: {user.name}</p><p>E-Mail: {user.email}</p><p>App-Rolle: {appRoleLabel(user.app_role)}</p>
       <p>Erstellt: {user.created_at ?? 'nicht verfügbar'}</p><p>Aktualisiert: {user.updated_at ?? 'nicht verfügbar'}</p>
     </div>
 

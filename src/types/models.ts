@@ -284,13 +284,13 @@ export type UserCan = {
   [key: string]: UserCanValue
 }
 
-export type AppRole = 'app-admin' | 'campaign-manager' | 'app-user'
+export type AppRole = 'user' | 'manager' | 'admin'
 
 export interface User {
   id: number
   name: string
   email: string
-  app_role: AppRole
+  app_role: AppRole | string
   created_at?: string | null
   updated_at?: string | null
   teams?: UserTeam[]
