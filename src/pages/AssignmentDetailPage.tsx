@@ -2,14 +2,14 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
-import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { z } from 'zod'
 import { GeoJSON, MapContainer, Marker, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet'
 import { ApiError } from '../api/client'
-import { createPosterLocation, deleteAssignment, deletePosterLocation, getAssignment, listCampaignAreas, listCampaignTeams, listPosterLocations, updateAssignment, updatePosterLocation } from '../api/endpoints'
+import { createPosterLocation, deletePosterLocation, getAssignment, listCampaignAreas, listPosterLocations, updatePosterLocation } from '../api/endpoints'
 import { useAuth } from '../auth/AuthContext'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
-import { ASSIGNMENT_STATUSES, MAP_ATTRIBUTION, MAP_TILE_URL, POSTER_LOCATION_STATUSES } from '../utils/constants'
+import { MAP_ATTRIBUTION, MAP_TILE_URL, POSTER_LOCATION_STATUSES } from '../utils/constants'
 import { assignmentStatusLabel, assignmentTypeLabel } from '../utils/assignment'
 import { getGeometryFromAreaGeoJson } from '../utils/campaignAreaMap'
 import { can, canPermission, NO_PERMISSION_MESSAGE, permissionErrorMessage } from '../utils/permissions'
@@ -17,17 +17,6 @@ import { PERMISSIONS } from '../utils/permissionKeys'
 import type { Area, Assignment, AssignmentTypeConfig, PosterLocation } from '../types/models'
 
 const DEFAULT_CENTER: [number, number] = [51.1657, 10.4515]
-
-const assignmentSchema = z.object({
-  title: z.string().min(1),
-  description: z.string().optional(),
-  boundaryAreaId: z.preprocess((value) => value === '' || value == null ? undefined : Number(value), z.number().optional()),
-  targetAreaId: z.preprocess((value) => value === '' || value == null ? undefined : Number(value), z.number().optional()),
-  teamId: z.preprocess((value) => value === '' || value == null ? undefined : Number(value), z.number().optional()),
-  status: z.enum(ASSIGNMENT_STATUSES),
-  startsAt: z.string().optional(),
-  dueAt: z.string().optional(),
-})
 
 const posterLocationSchema = z.object({
   id: z.number().optional(),
@@ -39,7 +28,6 @@ const posterLocationSchema = z.object({
   photoUrl: z.string().optional().nullable(),
 })
 
-type AssignmentFormValues = z.infer<typeof assignmentSchema>
 type PosterLocationFormValues = z.infer<typeof posterLocationSchema>
 
 const requestErrorMessage = (error: unknown) => {
@@ -116,14 +104,11 @@ function MapClickPicker({ enabled, onPick }: { enabled: boolean; onPick: (lat: n
 export function AssignmentDetailPage() {
   const { assignmentId } = useParams()
   const id = Number(assignmentId)
-  const location = useLocation()
-  const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { user } = useAuth()
   const [posterLocationFormError, setPosterLocationFormError] = useState<string | null>(null)
   const [posterLocationEditorOpen, setPosterLocationEditorOpen] = useState(false)
 
-  const assignmentForm = useForm<AssignmentFormValues>({ resolver: zodResolver(assignmentSchema), defaultValues: { title: '', description: '', status: 'draft' } })
   const posterLocationForm = useForm<PosterLocationFormValues>({ resolver: zodResolver(posterLocationSchema), defaultValues: { label: '', notes: '', lat: DEFAULT_CENTER[0], lng: DEFAULT_CENTER[1], status: 'planned', photoUrl: '' } })
 
   const assignmentQuery = useQuery({ queryKey: ['assignment', id], queryFn: () => getAssignment(id), enabled: Number.isFinite(id) })
@@ -132,22 +117,6 @@ export function AssignmentDetailPage() {
   const posterLocationToolsVisible = assignment?.type === 'poster_free' || assignment?.type === 'poster_guided'
   const posterLocationsQuery = useQuery({ queryKey: ['poster-locations', id], queryFn: () => listPosterLocations(id), enabled: Number.isFinite(id) && posterLocationToolsVisible })
   const areasQuery = useQuery({ queryKey: ['campaign-areas', assignmentCampaignId], queryFn: () => listCampaignAreas(assignmentCampaignId!, { per_page: 100 }), enabled: Boolean(assignmentCampaignId) })
-  const teamsQuery = useQuery({ queryKey: ['campaign-teams', assignmentCampaignId], queryFn: () => listCampaignTeams(assignmentCampaignId!, { per_page: 100 }), enabled: Boolean(assignmentCampaignId) })
-  const isEditMode = location.pathname.endsWith('/edit')
-
-  useEffect(() => {
-    if (!assignment) return
-    assignmentForm.reset({
-      title: assignment.title,
-      description: String(assignment.description ?? ''),
-      boundaryAreaId: assignment.boundaryAreaId ?? assignment.boundary_area_id ?? undefined,
-      targetAreaId: assignment.targetAreaId ?? assignment.target_area_id ?? undefined,
-      teamId: assignment.team?.id ?? assignment.teamId ?? assignment.team_id ?? undefined,
-      status: assignment.status,
-      startsAt: (assignment.startsAt ?? assignment.starts_at) ? String(assignment.startsAt ?? assignment.starts_at).slice(0, 16) : '',
-      dueAt: (assignment.dueAt ?? assignment.due_at) ? String(assignment.dueAt ?? assignment.due_at).slice(0, 16) : '',
-    })
-  }, [assignment, assignmentForm])
 
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: ['assignment', id] })
@@ -156,20 +125,6 @@ export function AssignmentDetailPage() {
     queryClient.invalidateQueries({ queryKey: ['dashboard-campaign-assignments'] })
   }
 
-  const updateAssignmentMutation = useMutation({
-    mutationFn: (values: AssignmentFormValues) => updateAssignment(id, {
-      title: values.title,
-      description: values.description || null,
-      boundary_area_id: values.boundaryAreaId ?? null,
-      target_area_id: values.targetAreaId ?? null,
-      team_id: values.teamId ?? null,
-      status: values.status,
-      starts_at: values.startsAt || null,
-      due_at: values.dueAt || null,
-    } as Partial<Assignment> & Record<string, unknown>),
-    onSuccess: invalidateAll,
-  })
-  const deleteAssignmentMutation = useMutation({ mutationFn: () => deleteAssignment(id), onSuccess: () => navigate('/assignments') })
   const createPosterLocationMutation = useMutation({
     mutationFn: (payload: Partial<PosterLocation>) => createPosterLocation(id, payload),
     onSuccess: () => {
@@ -200,7 +155,7 @@ export function AssignmentDetailPage() {
   const boundaryGeometry = getGeometryFromAreaGeoJson(boundaryArea?.geojson)
   const targetGeometry = getGeometryFromAreaGeoJson(targetArea?.geojson)
   const canManagePosterLocations = canPermission(user?.can, PERMISSIONS.POSTER_LOCATIONS_MANAGE) && can(assignment.can?.manage_poster_locations ?? true)
-  const canCreatePosterLocations = assignment.type === 'poster_free' ? canManagePosterLocations : canManagePosterLocations && isEditMode
+  const canCreatePosterLocations = assignment.type === 'poster_free' && canManagePosterLocations
   const photoRequired = requiresPhotoProof(assignment)
   const startsAt = assignment.startsAt ?? assignment.starts_at
   const dueAt = assignment.dueAt ?? assignment.due_at
@@ -233,9 +188,7 @@ export function AssignmentDetailPage() {
         <h1 className="text-2xl font-semibold">Auftrag #{assignment.id}: {assignment.title}</h1>
         <div className="flex flex-wrap gap-2">
           <Link className="border px-3 py-2 text-sm" to={assignmentCampaignId ? `/campaigns/${assignmentCampaignId}` : '/assignments'}>Zurück</Link>
-          {isEditMode
-            ? <Link className="border px-3 py-2 text-sm" to={`/assignments/${assignment.id}`}>Detailansicht</Link>
-            : <Link className={`border px-3 py-2 text-sm ${!can(assignment.can?.update) ? 'pointer-events-none opacity-50' : ''}`} title={!can(assignment.can?.update) ? NO_PERMISSION_MESSAGE : undefined} to={`/assignments/${assignment.id}/edit`}>Auftrag bearbeiten</Link>}
+          <Link className={`border px-3 py-2 text-sm ${!can(assignment.can?.update) ? 'pointer-events-none opacity-50' : ''}`} title={!can(assignment.can?.update) ? NO_PERMISSION_MESSAGE : undefined} to={`/assignments/${assignment.id}/edit`}>Auftrag bearbeiten</Link>
         </div>
       </div>
 
@@ -334,34 +287,6 @@ export function AssignmentDetailPage() {
             </details>
           </div>
         </>
-      )}
-
-      {isEditMode && (
-        <div className="rounded border bg-white p-4">
-          <h2 className="mb-2 font-medium">Auftrag bearbeiten</h2>
-          <form className="space-y-2" onSubmit={assignmentForm.handleSubmit((values) => updateAssignmentMutation.mutate(values))}>
-            <input {...assignmentForm.register('title')} disabled={!can(assignment.can?.update)} title={!can(assignment.can?.update) ? NO_PERMISSION_MESSAGE : undefined} />
-            <textarea rows={3} {...assignmentForm.register('description')} disabled={!can(assignment.can?.update)} />
-            <div className="grid gap-2 md:grid-cols-2">
-              <select {...assignmentForm.register('boundaryAreaId')} disabled={!can(assignment.can?.update)}><option value="">Begrenzungsgebiet</option>{boundaryAreas.map((area) => <option key={area.id} value={area.id}>{area.name}</option>)}</select>
-              <select {...assignmentForm.register('targetAreaId')} disabled={!can(assignment.can?.update)}><option value="">Zielgebiet</option>{targetAreas.map((area) => <option key={area.id} value={area.id}>{area.name}</option>)}</select>
-            </div>
-            <div className="grid gap-2 md:grid-cols-2">
-              <select {...assignmentForm.register('status')} disabled={!can(assignment.can?.change_status)}>{ASSIGNMENT_STATUSES.map((status) => <option key={status}>{status}</option>)}</select>
-              <select {...assignmentForm.register('teamId')} disabled={!can(assignment.can?.assign_team)}><option value="">Zugewiesenes Team</option>{(teamsQuery.data?.data ?? []).map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select>
-            </div>
-            <div className="grid gap-2 md:grid-cols-2">
-              <input type="datetime-local" {...assignmentForm.register('startsAt')} disabled={!can(assignment.can?.update)} />
-              <input type="datetime-local" {...assignmentForm.register('dueAt')} disabled={!can(assignment.can?.update)} />
-            </div>
-            <div className="flex gap-2">
-              <button type="submit" className="bg-slate-900 text-white disabled:opacity-50" disabled={!can(assignment.can?.update)}>Speichern</button>
-              <button type="button" className="bg-red-600 text-white disabled:opacity-50" disabled={!can(assignment.can?.delete)} onClick={() => window.confirm('Auftrag löschen?') && deleteAssignmentMutation.mutate()}>Löschen</button>
-            </div>
-          </form>
-          {updateAssignmentMutation.isError && <ErrorState message={requestErrorMessage(updateAssignmentMutation.error)} />}
-          {deleteAssignmentMutation.isError && <ErrorState message={requestErrorMessage(deleteAssignmentMutation.error)} />}
-        </div>
       )}
     </section>
   )

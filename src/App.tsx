@@ -7,6 +7,7 @@ import { CampaignEditPage } from './pages/CampaignEditPage'
 import { AssignmentListPage } from './pages/AssignmentListPage'
 import { AssignmentDetailPage } from './pages/AssignmentDetailPage'
 import { AssignmentCreatePage } from './pages/AssignmentCreatePage'
+import { AssignmentEditPage } from './pages/AssignmentEditPage'
 import { AreasPage } from './pages/AreasPage'
 import { TeamsPage } from './pages/TeamsPage'
 import { UsersPage } from './pages/UsersPage'
@@ -34,7 +35,7 @@ export default function App() {
           <Route path="/assignments" element={<AssignmentListPage />} />
           <Route path="/assignments/new" element={<AssignmentCreatePage />} />
           <Route path="/assignments/:assignmentId" element={<AssignmentDetailPage />} />
-          <Route path="/assignments/:assignmentId/edit" element={<AssignmentDetailPage />} />
+          <Route path="/assignments/:assignmentId/edit" element={<AssignmentEditPage />} />
           <Route path="/areas" element={<AreasPage />} />
           <Route path="/areas/new" element={<AreaCreateMapPage />} />
           <Route path="/areas/new-map" element={<AreaCreateMapPage />} />
