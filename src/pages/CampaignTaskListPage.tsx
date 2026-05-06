@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { getTasksPage, listCampaignTeams, listUserTeams, updateTask } from '../api/endpoints'
+import { getTasksPage, getTeam, listCampaignTeams, listUserTeams, updateTask } from '../api/endpoints'
 import { useAuth } from '../auth/AuthContext'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import { assignedTeamId, isAssignedToLeadTeam, isClosedTask, leadTeamsByAssignedCampaign, leadTeamsFromCampaignTeams, uniqueTeams } from '../utils/taskAssignment'
@@ -16,12 +16,23 @@ export function CampaignTaskListPage() {
   const { data, isLoading, isError, error } = useQuery({ queryKey: ['tasks', id, page], queryFn: () => getTasksPage(id, { page, per_page: 100 }), enabled: Number.isFinite(id) })
   const assignedTeamsQuery = useQuery({ queryKey: ['campaign-teams', id], queryFn: () => listCampaignTeams(id, { per_page: 100 }), enabled: Number.isFinite(id) })
   const userTeamsQuery = useQuery({ queryKey: ['campaign-task-list-user-teams', user?.id], queryFn: () => listUserTeams(user!.id), enabled: Boolean(user?.id), retry: false })
+  const teamDetailsQuery = useQuery({
+    queryKey: ['campaign-task-list-team-details', assignedTeamsQuery.data?.data.map((team) => team.id).join(',')],
+    queryFn: async () => {
+      const results = await Promise.allSettled((assignedTeamsQuery.data?.data ?? []).map((team) => getTeam(team.id)))
+      return results.flatMap((result) => result.status === 'fulfilled' ? [result.value] : [])
+    },
+    enabled: Boolean(assignedTeamsQuery.data?.data.length),
+    retry: false,
+  })
 
   const assignedTeams = assignedTeamsQuery.data?.data ?? []
+  const teamDetails = teamDetailsQuery.data ?? []
   const campaignTeamIds = new Set(assignedTeams.map((team) => team.id))
   const leadTeams = uniqueTeams([
     ...leadTeamsByAssignedCampaign((userTeamsQuery.data ?? []) as UserTeam[], campaignTeamIds),
     ...leadTeamsFromCampaignTeams(assignedTeams, user?.id),
+    ...leadTeamsFromCampaignTeams(teamDetails, user?.id),
   ])
 
   const assignTaskMutation = useMutation({

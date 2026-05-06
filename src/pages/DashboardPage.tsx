@@ -41,6 +41,7 @@ export function DashboardPage() {
   const enrichedUserTeams = userTeams.map((team) => ({
     ...team,
     campaigns: team.campaigns ?? teamDetails.find((detail) => detail.id === team.id)?.campaigns,
+    pivot: team.pivot ?? teamDetails.find((detail) => detail.id === team.id)?.users?.find((member) => member.id === user?.id)?.pivot,
   }))
   const campaigns = uniqueCampaigns([...asArray<Campaign>(user?.campaigns), ...teamCampaigns(enrichedUserTeams), ...teamCampaigns(teamDetails)])
   const campaignIds = campaigns.map((campaign) => campaign.id)

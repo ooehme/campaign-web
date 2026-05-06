@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
-import { getCampaign, getTasksPage, listCampaignAreas, listCampaignAreasMap, listCampaignTeams, listUserTeams, updateTask } from '../api/endpoints'
+import { getCampaign, getTasksPage, getTeam, listCampaignAreas, listCampaignAreasMap, listCampaignTeams, listUserTeams, updateTask } from '../api/endpoints'
 import { ApiError } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import { CampaignAreaMap } from '../components/CampaignAreaMap'
@@ -30,6 +30,15 @@ export function CampaignDetailPage() {
   const assignedTeamsQuery = useQuery({ queryKey: ['campaign-teams', id], queryFn: () => listCampaignTeams(id, { per_page: 100 }), enabled: Number.isFinite(id) })
   const tasksQuery = useQuery({ queryKey: ['tasks', id], queryFn: () => getTasksPage(id, { per_page: 100 }), enabled: Number.isFinite(id) })
   const userTeamsQuery = useQuery({ queryKey: ['campaign-detail-user-teams', user?.id], queryFn: () => listUserTeams(user!.id), enabled: Boolean(user?.id), retry: false })
+  const teamDetailsQuery = useQuery({
+    queryKey: ['campaign-detail-team-details', assignedTeamsQuery.data?.data.map((team) => team.id).join(',')],
+    queryFn: async () => {
+      const results = await Promise.allSettled((assignedTeamsQuery.data?.data ?? []).map((team) => getTeam(team.id)))
+      return results.flatMap((result) => result.status === 'fulfilled' ? [result.value] : [])
+    },
+    enabled: Boolean(assignedTeamsQuery.data?.data.length),
+    retry: false,
+  })
 
   const assignTaskMutation = useMutation({
     mutationFn: ({ taskId, teamId }: { taskId: number; teamId: number | null }) => updateTask(taskId, { assigned_team_id: teamId }),
@@ -49,12 +58,14 @@ export function CampaignDetailPage() {
   const assignedAreas = assignedAreasQuery.data?.data ?? []
   const { boundaries: boundaryAreas, targets: targetAreas, unknown: unknownAreas } = splitCampaignAreasByUsage(assignedAreas)
   const assignedTeams = assignedTeamsQuery.data?.data ?? []
+  const teamDetails = teamDetailsQuery.data ?? []
   const tasks = tasksQuery.data?.data ?? []
   const openTasks = tasks.filter((task) => !isClosedTask(task))
   const campaignTeamIds = new Set(assignedTeams.map((team) => team.id))
   const leadTeams = uniqueTeams([
     ...leadTeamsByAssignedCampaign((userTeamsQuery.data ?? []) as UserTeam[], campaignTeamIds),
     ...leadTeamsFromCampaignTeams(assignedTeams, user?.id),
+    ...leadTeamsFromCampaignTeams(teamDetails, user?.id),
   ])
 
   const claimTask = (task: Task) => {

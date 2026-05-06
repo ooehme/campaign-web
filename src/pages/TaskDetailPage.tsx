@@ -9,6 +9,7 @@ import {
   createTaskPoint,
   deleteTask,
   deleteTaskPoint,
+  getTeam,
   getTask,
   getTaskEventsByPage,
   listCampaignAreas,
@@ -115,6 +116,15 @@ export function TaskDetailPage() {
   const areasQuery = useQuery({ queryKey: ['campaign-areas', taskQuery.data?.campaign_id], queryFn: () => listCampaignAreas(taskQuery.data!.campaign_id, { per_page: 100 }), enabled: !!taskQuery.data?.campaign_id })
   const teamsQuery = useQuery({ queryKey: ['campaign-teams', taskQuery.data?.campaign_id], queryFn: () => listCampaignTeams(taskQuery.data!.campaign_id, { per_page: 100 }), enabled: !!taskQuery.data?.campaign_id })
   const userTeamsQuery = useQuery({ queryKey: ['task-detail-user-teams', user?.id], queryFn: () => listUserTeams(user!.id), enabled: Boolean(user?.id), retry: false })
+  const teamDetailsQuery = useQuery({
+    queryKey: ['task-detail-team-details', teamsQuery.data?.data.map((team) => team.id).join(',')],
+    queryFn: async () => {
+      const results = await Promise.allSettled((teamsQuery.data?.data ?? []).map((team) => getTeam(team.id)))
+      return results.flatMap((result) => result.status === 'fulfilled' ? [result.value] : [])
+    },
+    enabled: Boolean(teamsQuery.data?.data.length),
+    retry: false,
+  })
   const eventsQuery = useQuery({ queryKey: ['task-events', id, eventsPage], queryFn: () => getTaskEventsByPage(id, { page: eventsPage, per_page: 100 }), enabled: Number.isFinite(id) })
 
   useEffect(() => {
@@ -167,11 +177,13 @@ export function TaskDetailPage() {
   }, [pointsQuery.data, task?.points])
   const campaignAreas = areasQuery.data?.data ?? []
   const campaignTeams = teamsQuery.data?.data ?? []
+  const teamDetails = teamDetailsQuery.data ?? []
   const userTeams = (userTeamsQuery.data ?? []) as UserTeam[]
   const campaignTeamIds = new Set(campaignTeams.map((team) => team.id))
   const leadTeams = uniqueTeams([
     ...leadTeamsByAssignedCampaign(userTeams, campaignTeamIds),
     ...leadTeamsFromCampaignTeams(campaignTeams, user?.id),
+    ...leadTeamsFromCampaignTeams(teamDetails, user?.id),
   ])
   const boundaryArea = campaignAreas.find((a) => a.id === (task?.boundary_area?.id ?? task?.boundary_area_id))
   const targetArea = campaignAreas.find((a) => a.id === (task?.target_area?.id ?? task?.area?.id ?? task?.area_id))
