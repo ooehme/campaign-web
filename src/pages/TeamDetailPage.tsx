@@ -87,13 +87,17 @@ export function TeamDetailPage() {
     </div>
     {success && <p className="rounded border border-emerald-200 bg-emerald-50 p-2 text-sm text-emerald-700">{success}</p>}
 
-    <div className="rounded border bg-white p-4"><h2 className="font-medium">Team-Übersicht</h2><p>ID: {team.id}</p><p>Name: {team.name ?? '-'}</p><p>Erstellt: {team.created_at ?? 'nicht verfügbar'}</p><p>Aktualisiert: {team.updated_at ?? 'nicht verfügbar'}</p></div>
+    <div className="rounded border bg-white p-4"><h2 className="font-medium">Team-Übersicht</h2><p>ID: {team.id}</p><p>Erstellt: {team.created_at ?? 'nicht verfügbar'}</p><p>Aktualisiert: {team.updated_at ?? 'nicht verfügbar'}</p></div>
 
     <div className="rounded border bg-white p-4 space-y-2">
-      <h2 className="font-medium">Mitglieder</h2>
-      {members.length === 0 && <EmptyState message="Noch keine Mitglieder im Team." />}
-      {leads.length === 0 && <p className="text-sm text-amber-700">Kein Teamleiter zugewiesen.</p>}
-      {members.length > 0 && <div className="overflow-auto"><table className="min-w-[640px] w-full text-sm"><thead><tr className="text-left"><th>Benutzer</th><th>E-Mail</th><th>Rolle</th><th>Anzeigename</th><th>Notizen</th><th>Aktionen</th></tr></thead><tbody>{members.map((member) => <tr key={member.user.id} className="border-t"><td>{member.user.name} {member.role === 'lead' && <span className="ml-1 rounded bg-amber-100 px-2 py-0.5 text-xs">Teamleiter</span>}</td><td>{member.user.email}</td><td><span className="rounded border px-2 py-0.5 text-xs">{roleLabel[member.role]}</span></td><td>{member.display_name ?? '-'}</td><td>{member.notes ?? '-'}</td><td><Link to={`/teams/${id}/edit`} className="border px-2 py-1 text-xs">Mitglied bearbeiten</Link><Link to={`/teams/${id}/edit`} className="ml-2 border px-2 py-1 text-xs">Mitglied entfernen</Link></td></tr>)}</tbody></table></div>}
+      <details>
+        <summary className="cursor-pointer font-medium">Mitglieder ({members.length})</summary>
+        <div className="mt-3 space-y-2">
+          {members.length === 0 && <EmptyState message="Noch keine Mitglieder im Team." />}
+          {leads.length === 0 && <p className="text-sm text-amber-700">Kein Teamleiter zugewiesen.</p>}
+          {members.length > 0 && <div className="overflow-auto"><table className="min-w-[640px] w-full text-sm"><thead><tr className="text-left"><th>Benutzer</th><th>E-Mail</th><th>Rolle</th><th>Anzeigename</th><th>Notizen</th></tr></thead><tbody>{members.map((member) => <tr key={member.user.id} className="border-t"><td>{member.user.name} {member.role === 'lead' && <span className="ml-1 rounded bg-amber-100 px-2 py-0.5 text-xs">Teamleiter</span>}</td><td>{member.user.email}</td><td><span className="rounded border px-2 py-0.5 text-xs">{roleLabel[member.role]}</span></td><td>{member.display_name ?? '-'}</td><td>{member.notes ?? '-'}</td></tr>)}</tbody></table></div>}
+        </div>
+      </details>
     </div>
 
     <div className="rounded border bg-white p-4 space-y-2"><h2 className="font-medium">Zugewiesene Kampagnen</h2>
@@ -114,12 +118,17 @@ export function TeamDetailPage() {
       </ul>}
     </div>
 
-    <div className="rounded border bg-white p-4 space-y-2"><h2 className="font-medium">Offene / zugehörige Aufträge</h2>
-      {Array.isArray(assignedCampaigns) && assignedCampaigns.length > 10 && <p className="text-sm text-slate-600">Es werden maximal 10 Kampagnen berücksichtigt, um unnötige API-Aufrufe zu vermeiden.</p>}
-      {tasksQuery.isLoading && <LoadingState />}
-      {!tasksQuery.isLoading && assignedCampaigns === null && <EmptyState message="Dieses Team ist noch keiner Kampagne zugewiesen." />}
-      {!tasksQuery.isLoading && tasksQuery.data?.length === 0 && <EmptyState message="Keine offenen Aufträge für dieses Team gefunden." />}
-      {tasksQuery.data && tasksQuery.data.length > 0 && <div className="overflow-auto"><table className="min-w-[640px] w-full text-sm"><thead><tr className="text-left"><th>Titel</th><th>Status</th><th>Priorität</th><th>Kampagne</th><th>Fällig</th></tr></thead><tbody>{tasksQuery.data.map((task: Task) => <tr key={task.id} className="border-t"><td><Link className="text-blue-600" to={`/tasks/${task.id}`}>{task.title}</Link></td><td>{task.status}</td><td>{task.priority}</td><td>{assignedCampaigns?.find((c) => c.id === task.campaign_id)?.name ?? task.campaign_id}</td><td>{task.due_at ?? '-'}</td></tr>)}</tbody></table></div>}
+    <div className="rounded border bg-white p-4 space-y-2">
+      <details>
+        <summary className="cursor-pointer font-medium">Offene / zugehörige Aufträge</summary>
+        <div className="mt-3 space-y-2">
+          {Array.isArray(assignedCampaigns) && assignedCampaigns.length > 10 && <p className="text-sm text-slate-600">Es werden maximal 10 Kampagnen berücksichtigt, um unnötige API-Aufrufe zu vermeiden.</p>}
+          {tasksQuery.isLoading && <LoadingState />}
+          {!tasksQuery.isLoading && assignedCampaigns === null && <EmptyState message="Dieses Team ist noch keiner Kampagne zugewiesen." />}
+          {!tasksQuery.isLoading && tasksQuery.data?.length === 0 && <EmptyState message="Keine offenen Aufträge für dieses Team gefunden." />}
+          {tasksQuery.data && tasksQuery.data.length > 0 && <div className="overflow-auto"><table className="min-w-[640px] w-full text-sm"><thead><tr className="text-left"><th>Titel</th><th>Status</th><th>Priorität</th><th>Kampagne</th><th>Fällig</th></tr></thead><tbody>{tasksQuery.data.map((task: Task) => <tr key={task.id} className="border-t"><td><Link className="text-blue-600" to={`/tasks/${task.id}`}>{task.title}</Link></td><td>{task.status}</td><td>{task.priority}</td><td>{assignedCampaigns?.find((c) => c.id === task.campaign_id)?.name ?? task.campaign_id}</td><td>{task.due_at ?? '-'}</td></tr>)}</tbody></table></div>}
+        </div>
+      </details>
     </div>
   </section>
 }
