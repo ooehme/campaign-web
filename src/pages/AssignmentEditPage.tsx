@@ -117,6 +117,13 @@ export function AssignmentEditPage() {
     },
   })
 
+  const targetAreaRegister = form.register('targetAreaId')
+  const setTargetArea = (targetAreaId: string) => {
+    const boundaryAreaId = boundaryAreaIdForTarget(targetAreaOptions, targetAreaId)
+    form.setValue('targetAreaId', targetAreaId, { shouldDirty: true, shouldValidate: true })
+    form.setValue('boundaryAreaId', boundaryAreaId ? String(boundaryAreaId) : '', { shouldDirty: true, shouldValidate: true })
+  }
+
   const deleteMutation = useMutation({
     mutationFn: () => deleteAssignment(id),
     onSuccess: () => {
@@ -165,7 +172,7 @@ export function AssignmentEditPage() {
 
         <div className="grid gap-3 md:grid-cols-2">
           <label className="block text-sm">Begrenzungsgebiet<select className="mt-1" {...form.register('boundaryAreaId')} disabled={!canUpdate || areasQuery.isLoading}><option value="">Kein Begrenzungsgebiet</option>{boundaryAreaOptions.map(({ area }) => <option key={area.id} value={area.id}>{area.name}</option>)}</select></label>
-          <label className="block text-sm">Zielgebiet<select className="mt-1" {...form.register('targetAreaId')} disabled={!canUpdate || areasQuery.isLoading} onChange={(event) => { form.setValue('targetAreaId', event.target.value); const boundaryAreaId = boundaryAreaIdForTarget(targetAreaOptions, event.target.value); if (boundaryAreaId) form.setValue('boundaryAreaId', String(boundaryAreaId)) }}><option value="">Kein Zielgebiet</option>{targetAreaOptions.map(({ area }) => <option key={area.id} value={area.id}>{area.name}</option>)}</select></label>
+          <label className="block text-sm">Zielgebiet<select className="mt-1" {...targetAreaRegister} disabled={!canUpdate || areasQuery.isLoading} onChange={(event) => { targetAreaRegister.onChange(event); setTargetArea(event.target.value) }}><option value="">Kein Zielgebiet</option>{targetAreaOptions.map(({ area }) => <option key={area.id} value={area.id}>{area.name}</option>)}</select></label>
         </div>
 
         <div className="grid gap-3 md:grid-cols-3">
