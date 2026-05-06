@@ -136,6 +136,7 @@ export interface Assignment {
   teamId?: number | null
   team_id?: number | null
   createdByUserId?: number | null
+  created_by_user_id?: number | null
   status: AssignmentStatus
   startsAt?: string | null
   starts_at?: string | null
@@ -147,6 +148,9 @@ export interface Assignment {
   updatedAt?: string | null
   campaign?: Campaign | null
   team?: AssignmentTeamRef | null
+  boundary_area?: Area | null
+  target_area?: Area | null
+  created_by_user?: User | null
   posterLocations?: PosterLocation[]
   posterLocationCount?: number
   can?: AssignmentCan

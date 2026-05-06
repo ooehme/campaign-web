@@ -61,6 +61,29 @@ const requiresPhotoProof = (assignment: Assignment) => {
   return Boolean(config && 'requirePhotoProof' in config && config.requirePhotoProof)
 }
 
+const dateTimeFormatter = new Intl.DateTimeFormat('de-DE', {
+  dateStyle: 'medium',
+  timeStyle: 'short',
+})
+
+const formatDateTime = (value?: string | null) => {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return dateTimeFormatter.format(date)
+}
+
+const areaName = (area: Area | null | undefined, fallbackId?: number | null) =>
+  area?.name ?? (fallbackId != null ? `ID ${fallbackId}` : '-')
+
+const dedupeAreas = (areas: Array<Area | null | undefined>) => {
+  const byId = new Map<number, Area>()
+  areas.forEach((area) => {
+    if (area && !byId.has(area.id)) byId.set(area.id, area)
+  })
+  return [...byId.values()]
+}
+
 function FitMap({ areas, posterLocations }: { areas: Area[]; posterLocations: PosterLocation[] }) {
   const map = useMap()
   useEffect(() => {
@@ -171,12 +194,20 @@ export function AssignmentDetailPage() {
   const targetAreaId = assignment.targetAreaId ?? assignment.target_area_id
   const boundaryAreas = campaignAreas.filter((area) => area.pivot?.usage === 'boundary')
   const targetAreas = campaignAreas.filter((area) => area.pivot?.usage === 'target')
-  const boundaryArea = campaignAreas.find((area) => area.id === boundaryAreaId)
-  const targetArea = campaignAreas.find((area) => area.id === targetAreaId)
-  const mapAreas = [boundaryArea, targetArea].filter(Boolean) as Area[]
+  const boundaryArea = campaignAreas.find((area) => area.id === boundaryAreaId) ?? assignment.boundary_area
+  const targetArea = campaignAreas.find((area) => area.id === targetAreaId) ?? assignment.target_area
+  const mapAreas = dedupeAreas([boundaryArea, targetArea])
+  const boundaryGeometry = getGeometryFromAreaGeoJson(boundaryArea?.geojson)
+  const targetGeometry = getGeometryFromAreaGeoJson(targetArea?.geojson)
   const canManagePosterLocations = canPermission(user?.can, PERMISSIONS.POSTER_LOCATIONS_MANAGE) && can(assignment.can?.manage_poster_locations ?? true)
   const canCreatePosterLocations = assignment.type === 'poster_free' ? canManagePosterLocations : canManagePosterLocations && isEditMode
   const photoRequired = requiresPhotoProof(assignment)
+  const startsAt = assignment.startsAt ?? assignment.starts_at
+  const dueAt = assignment.dueAt ?? assignment.due_at
+  const createdAt = assignment.createdAt ?? assignment.created_at
+  const updatedAt = assignment.updatedAt ?? assignment.updated_at
+  const createdByUserId = assignment.createdByUserId ?? assignment.created_by_user_id
+  const targetAreaLabel = areaName(targetArea, targetAreaId) !== '-' ? areaName(targetArea, targetAreaId) : (assignment.targetArea ?? '-')
 
   const savePosterLocation = (values: PosterLocationFormValues) => {
     if (photoRequired && values.status === 'installed' && !values.photoUrl?.trim()) {
@@ -208,8 +239,51 @@ export function AssignmentDetailPage() {
         </div>
       </div>
 
-      <div className="rounded border bg-white p-4"><h2 className="mb-2 font-medium">Übersicht</h2><p>{assignmentTypeLabel[assignment.type]} · {assignmentStatusLabel[assignment.status]}</p><p className="text-sm text-slate-600">Begrenzungsgebiet: {boundaryArea?.name ?? boundaryAreaId ?? '-'}</p><p className="text-sm text-slate-600">Zielgebiet: {targetArea?.name ?? assignment.targetArea ?? targetAreaId ?? '-'}</p></div>
-      <div className="rounded border bg-white p-4"><h2 className="mb-2 font-medium">Team</h2><p>{assignment.team?.name ?? assignment.teamId ?? 'Kein Team zugewiesen.'}</p></div>
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(360px,480px)]">
+        <div className="space-y-4">
+          <div className="rounded border bg-white p-4">
+            <h2 className="mb-3 font-medium">Übersicht</h2>
+            <dl className="grid gap-3 text-sm md:grid-cols-2">
+              <div><dt className="text-slate-500">Typ</dt><dd className="font-medium">{assignmentTypeLabel[assignment.type]}</dd></div>
+              <div><dt className="text-slate-500">Status</dt><dd className="font-medium">{assignmentStatusLabel[assignment.status]}</dd></div>
+              <div><dt className="text-slate-500">Start</dt><dd>{formatDateTime(startsAt)}</dd></div>
+              <div><dt className="text-slate-500">Fällig</dt><dd>{formatDateTime(dueAt)}</dd></div>
+              <div><dt className="text-slate-500">Kampagne</dt><dd>{assignment.campaign?.name ?? assignmentCampaignId ?? '-'}</dd></div>
+              <div><dt className="text-slate-500">Erstellt von</dt><dd>{assignment.created_by_user?.name ?? createdByUserId ?? '-'}</dd></div>
+              <div><dt className="text-slate-500">Begrenzungsgebiet</dt><dd>{areaName(boundaryArea, boundaryAreaId)}</dd></div>
+              <div><dt className="text-slate-500">Zielgebiet</dt><dd>{targetAreaLabel}</dd></div>
+              <div><dt className="text-slate-500">Erstellt</dt><dd>{formatDateTime(createdAt)}</dd></div>
+              <div><dt className="text-slate-500">Aktualisiert</dt><dd>{formatDateTime(updatedAt)}</dd></div>
+            </dl>
+            {assignment.description && <div className="mt-4 border-t pt-3 text-sm"><h3 className="mb-1 font-medium">Beschreibung</h3><p className="whitespace-pre-wrap text-slate-700">{assignment.description}</p></div>}
+          </div>
+
+          <div className="rounded border bg-white p-4"><h2 className="mb-2 font-medium">Team</h2><p>{assignment.team?.name ?? assignment.teamId ?? 'Kein Team zugewiesen.'}</p></div>
+        </div>
+
+        <div className="rounded border bg-white p-4">
+          <h2 className="mb-2 font-medium">Karte</h2>
+          <p className="mb-3 text-xs text-slate-600">Begrenzungsgebiet und Zielgebiet des Auftrags</p>
+          {areasQuery.isError && <p className="mb-2 text-sm text-amber-700">Kampagnenflächen konnten nicht geladen werden. Verfügbare Auftragsflächen werden angezeigt.</p>}
+          <div className="h-80 overflow-hidden rounded border md:h-96">
+            {!boundaryGeometry && !targetGeometry && posterLocations.length === 0 ? <div className="p-3 text-sm text-slate-600">Keine Kartenobjekte für diesen Auftrag vorhanden.</div> : (
+              <MapContainer center={DEFAULT_CENTER} zoom={6} className="h-full w-full">
+                <TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} />
+                {posterLocationToolsVisible && <MapClickPicker enabled={canCreatePosterLocations} onPick={(lat, lng) => { posterLocationForm.setValue('lat', Number(lat.toFixed(6))); posterLocationForm.setValue('lng', Number(lng.toFixed(6))); setPosterLocationEditorOpen(true) }} />}
+                {boundaryArea && boundaryGeometry && <GeoJSON data={boundaryGeometry as GeoJSON.GeoJsonObject} style={{ color: '#1d4ed8', weight: 5, fillOpacity: 0, opacity: 0.95 }}><Popup><p className="font-medium">{boundaryArea.name}</p><p>Begrenzungsgebiet</p></Popup></GeoJSON>}
+                {targetArea && targetGeometry && <GeoJSON data={targetGeometry as GeoJSON.GeoJsonObject} style={{ color: '#0f766e', weight: 2, fillColor: '#14b8a6', fillOpacity: 0.2, opacity: 0.9 }}><Popup><p className="font-medium">{targetArea.name}</p><p>Zielgebiet</p></Popup></GeoJSON>}
+                {posterLocations.map((posterLocation) => (
+                  <Marker key={posterLocation.id} position={[posterLocation.lat, posterLocation.lng]} draggable={posterLocationToolsVisible && canManagePosterLocations && can(posterLocation.can?.update)} eventHandlers={{ dragend: (event) => { const latLng = event.target.getLatLng(); updatePosterLocationMutation.mutate({ id: posterLocation.id, data: { lat: latLng.lat, lng: latLng.lng } }) } }}>
+                    <Popup><p className="font-medium">{posterLocation.label ?? `Standort #${posterLocation.id}`}</p><p>{posterLocation.notes ?? '-'}</p><p>Status: {posterLocation.status}</p></Popup>
+                  </Marker>
+                ))}
+                <FitMap areas={mapAreas} posterLocations={posterLocations} />
+              </MapContainer>
+            )}
+          </div>
+        </div>
+      </div>
+
       <div className="rounded border bg-white p-4"><h2 className="mb-2 font-medium">Anweisungen</h2>{configInstructions(assignment.typeConfig ?? assignment.type_config).length === 0 ? <p>Keine Anweisungen hinterlegt.</p> : <ul className="list-disc pl-5">{configInstructions(assignment.typeConfig ?? assignment.type_config).map((instruction) => <li key={instruction}>{instruction}</li>)}</ul>}</div>
 
       {posterLocationToolsVisible && (
@@ -257,27 +331,6 @@ export function AssignmentDetailPage() {
               {posterLocationFormError && <ErrorState message={posterLocationFormError} />}
               {posterLocationForm.formState.errors.lat && <ErrorState message={posterLocationForm.formState.errors.lat.message ?? ''} />}
               {posterLocationForm.formState.errors.lng && <ErrorState message={posterLocationForm.formState.errors.lng.message ?? ''} />}
-            </details>
-          </div>
-
-          <div className="rounded border bg-white p-4">
-            <details open>
-              <summary className="cursor-pointer font-medium">Karte</summary>
-              <div className="mt-3 h-96 overflow-hidden rounded border">
-                {mapAreas.length === 0 && posterLocations.length === 0 ? <div className="p-3 text-sm text-slate-600">Keine Kartenobjekte für diesen Auftrag vorhanden.</div> : (
-                  <MapContainer center={DEFAULT_CENTER} zoom={6} className="h-full w-full">
-                    <TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} />
-                    <MapClickPicker enabled={canCreatePosterLocations} onPick={(lat, lng) => { posterLocationForm.setValue('lat', Number(lat.toFixed(6))); posterLocationForm.setValue('lng', Number(lng.toFixed(6))); setPosterLocationEditorOpen(true) }} />
-                    {mapAreas.map((area) => <GeoJSON key={area.id} data={area.geojson as GeoJSON.GeoJsonObject} style={{ color: '#0f766e', weight: 2, fillOpacity: 0.2 }} />)}
-                    {posterLocations.map((posterLocation) => (
-                      <Marker key={posterLocation.id} position={[posterLocation.lat, posterLocation.lng]} draggable={canManagePosterLocations && can(posterLocation.can?.update)} eventHandlers={{ dragend: (event) => { const latLng = event.target.getLatLng(); updatePosterLocationMutation.mutate({ id: posterLocation.id, data: { lat: latLng.lat, lng: latLng.lng } }) } }}>
-                        <Popup><p className="font-medium">{posterLocation.label ?? `Standort #${posterLocation.id}`}</p><p>{posterLocation.notes ?? '-'}</p><p>Status: {posterLocation.status}</p></Popup>
-                      </Marker>
-                    ))}
-                    <FitMap areas={mapAreas} posterLocations={posterLocations} />
-                  </MapContainer>
-                )}
-              </div>
             </details>
           </div>
         </>
