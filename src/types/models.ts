@@ -149,7 +149,9 @@ export interface Assignment {
   typeConfig?: AssignmentTypeConfig | null
   type_config?: AssignmentTypeConfig | null
   createdAt?: string | null
+  created_at?: string | null
   updatedAt?: string | null
+  updated_at?: string | null
   campaign?: Campaign | null
   team?: AssignmentTeamRef | null
   boundary_area?: Area | null
