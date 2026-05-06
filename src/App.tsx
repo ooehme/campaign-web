@@ -32,6 +32,7 @@ export default function App() {
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/campaigns" element={<CampaignListPage />} />
           <Route path="/areas" element={<AreasPage />} />
+          <Route path="/areas/new" element={<AreaCreateMapPage />} />
           <Route path="/areas/new-map" element={<AreaCreateMapPage />} />
           <Route path="/areas/:areaId" element={<AreaDetailPage />} />
           <Route path="/areas/:areaId/edit" element={<AreaEditPage />} />

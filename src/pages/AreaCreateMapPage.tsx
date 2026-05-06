@@ -2,17 +2,19 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import L from 'leaflet'
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { MapContainer, Marker, Polygon, TileLayer, useMapEvents } from 'react-leaflet'
+import { GeoJSON, MapContainer, Marker, Polygon, TileLayer, useMapEvents } from 'react-leaflet'
 import { createArea, createOrAttachAreaToCampaign, listCampaignAreas } from '../api/endpoints'
 import { ApiError } from '../api/client'
 import { ErrorState } from '../components/UiState'
 import type { GeoJsonInput, GeoJsonPolygon } from '../types/models'
 import { MAP_ATTRIBUTION, MAP_TILE_URL } from '../utils/constants'
-import { getSuggestedAreaName, normalizeGeoJsonInput } from '../utils/geojson'
+import { getSuggestedAreaName, normalizeGeoJsonInput, parseGeoJsonImport } from '../utils/geojson'
 
 const DEFAULT_CENTER: [number, number] = [51.1657, 10.4515]
+const PLACEHOLDER = '{"type":"Polygon","coordinates":[[[13.40,52.52],[13.41,52.52],[13.41,52.53],[13.40,52.53],[13.40,52.52]]]}'
 
 type LatLngTuple = [number, number]
+type CreationMode = 'map' | 'import' | 'manual'
 
 function MapClickHandler({ onPointAdd, disabled }: { onPointAdd: (point: LatLngTuple) => void; disabled: boolean }) {
   useMapEvents({
@@ -24,7 +26,7 @@ function MapClickHandler({ onPointAdd, disabled }: { onPointAdd: (point: LatLngT
   return null
 }
 
-const markerIcon = L.divIcon({ className: 'rounded-full border border-slate-700 bg-white text-xs', html: '⬤', iconSize: [18, 18], iconAnchor: [9, 9] })
+const markerIcon = L.divIcon({ className: 'rounded-full border border-slate-700 bg-white text-xs', html: 'o', iconSize: [18, 18], iconAnchor: [9, 9] })
 
 const closeRing = (points: LatLngTuple[]) => {
   if (points.length < 3) return [] as [number, number][]
@@ -34,7 +36,6 @@ const closeRing = (points: LatLngTuple[]) => {
   if (first[0] !== last[0] || first[1] !== last[1]) ring.push(first)
   return ring
 }
-
 
 const hasSelfIntersection = (points: LatLngTuple[]) => {
   if (points.length < 4) return false
@@ -71,20 +72,27 @@ export function AreaCreateMapPage() {
   const navigate = useNavigate()
   const qc = useQueryClient()
 
+  const [mode, setMode] = useState<CreationMode>('map')
   const [name, setName] = useState('')
   const [points, setPoints] = useState<LatLngTuple[]>([])
-  const [manualGeoJson, setManualGeoJson] = useState('{"type":"Polygon","coordinates":[]}')
-  const [useManual, setUseManual] = useState(false)
+  const [manualGeoJson, setManualGeoJson] = useState(PLACEHOLDER)
+  const [importText, setImportText] = useState('')
+  const [importNames, setImportNames] = useState<Record<string, string>>({})
   const [success, setSuccess] = useState('')
+  const [saveProgress, setSaveProgress] = useState('')
+  const [saveErrors, setSaveErrors] = useState<string[]>([])
   const [usage, setUsage] = useState<'boundary' | 'target'>('boundary')
   const [boundaryAreaId, setBoundaryAreaId] = useState('')
   const [notes, setNotes] = useState('')
+
   const campaignAreasQuery = useQuery({ queryKey: ['campaign-areas', campaignNumericId], queryFn: () => listCampaignAreas(campaignNumericId as number, { per_page: 100 }), enabled: Boolean(isCampaignMode && campaignNumericId) })
   const boundaryAreas = (campaignAreasQuery.data?.data ?? []).filter((a) => a.pivot?.usage === 'boundary')
 
-  const geometry = useMemo(() => (useManual ? null : toGeoJson(points)), [points, useManual])
-  const parsedManual = useMemo(() => (useManual ? normalizeGeoJsonInput(manualGeoJson) : undefined), [useManual, manualGeoJson])
-  const canSave = name.trim().length > 0 && (!!geometry || (useManual && !!parsedManual?.parsed))
+  const geometry = useMemo(() => toGeoJson(points), [points])
+  const parsedManual = useMemo(() => normalizeGeoJsonInput(manualGeoJson), [manualGeoJson])
+  const parsedImport = useMemo(() => parseGeoJsonImport(importText), [importText])
+  const allImportsNamed = parsedImport.items.every((item) => Boolean(importNames[item.id]?.trim()))
+  const canSaveSingle = name.trim().length > 0 && (mode === 'map' ? !!geometry : mode === 'manual' ? !!parsedManual.parsed : false)
 
   const formatError = (error: unknown) => {
     if (!(error instanceof ApiError)) return 'Speichern fehlgeschlagen.'
@@ -99,88 +107,194 @@ export function AreaCreateMapPage() {
     qc.invalidateQueries({ queryKey: ['campaign'] })
   }
 
+  const createPayload = (areaName: string, geojson: GeoJsonInput) => {
+    if (isCampaignMode && campaignNumericId) {
+      return createOrAttachAreaToCampaign(campaignNumericId, { name: areaName, geojson, usage, boundary_area_id: boundaryAreaId ? Number(boundaryAreaId) : null, notes: notes || null })
+    }
+    return createArea({ name: areaName, geojson })
+  }
+
   const saveMutation = useMutation({
     mutationFn: async () => {
-      const payloadGeometry = useManual ? parsedManual?.parsed : geometry
+      const payloadGeometry = mode === 'manual' ? parsedManual.parsed : geometry
       if (!payloadGeometry) throw new Error('invalid-geometry')
-      if (isCampaignMode && campaignNumericId) {
-        return createOrAttachAreaToCampaign(campaignNumericId, { name: name.trim(), geojson: payloadGeometry as GeoJsonInput, usage, boundary_area_id: boundaryAreaId ? Number(boundaryAreaId) : null, notes: notes || null })
-      }
-      return createArea({ name: name.trim(), geojson: payloadGeometry as GeoJsonInput })
+      return createPayload(name.trim(), payloadGeometry as GeoJsonInput)
     },
     onSuccess: () => {
       invalidate()
       setSuccess('Fläche erfolgreich erstellt.')
-      if (isCampaignMode && campaignNumericId) {
-        navigate(`/campaigns/${campaignNumericId}`)
-        return
-      }
-      navigate('/areas')
+      navigate(isCampaignMode && campaignNumericId ? `/campaigns/${campaignNumericId}` : '/areas')
     },
   })
 
   const validationMessage = useMemo(() => {
+    if (mode === 'import') {
+      if (parsedImport.parseError) return parsedImport.parseError
+      if (parsedImport.items.length > 0 && !allImportsNamed) return 'Bitte für jede importierte Fläche einen Namen vergeben.'
+      return ''
+    }
     if (!name.trim()) return 'Name ist erforderlich.'
-    if (!useManual && !geometry) return 'Bitte eine Fläche auf der Karte zeichnen.'
-    if (!useManual && hasSelfIntersection(points)) return 'Die gezeichnete Fläche ist ungültig.'
-    if (useManual && parsedManual?.error) return parsedManual.error
+    if (mode === 'map' && !geometry) return 'Bitte eine Fläche auf der Karte zeichnen.'
+    if (mode === 'map' && hasSelfIntersection(points)) return 'Die gezeichnete Fläche ist ungültig.'
+    if (mode === 'manual' && parsedManual.error) return parsedManual.error
     return ''
-  }, [name, geometry, useManual, manualGeoJson, points])
+  }, [name, geometry, mode, parsedManual.error, parsedImport.parseError, parsedImport.items.length, allImportsNamed, points])
 
-  return <section className="space-y-4">
-    <h1 className="text-2xl font-semibold">Fläche auf Karte erstellen</h1>
-    <p className="text-sm text-slate-600">Zeichnen Sie die Fläche als Polygon auf der Karte.</p>
-    {isCampaignMode && <p className="rounded border border-blue-200 bg-blue-50 p-2 text-sm text-blue-700">Die neue Fläche wird direkt der Kampagne zugewiesen.</p>}
-    {!isCampaignMode && <p className="rounded border border-slate-200 bg-slate-50 p-2 text-sm">Hinweis: Kampagnenzuweisung kann nach dem Speichern erfolgen.</p>}
-    {success && <p className="rounded border border-emerald-200 bg-emerald-50 p-2 text-sm text-emerald-700">{success}</p>}
+  const onFileUpload = async (file?: File | null) => {
+    if (!file) return
+    const text = await file.text()
+    setImportText(text)
+    setImportNames({})
+    setSaveErrors([])
+  }
 
-    <div className="rounded border bg-white p-4 space-y-3">
-      <label className="block text-sm font-medium" htmlFor="area-name">Name</label>
-      <input id="area-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="z. B. Einsatzgebiet Nord" />
+  const saveImport = async () => {
+    if (!allImportsNamed || parsedImport.items.length === 0) return
+    setSaveErrors([])
+    const errors: string[] = []
+    for (let i = 0; i < parsedImport.items.length; i += 1) {
+      const item = parsedImport.items[i]
+      const areaName = importNames[item.id].trim()
+      setSaveProgress(`Speichere Fläche ${i + 1}/${parsedImport.items.length} ...`)
+      try {
+        await createPayload(areaName, item.feature)
+      } catch (e) {
+        const apiError = e as ApiError
+        errors.push(`${areaName}: ${apiError.status === 500 ? 'Serverfehler beim Speichern. Details im Backend-Log prüfen.' : apiError.message}`)
+      }
+    }
+    invalidate()
+    setSaveProgress('')
+    if (errors.length === 0) {
+      setSuccess(`${parsedImport.items.length} Fläche(n) importiert.`)
+      navigate(isCampaignMode && campaignNumericId ? `/campaigns/${campaignNumericId}` : '/areas')
+    } else {
+      setSaveErrors(errors)
+    }
+  }
 
-      {isCampaignMode && <div className='grid gap-2 md:grid-cols-2'><select value={usage} onChange={(e) => setUsage(e.target.value as 'boundary' | 'target')}><option value='boundary'>Begrenzung</option><option value='target'>Zielgebiet</option></select>{usage === 'target' && <select value={boundaryAreaId} onChange={(e) => setBoundaryAreaId(e.target.value)}><option value=''>Begrenzung auswählen (optional)</option>{boundaryAreas.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select>}<input value={notes} placeholder='Notizen (optional)' onChange={(e) => setNotes(e.target.value)} /></div>}
-      <div className="h-96 overflow-hidden rounded border">
-        <MapContainer center={DEFAULT_CENTER} zoom={6} className="h-full w-full">
-          <TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} />
-          <MapClickHandler disabled={useManual} onPointAdd={(point) => setPoints((prev) => [...prev, point])} />
-          {points.map((p, idx) => <Marker key={`${p[0]}-${p[1]}-${idx}`} position={p} icon={markerIcon} draggable eventHandlers={{ dragend: (e) => { const next = [...points]; const ll = (e.target as L.Marker).getLatLng(); next[idx] = [ll.lat, ll.lng]; setPoints(next) } }} />)}
-          {points.length >= 3 && <Polygon positions={points} pathOptions={{ color: '#0f172a' }} />}
-        </MapContainer>
+  const backTo = isCampaignMode && campaignNumericId ? `/campaigns/${campaignNumericId}` : '/areas'
+
+  return (
+    <section className="space-y-4">
+      <Link to={backTo} className="text-sm text-blue-600">Zurück</Link>
+      <h1 className="text-2xl font-semibold">Neue Fläche anlegen</h1>
+      {isCampaignMode && <p className="rounded border border-blue-200 bg-blue-50 p-2 text-sm text-blue-700">Die neue Fläche wird direkt der Kampagne zugewiesen.</p>}
+      {!isCampaignMode && <p className="rounded border border-slate-200 bg-slate-50 p-2 text-sm">Die Fläche wird im globalen Flächen-Pool angelegt.</p>}
+      {success && <p className="rounded border border-emerald-200 bg-emerald-50 p-2 text-sm text-emerald-700">{success}</p>}
+
+      <div className="flex flex-wrap gap-2 rounded border bg-white p-2">
+        {([
+          ['map', 'Auf Karte anlegen'],
+          ['import', 'GeoJSON importieren'],
+          ['manual', 'GeoJSON manuell bearbeiten'],
+        ] as Array<[CreationMode, string]>).map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            aria-pressed={mode === value}
+            className={`border ${mode === value ? 'bg-slate-900 text-white' : 'bg-white'}`}
+            onClick={() => { setMode(value); setSaveErrors([]); setSaveProgress('') }}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        <button type="button" className="border" onClick={() => setPoints([])} disabled={points.length === 0 || useManual} title={useManual ? 'Manueller Modus aktiv.' : undefined}>Fläche löschen/zurücksetzen</button>
-        <button type="button" className="border" onClick={() => setPoints((prev) => prev.slice(0, -1))} disabled={points.length === 0 || useManual}>Letzten Punkt entfernen</button>
-      </div>
-
-      <details>
-        <summary className="cursor-pointer text-sm font-medium">Für Experten: GeoJSON manuell bearbeiten</summary>
-        <div className="mt-2 space-y-2">
-          <label className="inline-flex items-center gap-2 text-sm"><input type="checkbox" checked={useManual} onChange={(e) => setUseManual(e.target.checked)} />Manuellen GeoJSON-Modus verwenden</label>
-          <textarea rows={8} value={manualGeoJson} onChange={(e) => { const next = e.target.value; setManualGeoJson(next); const normalized = normalizeGeoJsonInput(next); if (normalized.parsed && !name.trim()) { const suggestion = getSuggestedAreaName(normalized.parsed); if (suggestion) setName(suggestion) } }} />
+      {isCampaignMode && (
+        <div className="grid gap-2 rounded border bg-white p-4 md:grid-cols-3">
+          <select value={usage} onChange={(e) => setUsage(e.target.value as 'boundary' | 'target')}>
+            <option value="boundary">Begrenzung</option>
+            <option value="target">Zielgebiet</option>
+          </select>
+          <select value={boundaryAreaId} onChange={(e) => setBoundaryAreaId(e.target.value)} disabled={usage !== 'target'}>
+            <option value="">Begrenzung auswählen (optional)</option>
+            {boundaryAreas.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+          <input value={notes} placeholder="Notizen (optional)" onChange={(e) => setNotes(e.target.value)} />
         </div>
-      </details>
+      )}
 
-      <div>
-        <p className="text-sm font-medium">GeoJSON Vorschau</p>
-        <pre className="max-h-64 overflow-auto rounded border bg-slate-50 p-3 text-xs">{JSON.stringify(useManual ? (parsedManual?.preview ?? { error: parsedManual?.error ?? 'Ungültiges JSON' }) : (geometry ?? { hint: 'Polygon mit mindestens 3 Punkten zeichnen.' }), null, 2)}</pre>
-      </div>
+      {mode === 'map' && (
+        <div className="space-y-3 rounded border bg-white p-4">
+          <label className="block text-sm font-medium" htmlFor="area-name">Name</label>
+          <input id="area-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="z. B. Einsatzgebiet Nord" />
+          <div className="h-96 overflow-hidden rounded border">
+            <MapContainer center={DEFAULT_CENTER} zoom={6} className="h-full w-full">
+              <TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} />
+              <MapClickHandler disabled={false} onPointAdd={(point) => setPoints((prev) => [...prev, point])} />
+              {points.map((p, idx) => <Marker key={`${p[0]}-${p[1]}-${idx}`} position={p} icon={markerIcon} draggable eventHandlers={{ dragend: (e) => { const next = [...points]; const ll = (e.target as L.Marker).getLatLng(); next[idx] = [ll.lat, ll.lng]; setPoints(next) } }} />)}
+              {points.length >= 3 && <Polygon positions={points} pathOptions={{ color: '#0f172a' }} />}
+            </MapContainer>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className="border" onClick={() => setPoints([])} disabled={points.length === 0}>Fläche löschen/zurücksetzen</button>
+            <button type="button" className="border" onClick={() => setPoints((prev) => prev.slice(0, -1))} disabled={points.length === 0}>Letzten Punkt entfernen</button>
+          </div>
+        </div>
+      )}
+
+      {mode === 'import' && (
+        <div className="space-y-3 rounded border bg-white p-4">
+          <input type="file" accept=".geojson,.json,application/json" onChange={(event) => { void onFileUpload(event.target.files?.[0]) }} />
+          <textarea rows={8} placeholder="GeoJSON hier einfügen" value={importText} onChange={(e) => setImportText(e.target.value)} />
+          {parsedImport.parseError && <ErrorState message={parsedImport.parseError} />}
+          <p className="text-sm text-slate-600">Importierbar: {parsedImport.items.length} · Übersprungen: {parsedImport.skipped}</p>
+
+          {parsedImport.items.length > 0 && (
+            <div className="grid gap-3 lg:grid-cols-2">
+              <div className="h-72 overflow-hidden rounded border">
+                <MapContainer center={DEFAULT_CENTER} zoom={6} className="h-full w-full">
+                  <TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} />
+                  <GeoJSON data={{ type: 'FeatureCollection', features: parsedImport.items.map((item) => item.feature) } as GeoJSON.GeoJsonObject} style={{ color: '#0f172a', fillOpacity: 0.1 }} />
+                </MapContainer>
+              </div>
+              <div className="max-h-72 space-y-2 overflow-auto">
+                {parsedImport.items.map((item, index) => (
+                  <div key={item.id} className="rounded border p-2">
+                    <input
+                      className="w-full"
+                      placeholder={parsedImport.items.length === 1 ? 'Name der Fläche' : `Name für Fläche ${index + 1}`}
+                      value={importNames[item.id] ?? ''}
+                      onChange={(e) => setImportNames((prev) => ({ ...prev, [item.id]: e.target.value }))}
+                    />
+                    <details>
+                      <summary className="cursor-pointer text-xs">Eigenschaften anzeigen</summary>
+                      <pre className="mt-1 overflow-auto rounded bg-slate-50 p-2 text-xs">{JSON.stringify(item.properties ?? {}, null, 2)}</pre>
+                    </details>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {mode === 'manual' && (
+        <div className="space-y-3 rounded border bg-white p-4">
+          <label className="block text-sm font-medium" htmlFor="manual-area-name">Name</label>
+          <input id="manual-area-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="z. B. Einsatzgebiet Nord" />
+          <textarea rows={12} placeholder={PLACEHOLDER} value={manualGeoJson} onChange={(e) => { const next = e.target.value; setManualGeoJson(next); const normalized = normalizeGeoJsonInput(next); if (normalized.parsed && !name.trim()) { const suggestion = getSuggestedAreaName(normalized.parsed); if (suggestion) setName(suggestion) } }} />
+          <div>
+            <p className="text-sm font-medium">GeoJSON Vorschau</p>
+            <pre className="max-h-64 overflow-auto rounded border bg-slate-50 p-3 text-xs">{JSON.stringify(parsedManual.preview ?? { error: parsedManual.error ?? 'Ungültiges JSON' }, null, 2)}</pre>
+          </div>
+        </div>
+      )}
 
       {validationMessage && <ErrorState message={validationMessage} />}
-      {saveMutation.isError && saveMutation.error instanceof ApiError && saveMutation.error.status === 403 ? (
-        <ErrorState
-          title="Fläche speichern nicht erlaubt"
-          message="Ihr Konto darf diese Fläche nicht erstellen oder der Kampagne zuweisen."
-          description="Kehren Sie zur vorherigen Übersicht zurück und wählen Sie einen verfügbaren Arbeitsbereich."
-          actionLabel={isCampaignMode ? 'Zurück zur Kampagne' : 'Zurück zum Flächen-Pool'}
-          actionTo={isCampaignMode && campaignNumericId ? `/campaigns/${campaignNumericId}` : '/areas'}
-        />
-      ) : saveMutation.isError && <ErrorState message={formatError(saveMutation.error)} />}
+      {saveMutation.isError && <ErrorState message={formatError(saveMutation.error)} />}
+      {saveErrors.length > 0 && <ErrorState message={`Teilweise fehlgeschlagen: ${saveErrors.join(' | ')}`} />}
+      {saveProgress && <p className="text-sm text-slate-700">{saveProgress}</p>}
 
       <div className="flex gap-2">
-        <button type="button" className="bg-slate-900 text-white disabled:opacity-50" disabled={!canSave || !!validationMessage || saveMutation.isPending} title={!canSave ? validationMessage : undefined} onClick={() => saveMutation.mutate()}>Speichern</button>
-        <Link className="border rounded px-3 py-2 text-sm" to={isCampaignMode && campaignNumericId ? `/campaigns/${campaignNumericId}` : '/areas'}>Abbrechen</Link>
+        {mode === 'import' ? (
+          <button type="button" className="bg-slate-900 text-white disabled:opacity-50" disabled={!!validationMessage || parsedImport.items.length === 0 || !allImportsNamed} onClick={() => void saveImport()}>Import speichern</button>
+        ) : (
+          <button type="button" className="bg-slate-900 text-white disabled:opacity-50" disabled={!canSaveSingle || !!validationMessage || saveMutation.isPending} title={!canSaveSingle ? validationMessage : undefined} onClick={() => saveMutation.mutate()}>Speichern</button>
+        )}
+        <Link className="rounded border px-3 py-2 text-sm" to={backTo}>Abbrechen</Link>
       </div>
-    </div>
-  </section>
+    </section>
+  )
 }
