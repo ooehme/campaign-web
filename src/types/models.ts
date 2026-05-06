@@ -126,14 +126,23 @@ export interface Assignment {
   type: AssignmentType
   title: string
   description?: string | null
-  targetArea: string
+  targetArea?: string | null
+  boundaryAreaId?: number | null
+  targetAreaId?: number | null
+  boundary_area_id?: number | null
+  target_area_id?: number | null
   campaignId?: number | null
+  campaign_id?: number | null
   teamId?: number | null
+  team_id?: number | null
   createdByUserId?: number | null
   status: AssignmentStatus
   startsAt?: string | null
+  starts_at?: string | null
   dueAt?: string | null
+  due_at?: string | null
   typeConfig?: AssignmentTypeConfig | null
+  type_config?: AssignmentTypeConfig | null
   createdAt?: string | null
   updatedAt?: string | null
   campaign?: Campaign | null

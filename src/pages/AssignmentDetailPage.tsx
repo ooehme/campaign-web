@@ -21,8 +21,9 @@ const DEFAULT_CENTER: [number, number] = [51.1657, 10.4515]
 const assignmentSchema = z.object({
   title: z.string().min(1),
   description: z.string().optional(),
-  targetArea: z.string().min(1),
-  teamId: z.coerce.number().optional(),
+  boundaryAreaId: z.preprocess((value) => value === '' || value == null ? undefined : Number(value), z.number().optional()),
+  targetAreaId: z.preprocess((value) => value === '' || value == null ? undefined : Number(value), z.number().optional()),
+  teamId: z.preprocess((value) => value === '' || value == null ? undefined : Number(value), z.number().optional()),
   status: z.enum(ASSIGNMENT_STATUSES),
   startsAt: z.string().optional(),
   dueAt: z.string().optional(),
@@ -56,7 +57,7 @@ const configInstructions = (config: AssignmentTypeConfig | null | undefined) => 
 }
 
 const requiresPhotoProof = (assignment: Assignment) => {
-  const config = assignment.typeConfig
+  const config = assignment.typeConfig ?? assignment.type_config
   return Boolean(config && 'requirePhotoProof' in config && config.requirePhotoProof)
 }
 
@@ -99,15 +100,16 @@ export function AssignmentDetailPage() {
   const [posterLocationFormError, setPosterLocationFormError] = useState<string | null>(null)
   const [posterLocationEditorOpen, setPosterLocationEditorOpen] = useState(false)
 
-  const assignmentForm = useForm<AssignmentFormValues>({ resolver: zodResolver(assignmentSchema), defaultValues: { title: '', description: '', targetArea: '', status: 'draft' } })
+  const assignmentForm = useForm<AssignmentFormValues>({ resolver: zodResolver(assignmentSchema), defaultValues: { title: '', description: '', status: 'draft' } })
   const posterLocationForm = useForm<PosterLocationFormValues>({ resolver: zodResolver(posterLocationSchema), defaultValues: { label: '', notes: '', lat: DEFAULT_CENTER[0], lng: DEFAULT_CENTER[1], status: 'planned', photoUrl: '' } })
 
   const assignmentQuery = useQuery({ queryKey: ['assignment', id], queryFn: () => getAssignment(id), enabled: Number.isFinite(id) })
   const assignment = assignmentQuery.data
+  const assignmentCampaignId = assignment?.campaignId ?? assignment?.campaign_id
   const posterLocationToolsVisible = assignment?.type === 'poster_free' || assignment?.type === 'poster_guided'
   const posterLocationsQuery = useQuery({ queryKey: ['poster-locations', id], queryFn: () => listPosterLocations(id), enabled: Number.isFinite(id) && posterLocationToolsVisible })
-  const areasQuery = useQuery({ queryKey: ['campaign-areas', assignment?.campaignId], queryFn: () => listCampaignAreas(assignment!.campaignId!, { per_page: 100 }), enabled: Boolean(assignment?.campaignId) })
-  const teamsQuery = useQuery({ queryKey: ['campaign-teams', assignment?.campaignId], queryFn: () => listCampaignTeams(assignment!.campaignId!, { per_page: 100 }), enabled: Boolean(assignment?.campaignId) })
+  const areasQuery = useQuery({ queryKey: ['campaign-areas', assignmentCampaignId], queryFn: () => listCampaignAreas(assignmentCampaignId!, { per_page: 100 }), enabled: Boolean(assignmentCampaignId) })
+  const teamsQuery = useQuery({ queryKey: ['campaign-teams', assignmentCampaignId], queryFn: () => listCampaignTeams(assignmentCampaignId!, { per_page: 100 }), enabled: Boolean(assignmentCampaignId) })
   const isEditMode = location.pathname.endsWith('/edit')
 
   useEffect(() => {
@@ -115,11 +117,12 @@ export function AssignmentDetailPage() {
     assignmentForm.reset({
       title: assignment.title,
       description: String(assignment.description ?? ''),
-      targetArea: assignment.targetArea,
-      teamId: assignment.team?.id ?? assignment.teamId ?? undefined,
+      boundaryAreaId: assignment.boundaryAreaId ?? assignment.boundary_area_id ?? undefined,
+      targetAreaId: assignment.targetAreaId ?? assignment.target_area_id ?? undefined,
+      teamId: assignment.team?.id ?? assignment.teamId ?? assignment.team_id ?? undefined,
       status: assignment.status,
-      startsAt: assignment.startsAt ? String(assignment.startsAt).slice(0, 16) : '',
-      dueAt: assignment.dueAt ? String(assignment.dueAt).slice(0, 16) : '',
+      startsAt: (assignment.startsAt ?? assignment.starts_at) ? String(assignment.startsAt ?? assignment.starts_at).slice(0, 16) : '',
+      dueAt: (assignment.dueAt ?? assignment.due_at) ? String(assignment.dueAt ?? assignment.due_at).slice(0, 16) : '',
     })
   }, [assignment, assignmentForm])
 
@@ -131,7 +134,16 @@ export function AssignmentDetailPage() {
   }
 
   const updateAssignmentMutation = useMutation({
-    mutationFn: (values: AssignmentFormValues) => updateAssignment(id, { ...values, teamId: values.teamId ?? null }),
+    mutationFn: (values: AssignmentFormValues) => updateAssignment(id, {
+      title: values.title,
+      description: values.description || null,
+      boundary_area_id: values.boundaryAreaId ?? null,
+      target_area_id: values.targetAreaId ?? null,
+      team_id: values.teamId ?? null,
+      status: values.status,
+      starts_at: values.startsAt || null,
+      due_at: values.dueAt || null,
+    } as Partial<Assignment> & Record<string, unknown>),
     onSuccess: invalidateAll,
   })
   const deleteAssignmentMutation = useMutation({ mutationFn: () => deleteAssignment(id), onSuccess: () => navigate('/assignments') })
@@ -155,7 +167,13 @@ export function AssignmentDetailPage() {
 
   const posterLocations = (posterLocationsQuery.data ?? assignment.posterLocations ?? []).slice().sort((a, b) => a.id - b.id)
   const campaignAreas = areasQuery.data?.data ?? []
-  const mapAreas = campaignAreas.filter((area) => area.name === assignment.targetArea || assignment.targetArea.includes(String(area.id)))
+  const boundaryAreaId = assignment.boundaryAreaId ?? assignment.boundary_area_id
+  const targetAreaId = assignment.targetAreaId ?? assignment.target_area_id
+  const boundaryAreas = campaignAreas.filter((area) => area.pivot?.usage === 'boundary')
+  const targetAreas = campaignAreas.filter((area) => area.pivot?.usage === 'target')
+  const boundaryArea = campaignAreas.find((area) => area.id === boundaryAreaId)
+  const targetArea = campaignAreas.find((area) => area.id === targetAreaId)
+  const mapAreas = [boundaryArea, targetArea].filter(Boolean) as Area[]
   const canManagePosterLocations = canPermission(user?.can, PERMISSIONS.POSTER_LOCATIONS_MANAGE) && can(assignment.can?.manage_poster_locations ?? true)
   const canCreatePosterLocations = assignment.type === 'poster_free' ? canManagePosterLocations : canManagePosterLocations && isEditMode
   const photoRequired = requiresPhotoProof(assignment)
@@ -183,16 +201,16 @@ export function AssignmentDetailPage() {
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <h1 className="text-2xl font-semibold">Auftrag #{assignment.id}: {assignment.title}</h1>
         <div className="flex flex-wrap gap-2">
-          <Link className="border px-3 py-2 text-sm" to={assignment.campaignId ? `/campaigns/${assignment.campaignId}` : '/assignments'}>Zurück</Link>
+          <Link className="border px-3 py-2 text-sm" to={assignmentCampaignId ? `/campaigns/${assignmentCampaignId}` : '/assignments'}>Zurück</Link>
           {isEditMode
             ? <Link className="border px-3 py-2 text-sm" to={`/assignments/${assignment.id}`}>Detailansicht</Link>
             : <Link className={`border px-3 py-2 text-sm ${!can(assignment.can?.update) ? 'pointer-events-none opacity-50' : ''}`} title={!can(assignment.can?.update) ? NO_PERMISSION_MESSAGE : undefined} to={`/assignments/${assignment.id}/edit`}>Auftrag bearbeiten</Link>}
         </div>
       </div>
 
-      <div className="rounded border bg-white p-4"><h2 className="mb-2 font-medium">Übersicht</h2><p>{assignmentTypeLabel[assignment.type]} · {assignmentStatusLabel[assignment.status]}</p><p className="text-sm text-slate-600">Zielgebiet: {assignment.targetArea}</p></div>
+      <div className="rounded border bg-white p-4"><h2 className="mb-2 font-medium">Übersicht</h2><p>{assignmentTypeLabel[assignment.type]} · {assignmentStatusLabel[assignment.status]}</p><p className="text-sm text-slate-600">Begrenzungsgebiet: {boundaryArea?.name ?? boundaryAreaId ?? '-'}</p><p className="text-sm text-slate-600">Zielgebiet: {targetArea?.name ?? assignment.targetArea ?? targetAreaId ?? '-'}</p></div>
       <div className="rounded border bg-white p-4"><h2 className="mb-2 font-medium">Team</h2><p>{assignment.team?.name ?? assignment.teamId ?? 'Kein Team zugewiesen.'}</p></div>
-      <div className="rounded border bg-white p-4"><h2 className="mb-2 font-medium">Anweisungen</h2>{configInstructions(assignment.typeConfig).length === 0 ? <p>Keine Anweisungen hinterlegt.</p> : <ul className="list-disc pl-5">{configInstructions(assignment.typeConfig).map((instruction) => <li key={instruction}>{instruction}</li>)}</ul>}</div>
+      <div className="rounded border bg-white p-4"><h2 className="mb-2 font-medium">Anweisungen</h2>{configInstructions(assignment.typeConfig ?? assignment.type_config).length === 0 ? <p>Keine Anweisungen hinterlegt.</p> : <ul className="list-disc pl-5">{configInstructions(assignment.typeConfig ?? assignment.type_config).map((instruction) => <li key={instruction}>{instruction}</li>)}</ul>}</div>
 
       {posterLocationToolsVisible && (
         <>
@@ -271,7 +289,10 @@ export function AssignmentDetailPage() {
           <form className="space-y-2" onSubmit={assignmentForm.handleSubmit((values) => updateAssignmentMutation.mutate(values))}>
             <input {...assignmentForm.register('title')} disabled={!can(assignment.can?.update)} title={!can(assignment.can?.update) ? NO_PERMISSION_MESSAGE : undefined} />
             <textarea rows={3} {...assignmentForm.register('description')} disabled={!can(assignment.can?.update)} />
-            <input {...assignmentForm.register('targetArea')} disabled={!can(assignment.can?.update)} />
+            <div className="grid gap-2 md:grid-cols-2">
+              <select {...assignmentForm.register('boundaryAreaId')} disabled={!can(assignment.can?.update)}><option value="">Begrenzungsgebiet</option>{boundaryAreas.map((area) => <option key={area.id} value={area.id}>{area.name}</option>)}</select>
+              <select {...assignmentForm.register('targetAreaId')} disabled={!can(assignment.can?.update)}><option value="">Zielgebiet</option>{targetAreas.map((area) => <option key={area.id} value={area.id}>{area.name}</option>)}</select>
+            </div>
             <div className="grid gap-2 md:grid-cols-2">
               <select {...assignmentForm.register('status')} disabled={!can(assignment.can?.change_status)}>{ASSIGNMENT_STATUSES.map((status) => <option key={status}>{status}</option>)}</select>
               <select {...assignmentForm.register('teamId')} disabled={!can(assignment.can?.assign_team)}><option value="">Zugewiesenes Team</option>{(teamsQuery.data?.data ?? []).map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select>
