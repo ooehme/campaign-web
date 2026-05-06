@@ -11,7 +11,7 @@ import { useAuth } from '../auth/AuthContext'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import { MAP_ATTRIBUTION, MAP_TILE_URL, POSTER_LOCATION_STATUSES } from '../utils/constants'
 import { assignmentStatusLabel, assignmentTypeLabel } from '../utils/assignment'
-import { getGeometryFromAreaGeoJson } from '../utils/campaignAreaMap'
+import { assignmentBoundaryAreaId, getGeometryFromAreaGeoJson } from '../utils/campaignAreaMap'
 import { can, canPermission, NO_PERMISSION_MESSAGE, permissionErrorMessage } from '../utils/permissions'
 import { PERMISSIONS } from '../utils/permissionKeys'
 import type { Area, Assignment, AssignmentTypeConfig, PosterLocation } from '../types/models'
@@ -145,12 +145,10 @@ export function AssignmentDetailPage() {
 
   const posterLocations = (posterLocationsQuery.data ?? assignment.posterLocations ?? []).slice().sort((a, b) => a.id - b.id)
   const campaignAreas = areasQuery.data?.data ?? []
-  const boundaryAreaId = assignment.boundaryAreaId ?? assignment.boundary_area_id
   const targetAreaId = assignment.targetAreaId ?? assignment.target_area_id
-  const boundaryAreas = campaignAreas.filter((area) => area.pivot?.usage === 'boundary')
-  const targetAreas = campaignAreas.filter((area) => area.pivot?.usage === 'target')
-  const boundaryArea = campaignAreas.find((area) => area.id === boundaryAreaId) ?? assignment.boundary_area
   const targetArea = campaignAreas.find((area) => area.id === targetAreaId) ?? assignment.target_area
+  const boundaryAreaId = assignment.boundaryAreaId ?? assignment.boundary_area_id ?? assignmentBoundaryAreaId(targetArea?.pivot)
+  const boundaryArea = campaignAreas.find((area) => area.id === boundaryAreaId) ?? assignment.boundary_area
   const mapAreas = dedupeAreas([boundaryArea, targetArea])
   const boundaryGeometry = getGeometryFromAreaGeoJson(boundaryArea?.geojson)
   const targetGeometry = getGeometryFromAreaGeoJson(targetArea?.geojson)

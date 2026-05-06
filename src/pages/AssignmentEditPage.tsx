@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useForm } from 'react-hook-form'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { z } from 'zod'
@@ -38,6 +38,8 @@ const requestErrorMessage = (error: unknown) => {
 
 const toDateTimeLocal = (value?: string | null) => value ? String(value).slice(0, 16) : ''
 const toOptionalNumber = (value?: string) => value ? Number(value) : null
+const boundaryAreaIdForTarget = (targetAreaOptions: ReturnType<typeof getAreaUsageOptions>, targetAreaId?: string) =>
+  targetAreaOptions.find((option) => String(option.area.id) === targetAreaId)?.boundaryAreaId ?? null
 
 export function AssignmentEditPage() {
   const { assignmentId } = useParams()
@@ -64,20 +66,32 @@ export function AssignmentEditPage() {
   const campaignId = assignment?.campaignId ?? assignment?.campaign_id
   const areasQuery = useQuery({ queryKey: ['campaign-areas', campaignId], queryFn: () => listCampaignAreas(campaignId!, { per_page: 100 }), enabled: Boolean(campaignId), retry: false })
   const teamsQuery = useQuery({ queryKey: ['campaign-teams', campaignId], queryFn: () => listCampaignTeams(campaignId!, { per_page: 100 }), enabled: Boolean(campaignId), retry: false })
+  const areas = useMemo(() => areasQuery.data?.data ?? [], [areasQuery.data?.data])
+  const boundaryAreaOptions = useMemo(() => getAreaUsageOptions(areas, 'boundary'), [areas])
+  const targetAreaOptions = useMemo(() => getAreaUsageOptions(areas, 'target'), [areas])
 
   useEffect(() => {
     if (!assignment) return
+    const targetAreaId = String(assignment.targetAreaId ?? assignment.target_area_id ?? '')
+    const boundaryAreaId = assignment.boundaryAreaId ?? assignment.boundary_area_id ?? boundaryAreaIdForTarget(targetAreaOptions, targetAreaId)
     form.reset({
       title: assignment.title,
       description: String(assignment.description ?? ''),
-      boundaryAreaId: String(assignment.boundaryAreaId ?? assignment.boundary_area_id ?? ''),
-      targetAreaId: String(assignment.targetAreaId ?? assignment.target_area_id ?? ''),
+      boundaryAreaId: String(boundaryAreaId ?? ''),
+      targetAreaId,
       teamId: String(assignment.team?.id ?? assignment.teamId ?? assignment.team_id ?? ''),
       status: assignment.status,
       startsAt: toDateTimeLocal(assignment.startsAt ?? assignment.starts_at),
       dueAt: toDateTimeLocal(assignment.dueAt ?? assignment.due_at),
     })
-  }, [assignment, form])
+  }, [assignment, form, targetAreaOptions])
+
+  useEffect(() => {
+    const targetAreaId = form.getValues('targetAreaId')
+    if (!targetAreaId || form.getValues('boundaryAreaId')) return
+    const boundaryAreaId = boundaryAreaIdForTarget(targetAreaOptions, targetAreaId)
+    if (boundaryAreaId) form.setValue('boundaryAreaId', String(boundaryAreaId))
+  }, [form, targetAreaOptions])
 
   const invalidateAssignment = () => {
     qc.invalidateQueries({ queryKey: ['assignment', id] })
@@ -119,9 +133,6 @@ export function AssignmentEditPage() {
 
   const canUpdate = can(assignment.can?.update)
   const canDelete = can(assignment.can?.delete)
-  const areas = areasQuery.data?.data ?? []
-  const boundaryAreaOptions = getAreaUsageOptions(areas, 'boundary')
-  const targetAreaOptions = getAreaUsageOptions(areas, 'target')
   const teams = teamsQuery.data?.data ?? []
 
   return (
@@ -154,7 +165,7 @@ export function AssignmentEditPage() {
 
         <div className="grid gap-3 md:grid-cols-2">
           <label className="block text-sm">Begrenzungsgebiet<select className="mt-1" {...form.register('boundaryAreaId')} disabled={!canUpdate || areasQuery.isLoading}><option value="">Kein Begrenzungsgebiet</option>{boundaryAreaOptions.map(({ area }) => <option key={area.id} value={area.id}>{area.name}</option>)}</select></label>
-          <label className="block text-sm">Zielgebiet<select className="mt-1" {...form.register('targetAreaId')} disabled={!canUpdate || areasQuery.isLoading} onChange={(event) => { form.setValue('targetAreaId', event.target.value); const boundaryAreaId = targetAreaOptions.find((option) => String(option.area.id) === event.target.value)?.boundaryAreaId; if (boundaryAreaId) form.setValue('boundaryAreaId', String(boundaryAreaId)) }}><option value="">Kein Zielgebiet</option>{targetAreaOptions.map(({ area }) => <option key={area.id} value={area.id}>{area.name}</option>)}</select></label>
+          <label className="block text-sm">Zielgebiet<select className="mt-1" {...form.register('targetAreaId')} disabled={!canUpdate || areasQuery.isLoading} onChange={(event) => { form.setValue('targetAreaId', event.target.value); const boundaryAreaId = boundaryAreaIdForTarget(targetAreaOptions, event.target.value); if (boundaryAreaId) form.setValue('boundaryAreaId', String(boundaryAreaId)) }}><option value="">Kein Zielgebiet</option>{targetAreaOptions.map(({ area }) => <option key={area.id} value={area.id}>{area.name}</option>)}</select></label>
         </div>
 
         <div className="grid gap-3 md:grid-cols-3">

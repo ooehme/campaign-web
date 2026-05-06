@@ -13,6 +13,9 @@ export type AreaUsageOption = {
   boundaryAreaId?: number | null
 }
 
+export const assignmentBoundaryAreaId = (assignment?: { boundary_area_id?: number | null; boundaryAreaId?: number | null } | null) =>
+  assignment?.boundary_area_id ?? assignment?.boundaryAreaId ?? null
+
 const isFiniteCoordinatePair = (pair: unknown): pair is [number, number] =>
   Array.isArray(pair) && pair.length >= 2 && Number.isFinite(pair[0]) && Number.isFinite(pair[1])
 
@@ -66,9 +69,9 @@ export const splitCampaignAreasByUsage = (areas: Area[]): SplitCampaignAreas => 
 }
 
 export const getAreaAssignments = (area: Area): AreaAssignmentRef[] => {
+  if (area.pivot?.usage) return [{ ...area.pivot }] as AreaAssignmentRef[]
   const assignments = area.assignments ?? area.campaigns ?? []
   if (assignments.length > 0) return assignments
-  if (area.pivot?.usage) return [{ ...area.pivot }] as AreaAssignmentRef[]
   return []
 }
 
@@ -82,7 +85,7 @@ export const getAreaUsageOptions = (areas: Area[], usage: 'boundary' | 'target')
     if (matchingAssignments.length === 0 && assignments.length > 0) return
 
     const boundaryAreaId = usage === 'target'
-      ? matchingAssignments.find((assignment) => assignment.boundary_area_id != null)?.boundary_area_id ?? area.pivot?.boundary_area_id ?? null
+      ? assignmentBoundaryAreaId(matchingAssignments.find((assignment) => assignmentBoundaryAreaId(assignment) != null)) ?? assignmentBoundaryAreaId(area.pivot) ?? null
       : null
 
     if (!options.has(area.id)) options.set(area.id, { area, boundaryAreaId })

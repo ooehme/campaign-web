@@ -60,16 +60,20 @@ export interface Campaign {
 export interface CampaignAreaPivot {
   usage?: 'boundary' | 'target'
   boundary_area_id?: number | null
+  boundaryAreaId?: number | null
   notes?: string | null
 }
 
 export interface AreaAssignmentRef {
   id?: number
   campaign_id?: number
+  campaignId?: number
   name?: string
   campaign_name?: string
+  campaignName?: string
   usage?: 'boundary' | 'target'
   boundary_area_id?: number | null
+  boundaryAreaId?: number | null
   notes?: string | null
   [key: string]: unknown
 }
