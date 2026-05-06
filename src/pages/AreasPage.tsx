@@ -8,34 +8,59 @@ import { can, canPermission, NO_PERMISSION_MESSAGE } from '../utils/permissions'
 import { useAuth } from '../auth/AuthContext'
 import type { Area, AreaAssignmentRef } from '../types/models'
 
+type AreaGroupItem = {
+  area: Area
+  assignment?: AreaAssignmentRef
+}
+
 type AreaGroup = {
   key: string
   title: string
-  areas: Area[]
+  boundary?: Area
+  targets: AreaGroupItem[]
+  standalone: AreaGroupItem[]
 }
 
 const areaNameSort = (a: Pick<Area, 'name'>, b: Pick<Area, 'name'>) => a.name.localeCompare(b.name, 'de', { sensitivity: 'base' })
+const areaItemSort = (a: AreaGroupItem, b: AreaGroupItem) => areaNameSort(a.area, b.area)
 
 const getAssignments = (area: Area) => (area.assignments ?? area.campaigns ?? []) as AreaAssignmentRef[]
 
-const getBoundaryParentId = (area: Area) => {
-  if (area.pivot?.usage === 'target' && area.pivot.boundary_area_id) return area.pivot.boundary_area_id
-  const assignment = getAssignments(area).find((entry) => entry.usage === 'target' && entry.boundary_area_id)
-  return assignment?.boundary_area_id ?? null
+const getEffectiveAssignments = (area: Area) => {
+  const assignments = getAssignments(area)
+  if (assignments.length > 0) return assignments
+  if (area.pivot?.usage) return [{ ...area.pivot }] as AreaAssignmentRef[]
+  return []
 }
+
+const isBoundaryArea = (area: Area) => getEffectiveAssignments(area).some((entry) => entry.usage === 'boundary')
 
 const getBoundaryTitle = (boundaryId: number, areasById: Map<number, Area>) => areasById.get(boundaryId)?.name ?? `Begrenzungsfläche ${boundaryId}`
 
-function AreaCard({ area, onDelete }: { area: Area; onDelete: (area: Area) => void }) {
-  const assignments = getAssignments(area)
+const getAssignmentCampaignLabel = (assignment?: AreaAssignmentRef) => {
+  if (!assignment) return null
+  const campaignName = assignment.campaign_name ?? assignment.name
+  const campaignId = assignment.campaign_id ?? assignment.id
+  if (campaignName) return campaignName
+  if (campaignId) return `Kampagne ${campaignId}`
+  return null
+}
+
+function AreaCard({ area, assignment, onDelete }: { area: Area; assignment?: AreaAssignmentRef; onDelete: (area: Area) => void }) {
+  const assignments = getEffectiveAssignments(area)
   const usageLabels = assignments
     .map((entry) => entry.usage === 'boundary' ? 'Begrenzung' : entry.usage === 'target' ? 'Zielgebiet' : '')
     .filter(Boolean)
-  const usageLabel = area.pivot?.usage === 'boundary'
+  const usageLabel = assignment?.usage === 'boundary'
     ? 'Begrenzung'
-    : area.pivot?.usage === 'target'
+    : assignment?.usage === 'target'
       ? 'Zielgebiet'
-      : usageLabels[0] ?? 'Pool-Fläche'
+      : area.pivot?.usage === 'boundary'
+        ? 'Begrenzung'
+        : area.pivot?.usage === 'target'
+          ? 'Zielgebiet'
+          : usageLabels[0] ?? 'Pool-Fläche'
+  const campaignLabel = getAssignmentCampaignLabel(assignment)
 
   return (
     <article className="flex min-h-40 flex-col justify-between rounded border bg-white p-3 text-sm">
@@ -45,6 +70,7 @@ function AreaCard({ area, onDelete }: { area: Area; onDelete: (area: Area) => vo
           <p className="text-xs text-slate-500">ID: {area.id}</p>
         </div>
         <p className="text-xs text-slate-600">{usageLabel}</p>
+        {campaignLabel && <p className="text-xs text-slate-500">Kampagne: {campaignLabel}</p>}
         <p className="line-clamp-2 text-xs text-slate-500">GeoJSON: {area.geojson ? JSON.stringify(area.geojson).slice(0, 120) : 'Keine Geometrie'}</p>
       </div>
       <div className="mt-3 flex flex-wrap gap-2">
@@ -84,27 +110,50 @@ export function AreasPage() {
     const areas = [...(data?.data ?? [])].sort(areaNameSort)
     const areasById = new Map(areas.map((area) => [area.id, area]))
     const grouped = new Map<string, AreaGroup>()
+    const unassigned: AreaGroup = {
+      key: 'ungrouped',
+      title: 'Ohne übergeordnete Begrenzungsfläche',
+      targets: [],
+      standalone: [],
+    }
 
     const ensureGroup = (key: string, title: string) => {
-      if (!grouped.has(key)) grouped.set(key, { key, title, areas: [] })
+      if (!grouped.has(key)) grouped.set(key, { key, title, targets: [], standalone: [] })
       return grouped.get(key) as AreaGroup
     }
 
     for (const area of areas) {
-      const parentId = getBoundaryParentId(area)
-      if (parentId) {
-        ensureGroup(`boundary-${parentId}`, getBoundaryTitle(parentId, areasById)).areas.push(area)
+      const assignments = getEffectiveAssignments(area)
+      const targetAssignments = assignments.filter((entry) => entry.usage === 'target')
+
+      if (isBoundaryArea(area)) {
+        const group = ensureGroup(`boundary-${area.id}`, area.name)
+        group.boundary = area
+      }
+
+      if (targetAssignments.length === 0) {
+        if (!isBoundaryArea(area)) unassigned.standalone.push({ area })
         continue
       }
-      if (area.pivot?.usage === 'boundary' || getAssignments(area).some((entry) => entry.usage === 'boundary')) {
-        ensureGroup(`boundary-${area.id}`, area.name).areas.unshift(area)
-        continue
+
+      for (const assignment of targetAssignments) {
+        if (assignment.boundary_area_id) {
+          ensureGroup(`boundary-${assignment.boundary_area_id}`, getBoundaryTitle(assignment.boundary_area_id, areasById)).targets.push({ area, assignment })
+        } else {
+          unassigned.targets.push({ area, assignment })
+        }
       }
-      ensureGroup('ungrouped', 'Ohne übergeordnete Begrenzungsfläche').areas.push(area)
     }
 
-    return [...grouped.values()]
-      .map((group) => ({ ...group, areas: [...group.areas].sort(areaNameSort) }))
+    const result = [...grouped.values()]
+    if (unassigned.targets.length > 0 || unassigned.standalone.length > 0) result.push(unassigned)
+
+    return result
+      .map((group) => ({
+        ...group,
+        targets: [...group.targets].sort(areaItemSort),
+        standalone: [...group.standalone].sort(areaItemSort),
+      }))
       .sort((a, b) => {
         if (a.key === 'ungrouped') return 1
         if (b.key === 'ungrouped') return -1
@@ -141,17 +190,51 @@ export function AreasPage() {
               onClick={() => setOpenGroups((current) => ({ ...current, [group.key]: !isOpen }))}
             >
               <span className="font-medium">{group.title}</span>
-              <span className="text-xs text-slate-500">{group.areas.length} Fläche(n) {isOpen ? 'einklappen' : 'ausklappen'}</span>
+              <span className="text-xs text-slate-500">{group.targets.length} Zielgebiet(e), {group.standalone.length + (group.boundary ? 1 : 0)} weitere Fläche(n) {isOpen ? 'einklappen' : 'ausklappen'}</span>
             </button>
             {isOpen && (
-              <div className="grid gap-3 md:grid-cols-3">
-                {group.areas.map((area) => (
-                  <AreaCard
-                    key={area.id}
-                    area={area}
-                    onDelete={(selectedArea) => window.confirm(`Fläche "${selectedArea.name}" löschen?`) && del.mutate(selectedArea.id)}
-                  />
-                ))}
+              <div className="space-y-3">
+                {group.boundary && (
+                  <div className="rounded border border-blue-200 bg-blue-50 p-3">
+                    <p className="mb-2 text-xs font-medium uppercase text-blue-700">Begrenzungsfläche</p>
+                    <div className="grid gap-3 md:grid-cols-3">
+                      <AreaCard
+                        area={group.boundary}
+                        assignment={getEffectiveAssignments(group.boundary).find((entry) => entry.usage === 'boundary')}
+                        onDelete={(selectedArea) => window.confirm(`Fläche "${selectedArea.name}" löschen?`) && del.mutate(selectedArea.id)}
+                      />
+                    </div>
+                  </div>
+                )}
+                {group.targets.length > 0 && (
+                  <div>
+                    <p className="mb-2 text-xs font-medium uppercase text-slate-600">Zielgebiete</p>
+                    <div className="grid gap-3 md:grid-cols-3">
+                      {group.targets.map(({ area, assignment }, index) => (
+                        <AreaCard
+                          key={`${area.id}-${assignment?.campaign_id ?? assignment?.id ?? index}`}
+                          area={area}
+                          assignment={assignment}
+                          onDelete={(selectedArea) => window.confirm(`Fläche "${selectedArea.name}" löschen?`) && del.mutate(selectedArea.id)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {group.standalone.length > 0 && (
+                  <div>
+                    <p className="mb-2 text-xs font-medium uppercase text-slate-600">Weitere Flächen</p>
+                    <div className="grid gap-3 md:grid-cols-3">
+                      {group.standalone.map(({ area }) => (
+                        <AreaCard
+                          key={area.id}
+                          area={area}
+                          onDelete={(selectedArea) => window.confirm(`Fläche "${selectedArea.name}" löschen?`) && del.mutate(selectedArea.id)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </section>
