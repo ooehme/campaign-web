@@ -72,27 +72,32 @@ const dedupeAreas = (areas: Array<Area | null | undefined>) => {
   return [...byId.values()]
 }
 
-function FitMap({ areas, posterLocations }: { areas: Area[]; posterLocations: PosterLocation[] }) {
-  const map = useMap()
-  useEffect(() => {
-    const positions: [number, number][] = []
-    for (const area of areas) {
-      const geo = getGeometryFromAreaGeoJson(area.geojson)
-      if (!geo) continue
-      if (geo.type === 'FeatureCollection') {
-        for (const feature of geo.features) {
-          if (!feature.geometry) continue
-          const coordinates = feature.geometry.type === 'Polygon' ? feature.geometry.coordinates.flat() : feature.geometry.coordinates.flat(2)
-          for (const [lng, lat] of coordinates) positions.push([lat, lng])
-        }
-        continue
-      }
-      const coordinates = geo.type === 'Polygon' ? geo.coordinates.flat() : geo.coordinates.flat(2)
+const areaPositions = (area: Area | null | undefined) => {
+  const positions: [number, number][] = []
+  const geo = getGeometryFromAreaGeoJson(area?.geojson)
+  if (!geo) return positions
+  if (geo.type === 'FeatureCollection') {
+    for (const feature of geo.features) {
+      if (!feature.geometry) continue
+      const coordinates = feature.geometry.type === 'Polygon' ? feature.geometry.coordinates.flat() : feature.geometry.coordinates.flat(2)
       for (const [lng, lat] of coordinates) positions.push([lat, lng])
     }
-    for (const posterLocation of posterLocations) positions.push([posterLocation.lat, posterLocation.lng])
+    return positions
+  }
+  const coordinates = geo.type === 'Polygon' ? geo.coordinates.flat() : geo.coordinates.flat(2)
+  for (const [lng, lat] of coordinates) positions.push([lat, lng])
+  return positions
+}
+
+function FitMap({ targetArea, fallbackAreas, posterLocations }: { targetArea?: Area | null; fallbackAreas: Area[]; posterLocations: PosterLocation[] }) {
+  const map = useMap()
+  useEffect(() => {
+    const targetPositions = areaPositions(targetArea)
+    const posterPositions = posterLocations.map((posterLocation): [number, number] => [posterLocation.lat, posterLocation.lng])
+    const fallbackPositions = fallbackAreas.flatMap(areaPositions)
+    const positions = targetPositions.length > 0 ? targetPositions : posterPositions.length > 0 ? posterPositions : fallbackPositions
     if (positions.length > 0) map.fitBounds(positions, { padding: [30, 30] })
-  }, [areas, posterLocations, map])
+  }, [targetArea, fallbackAreas, posterLocations, map])
   return null
 }
 
@@ -228,7 +233,7 @@ export function AssignmentDetailPage() {
                     <Popup><p className="font-medium">{posterLocation.label ?? `Standort #${posterLocation.id}`}</p><p>{posterLocation.notes ?? '-'}</p><p>Status: {posterLocation.status}</p></Popup>
                   </Marker>
                 ))}
-                <FitMap areas={mapAreas} posterLocations={posterLocations} />
+                <FitMap targetArea={targetArea} fallbackAreas={mapAreas} posterLocations={posterLocations} />
               </MapContainer>
             )}
           </div>
