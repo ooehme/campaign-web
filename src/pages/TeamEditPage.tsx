@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ApiError } from '../api/client'
-import { addUserToTeam, createTeamInvitation, deleteTeam, detachTeamFromCampaign, getTeam, listTeamInvitations, listUsers, removeUserFromTeam, updateTeam, updateTeamUser } from '../api/endpoints'
+import { addUserToTeam, createTeamInvitation, deleteTeam, deleteTeamInvitation, detachTeamFromCampaign, getTeam, listTeamInvitations, listUsers, removeUserFromTeam, updateTeam, updateTeamUser } from '../api/endpoints'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import type { Campaign, TeamInvitation, TeamMembership, TeamRole, User } from '../types/models'
 import { can, NO_PERMISSION_MESSAGE } from '../utils/permissions'
@@ -80,6 +80,21 @@ export function TeamEditPage() {
   }, [team?.id])
 
   const refetchAll = () => { qc.invalidateQueries({ queryKey: ['team', id] }); qc.invalidateQueries({ queryKey: ['teams-pool'] }) }
+  const refetchInvitations = () => {
+    qc.invalidateQueries({ queryKey: ['team-invitations', id] })
+    qc.invalidateQueries({ queryKey: ['user-invitations'] })
+  }
+  const pendingInvitationsForUser = (userId: number, invitations: TeamInvitation[] = (invitationsQuery.data ?? []) as TeamInvitation[]) => invitations
+    .filter((inv) => inv.status === 'pending')
+    .filter((inv) => toOptionalNumber((inv as unknown as { invited_user_id?: unknown }).invited_user_id ?? inv.invited_user?.id) === userId)
+  const resolvePendingInvitation = async (invitationId: number) => {
+    try {
+      await deleteTeamInvitation(invitationId)
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404) return
+      throw error
+    }
+  }
   const applyApiError = (error: unknown) => {
     const apiError = error as ApiError
     const details = apiError?.details as { message?: string; errors?: Record<string, string[]> } | undefined
@@ -90,7 +105,26 @@ export function TeamEditPage() {
   }
 
   const saveTeam = useMutation({ mutationFn: () => updateTeam(id, { name }), onSuccess: () => { setSuccess('Team wurde aktualisiert.'); setValidation({}); setErrorMessage(''); refetchAll() }, onError: (e) => { const err = e as ApiError; if (err.status === 422) setValidation((err.details as { errors?: Record<string, string[]> })?.errors ?? {}); else applyApiError(e) } })
-  const addMember = useMutation({ mutationFn: () => addUserToTeam(id, { user_id: Number(selectedUser), role, display_name: displayName || undefined, notes: notes || undefined }), onSuccess: () => { setSuccess('Benutzer dem Team zugewiesen.'); setErrorMessage(''); setSelectedUser(''); setRole('member'); setDisplayName(''); setNotes(''); refetchAll() }, onError: applyApiError })
+  const addMember = useMutation({
+    mutationFn: async () => {
+      const userId = Number(selectedUser)
+      await addUserToTeam(id, { user_id: userId, role, display_name: displayName || undefined, notes: notes || undefined })
+      const teamInvitations = await listTeamInvitations(id)
+      const pendingInvitations = pendingInvitationsForUser(userId, teamInvitations)
+      await Promise.all(pendingInvitations.map((invitation) => resolvePendingInvitation(invitation.id)))
+    },
+    onSuccess: () => {
+      setSuccess('Benutzer dem Team zugewiesen. Offene Einladungen wurden aufgelöst.')
+      setErrorMessage('')
+      setSelectedUser('')
+      setRole('member')
+      setDisplayName('')
+      setNotes('')
+      refetchAll()
+      refetchInvitations()
+    },
+    onError: applyApiError,
+  })
   const updateMember = useMutation({ mutationFn: ({ userId, payload }: { userId: number; payload: { role: TeamRole; display_name?: string; notes?: string } }) => updateTeamUser(id, userId, payload), onSuccess: () => { setSuccess('Mitglied bearbeiten erfolgreich.'); setErrorMessage(''); refetchAll() }, onError: applyApiError })
   const removeMember = useMutation({ mutationFn: (userId: number) => removeUserFromTeam(id, userId), onSuccess: () => { setSuccess('Mitglied entfernen erfolgreich.'); setErrorMessage(''); refetchAll() }, onError: applyApiError })
   const detachCampaign = useMutation({ mutationFn: (campaignId: number) => detachTeamFromCampaign(campaignId, id), onSuccess: () => { setSuccess('Team von Kampagne getrennt.'); setErrorMessage(''); refetchAll() }, onError: applyApiError })
