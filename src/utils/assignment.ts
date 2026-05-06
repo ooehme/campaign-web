@@ -20,7 +20,12 @@ export const assignmentTypeLabel: Record<AssignmentType, string> = {
 export const isClosedAssignment = (assignment: Assignment) => CLOSED_ASSIGNMENT_STATUSES.has(assignment.status)
 
 export const assignedTeamId = (assignment: Assignment): number | null => {
-  const value = assignment.teamId ?? assignment.team?.id
+  const value = assignment.teamId ?? assignment.team_id ?? assignment.team?.id
+  return value == null ? null : Number(value)
+}
+
+export const assignmentCampaignId = (assignment: Assignment): number | null => {
+  const value = assignment.campaignId ?? assignment.campaign_id ?? assignment.campaign?.id
   return value == null ? null : Number(value)
 }
 

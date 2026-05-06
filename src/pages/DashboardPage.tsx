@@ -4,7 +4,7 @@ import { getTeam, healthCheck, listCampaignAssignments, listCurrentUserInvitatio
 import { ErrorState, LoadingState } from '../components/UiState'
 import { useAuth } from '../auth/AuthContext'
 import { hasVisibleModuleNavigation } from '../utils/navigation'
-import { assignedTeamId, isAssignedToLeadTeam, isClosedAssignment, leadTeamsForCampaign, teamCampaigns, uniqueCampaigns } from '../utils/assignment'
+import { assignedTeamId, assignmentCampaignId, isAssignedToLeadTeam, isClosedAssignment, leadTeamsForCampaign, teamCampaigns, uniqueCampaigns } from '../utils/assignment'
 import type { Assignment, Campaign, Team, UserTeam } from '../types/models'
 
 const asArray = <T,>(value: T[] | null | undefined): T[] => (Array.isArray(value) ? value : [])
@@ -70,7 +70,7 @@ export function DashboardPage() {
   )
 
   const assignAssignmentMutation = useMutation({
-    mutationFn: async ({ assignmentId, teamId }: { assignmentId: number; teamId: number | null }) => updateAssignment(assignmentId, { teamId }),
+    mutationFn: async ({ assignmentId, teamId }: { assignmentId: number; teamId: number | null }) => updateAssignment(assignmentId, { team_id: teamId }),
     onSuccess: () => {
       window.alert('Auftrag wurde aktualisiert.')
       qc.invalidateQueries({ queryKey: ['dashboard-campaign-assignments'] })
@@ -82,7 +82,8 @@ export function DashboardPage() {
   })
 
   const claimAssignment = (assignment: Assignment) => {
-    const campaignLeadTeams = leadTeamsForCampaign(enrichedUserTeams, Number(assignment.campaignId))
+    const campaignId = assignmentCampaignId(assignment)
+    const campaignLeadTeams = campaignId == null ? [] : leadTeamsForCampaign(enrichedUserTeams, campaignId)
     if (campaignLeadTeams.length === 0 || assignedTeamId(assignment) || isClosedAssignment(assignment)) return
     if (campaignLeadTeams.length === 1) {
       assignAssignmentMutation.mutate({ assignmentId: assignment.id, teamId: campaignLeadTeams[0].id })
@@ -100,9 +101,20 @@ export function DashboardPage() {
   }
 
   const releaseAssignment = (assignment: Assignment) => {
-    const campaignLeadTeams = leadTeamsForCampaign(enrichedUserTeams, Number(assignment.campaignId))
+    const campaignId = assignmentCampaignId(assignment)
+    const campaignLeadTeams = campaignId == null ? [] : leadTeamsForCampaign(enrichedUserTeams, campaignId)
     if (!isAssignedToLeadTeam(assignment, campaignLeadTeams) || isClosedAssignment(assignment)) return
     assignAssignmentMutation.mutate({ assignmentId: assignment.id, teamId: null })
+  }
+
+  const leadTeamsForAssignment = (assignment: Assignment) => {
+    const campaignId = assignmentCampaignId(assignment)
+    return campaignId == null ? [] : leadTeamsForCampaign(enrichedUserTeams, campaignId)
+  }
+
+  const campaignLabel = (assignment: Assignment) => {
+    const campaignId = assignmentCampaignId(assignment)
+    return campaignId == null ? '-' : assignmentBoardQuery.data?.campaignNameById.get(campaignId) ?? campaignId
   }
 
   const showAssignmentLoading = userTeamsQuery.isLoading || teamDetailsQuery.isLoading || (campaigns.length > 0 && assignmentBoardQuery.isLoading)
@@ -138,13 +150,13 @@ export function DashboardPage() {
                 <div key={assignment.id} className="rounded border p-3 text-sm flex flex-wrap gap-3 items-center justify-between">
                   <div>
                     <p className="font-medium">{assignment.title}</p>
-                    <p>Kampagne: {assignmentBoardQuery.data?.campaignNameById.get(Number(assignment.campaignId)) ?? assignment.campaignId}</p>
+                    <p>Kampagne: {campaignLabel(assignment)}</p>
                     <p>Status: {assignment.status}</p>
                     <p>Fällig: {formatDate(assignment.dueAt)}</p>
                   </div>
                   <div className="flex items-center gap-2">
                     <Link className="text-blue-600" to={`/assignments/${assignment.id}`}>Details</Link>
-                    <button className="rounded border px-2 py-1 disabled:opacity-50" disabled={leadTeamsForCampaign(enrichedUserTeams, Number(assignment.campaignId)).length === 0 || assignAssignmentMutation.isPending} onClick={() => claimAssignment(assignment)}>Für Team übernehmen</button>
+                    <button className="rounded border px-2 py-1 disabled:opacity-50" disabled={leadTeamsForAssignment(assignment).length === 0 || assignAssignmentMutation.isPending} onClick={() => claimAssignment(assignment)}>Für Team übernehmen</button>
                     <button className="rounded border px-2 py-1 disabled:opacity-50" disabled onClick={() => releaseAssignment(assignment)}>Zurückgeben</button>
                   </div>
                 </div>
@@ -164,15 +176,15 @@ export function DashboardPage() {
                 <div key={assignment.id} className="rounded border p-3 text-sm flex flex-wrap gap-3 items-center justify-between">
                   <div>
                     <p className="font-medium">{assignment.title}</p>
-                    <p>Kampagne: {assignmentBoardQuery.data?.campaignNameById.get(Number(assignment.campaignId)) ?? assignment.campaignId}</p>
-                    <p>Team: {assignment.team?.name ?? assignment.teamId}</p>
+                    <p>Kampagne: {campaignLabel(assignment)}</p>
+                    <p>Team: {assignment.team?.name ?? assignedTeamId(assignment) ?? '-'}</p>
                     <p>Status: {assignment.status}</p>
                     <p>Fällig: {formatDate(assignment.dueAt)}</p>
                   </div>
                   <div className="flex items-center gap-2">
                     <Link className="text-blue-600" to={`/assignments/${assignment.id}`}>Details</Link>
                     <button className="rounded border px-2 py-1 disabled:opacity-50" disabled onClick={() => claimAssignment(assignment)}>Für Team übernehmen</button>
-                    <button className="rounded border px-2 py-1 disabled:opacity-50" disabled={!isAssignedToLeadTeam(assignment, leadTeamsForCampaign(enrichedUserTeams, Number(assignment.campaignId))) || assignAssignmentMutation.isPending} onClick={() => releaseAssignment(assignment)}>Zurückgeben</button>
+                    <button className="rounded border px-2 py-1 disabled:opacity-50" disabled={!isAssignedToLeadTeam(assignment, leadTeamsForAssignment(assignment)) || assignAssignmentMutation.isPending} onClick={() => releaseAssignment(assignment)}>Zurückgeben</button>
                   </div>
                 </div>
               ))}
