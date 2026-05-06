@@ -4,10 +4,8 @@ import { Link, useParams } from 'react-router-dom'
 import { getTasksPage, listCampaignTeams, listUserTeams, updateTask } from '../api/endpoints'
 import { useAuth } from '../auth/AuthContext'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
-import { can } from '../utils/permissions'
+import { assignedTeamId, isAssignedToLeadTeam, isClosedTask, leadTeamsByAssignedCampaign } from '../utils/taskAssignment'
 import type { Task, UserTeam } from '../types/models'
-
-const CLOSED_TASK_STATUSES = new Set(['done', 'cancelled'])
 
 export function CampaignTaskListPage() {
   const { campaignId } = useParams()
@@ -21,22 +19,22 @@ export function CampaignTaskListPage() {
 
   const assignedTeams = assignedTeamsQuery.data?.data ?? []
   const campaignTeamIds = new Set(assignedTeams.map((team) => team.id))
-  const leadTeams = ((userTeamsQuery.data ?? []) as UserTeam[]).filter((team) => team.pivot?.role === 'lead' && campaignTeamIds.has(team.id))
+  const leadTeams = leadTeamsByAssignedCampaign((userTeamsQuery.data ?? []) as UserTeam[], campaignTeamIds)
 
-  const claimTaskMutation = useMutation({
-    mutationFn: ({ taskId, teamId }: { taskId: number; teamId: number }) => updateTask(taskId, { assigned_team_id: teamId }),
+  const assignTaskMutation = useMutation({
+    mutationFn: ({ taskId, teamId }: { taskId: number; teamId: number | null }) => updateTask(taskId, { assigned_team_id: teamId }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['tasks', id] })
       qc.invalidateQueries({ queryKey: ['dashboard-campaign-tasks'] })
-      window.alert('Auftrag wurde übernommen.')
+      window.alert('Auftrag wurde aktualisiert.')
     },
-    onError: () => window.alert('Auftrag konnte nicht übernommen werden.'),
+    onError: () => window.alert('Auftrag konnte nicht aktualisiert werden.'),
   })
 
   const claimTask = (task: Task) => {
-    if (!can(task.can?.assign_team) || task.assigned_team_id || CLOSED_TASK_STATUSES.has(task.status) || leadTeams.length === 0) return
+    if (assignedTeamId(task) || isClosedTask(task) || leadTeams.length === 0) return
     if (leadTeams.length === 1) {
-      claimTaskMutation.mutate({ taskId: task.id, teamId: leadTeams[0].id })
+      assignTaskMutation.mutate({ taskId: task.id, teamId: leadTeams[0].id })
       return
     }
 
@@ -47,7 +45,12 @@ export function CampaignTaskListPage() {
       window.alert('Ungültiges Team ausgewählt.')
       return
     }
-    claimTaskMutation.mutate({ taskId: task.id, teamId })
+    assignTaskMutation.mutate({ taskId: task.id, teamId })
+  }
+
+  const releaseTask = (task: Task) => {
+    if (!isAssignedToLeadTeam(task, leadTeams) || isClosedTask(task)) return
+    assignTaskMutation.mutate({ taskId: task.id, teamId: null })
   }
 
   return (
@@ -64,7 +67,11 @@ export function CampaignTaskListPage() {
       {data && data.data.length > 0 && (
         <div className="space-y-2">
           {data.data.map((task) => {
-            const isClaimable = !task.assigned_team_id && !CLOSED_TASK_STATUSES.has(task.status) && can(task.can?.assign_team) && leadTeams.length > 0
+            const teamId = assignedTeamId(task)
+            const assignedToOwnTeam = isAssignedToLeadTeam(task, leadTeams)
+            const closed = isClosedTask(task)
+            const claimDisabled = Boolean(teamId) || closed || leadTeams.length === 0 || assignTaskMutation.isPending
+            const releaseDisabled = !assignedToOwnTeam || closed || assignTaskMutation.isPending
             return (
               <article key={task.id} className="flex flex-wrap items-center justify-between gap-3 rounded border bg-white p-3">
                 <div>
@@ -72,11 +79,14 @@ export function CampaignTaskListPage() {
                   <p className="text-sm text-slate-600">Status: {task.status} · Priorität: {task.priority}</p>
                   <p className="text-sm text-slate-600">Team: {task.assigned_team?.name ?? '-'}</p>
                 </div>
-                {isClaimable && (
-                  <button type="button" className="rounded border px-2 py-1 text-sm disabled:opacity-50" disabled={claimTaskMutation.isPending} onClick={() => claimTask(task)}>
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" className="rounded border px-2 py-1 text-sm disabled:opacity-50" disabled={claimDisabled} onClick={() => claimTask(task)}>
                     Für Team übernehmen
                   </button>
-                )}
+                  <button type="button" className="rounded border px-2 py-1 text-sm disabled:opacity-50" disabled={releaseDisabled} onClick={() => releaseTask(task)}>
+                    Zurückgeben
+                  </button>
+                </div>
               </article>
             )
           })}

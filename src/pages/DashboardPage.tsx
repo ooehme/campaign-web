@@ -1,12 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { healthCheck, listCampaignTasks, listCurrentUserInvitations, listUserTeams, updateTask } from '../api/endpoints'
+import { getTeam, healthCheck, listCampaignTasks, listCurrentUserInvitations, listUserTeams, updateTask } from '../api/endpoints'
 import { ErrorState, LoadingState } from '../components/UiState'
 import { useAuth } from '../auth/AuthContext'
 import { hasVisibleModuleNavigation } from '../utils/navigation'
-import type { Campaign, Task, UserTeam } from '../types/models'
-
-const CLOSED_STATUSES = new Set(['done', 'completed', 'cancelled', 'archived', 'deleted'])
+import { assignedTeamId, isAssignedToLeadTeam, isClosedTask, leadTeamsForCampaign, teamCampaigns, uniqueCampaigns } from '../utils/taskAssignment'
+import type { Campaign, Task, Team, UserTeam } from '../types/models'
 
 const asArray = <T,>(value: T[] | null | undefined): T[] => (Array.isArray(value) ? value : [])
 
@@ -23,14 +22,28 @@ export function DashboardPage() {
   const { data, isLoading, isError, error } = useQuery({ queryKey: ['health'], queryFn: healthCheck })
   const invitationsQuery = useQuery({ queryKey: ['user-invitations'], queryFn: listCurrentUserInvitations, retry: false })
 
-  const campaigns = asArray<Campaign>(user?.campaigns)
-  const campaignIds = campaigns.map((campaign) => campaign.id)
   const userTeamsQuery = useQuery({
     queryKey: ['dashboard-user-teams', user?.id],
     queryFn: () => listUserTeams(user!.id),
     enabled: Boolean(user?.id),
     retry: false,
   })
+
+  const userTeams = asArray<UserTeam>(userTeamsQuery.data)
+  const teamDetailsQuery = useQuery({
+    queryKey: ['dashboard-team-details', userTeams.map((team) => team.id).join(',')],
+    queryFn: () => Promise.all(userTeams.map((team) => getTeam(team.id))),
+    enabled: userTeams.length > 0,
+    retry: false,
+  })
+
+  const teamDetails = asArray<Team>(teamDetailsQuery.data)
+  const enrichedUserTeams = userTeams.map((team) => ({
+    ...team,
+    campaigns: team.campaigns ?? teamDetails.find((detail) => detail.id === team.id)?.campaigns,
+  }))
+  const campaigns = uniqueCampaigns([...asArray<Campaign>(user?.campaigns), ...teamCampaigns(enrichedUserTeams), ...teamCampaigns(teamDetails)])
+  const campaignIds = campaigns.map((campaign) => campaign.id)
 
   const taskBoardQuery = useQuery({
     queryKey: ['dashboard-campaign-tasks', campaignIds.join(',')],
@@ -45,48 +58,53 @@ export function DashboardPage() {
   })
 
   const invitations = asArray(invitationsQuery.data)
-  const userTeams = asArray<UserTeam>(userTeamsQuery.data)
-  const leadTeams = userTeams.filter((team) => team.pivot?.role === 'lead')
-  const memberTeamIds = new Set(userTeams.map((team) => team.id))
+  const memberTeamIds = new Set(enrichedUserTeams.map((team) => team.id))
 
   const openTasks = (taskBoardQuery.data?.tasks ?? []).filter((task) =>
-    !task.assigned_team_id && !CLOSED_STATUSES.has(String(task.status).toLowerCase()),
+    !assignedTeamId(task) && !isClosedTask(task),
   )
 
   const claimedTasks = (taskBoardQuery.data?.tasks ?? []).filter((task) =>
-    Boolean(task.assigned_team_id) && memberTeamIds.has(Number(task.assigned_team_id)) && !CLOSED_STATUSES.has(String(task.status).toLowerCase()),
+    Boolean(assignedTeamId(task)) && memberTeamIds.has(Number(assignedTeamId(task))) && !isClosedTask(task),
   )
 
-  const claimTaskMutation = useMutation({
-    mutationFn: async ({ taskId, teamId }: { taskId: number; teamId: number }) => updateTask(taskId, { assigned_team_id: teamId }),
+  const assignTaskMutation = useMutation({
+    mutationFn: async ({ taskId, teamId }: { taskId: number; teamId: number | null }) => updateTask(taskId, { assigned_team_id: teamId }),
     onSuccess: () => {
-      window.alert('Auftrag wurde übernommen.')
+      window.alert('Auftrag wurde aktualisiert.')
       qc.invalidateQueries({ queryKey: ['dashboard-campaign-tasks'] })
     },
     onError: () => {
-      window.alert('Auftrag konnte nicht übernommen werden.')
+      window.alert('Auftrag konnte nicht aktualisiert werden.')
     },
   })
 
   const claimTask = (task: Task) => {
-    if (leadTeams.length === 0 || !task.can?.assign_team) return
-    if (leadTeams.length === 1) {
-      claimTaskMutation.mutate({ taskId: task.id, teamId: leadTeams[0].id })
+    const campaignLeadTeams = leadTeamsForCampaign(enrichedUserTeams, task.campaign_id)
+    if (campaignLeadTeams.length === 0 || assignedTeamId(task) || isClosedTask(task)) return
+    if (campaignLeadTeams.length === 1) {
+      assignTaskMutation.mutate({ taskId: task.id, teamId: campaignLeadTeams[0].id })
       return
     }
 
-    const promptValue = window.prompt(`Team-ID auswählen (${leadTeams.map((team) => `${team.id}: ${team.name}`).join(', ')})`)
+    const promptValue = window.prompt(`Team-ID auswählen (${campaignLeadTeams.map((team) => `${team.id}: ${team.name}`).join(', ')})`)
     if (!promptValue) return
     const teamId = Number(promptValue)
-    if (!leadTeams.some((team) => team.id === teamId)) {
+    if (!campaignLeadTeams.some((team) => team.id === teamId)) {
       window.alert('Ungültiges Team ausgewählt.')
       return
     }
-    claimTaskMutation.mutate({ taskId: task.id, teamId })
+    assignTaskMutation.mutate({ taskId: task.id, teamId })
   }
 
-  const showTaskLoading = userTeamsQuery.isLoading || taskBoardQuery.isLoading
-  const showTaskError = userTeamsQuery.isError || taskBoardQuery.isError
+  const releaseTask = (task: Task) => {
+    const campaignLeadTeams = leadTeamsForCampaign(enrichedUserTeams, task.campaign_id)
+    if (!isAssignedToLeadTeam(task, campaignLeadTeams) || isClosedTask(task)) return
+    assignTaskMutation.mutate({ taskId: task.id, teamId: null })
+  }
+
+  const showTaskLoading = userTeamsQuery.isLoading || teamDetailsQuery.isLoading || (campaigns.length > 0 && taskBoardQuery.isLoading)
+  const showTaskError = userTeamsQuery.isError || teamDetailsQuery.isError || taskBoardQuery.isError
 
   return (
     <section className="space-y-4">
@@ -124,7 +142,8 @@ export function DashboardPage() {
                   </div>
                   <div className="flex items-center gap-2">
                     <Link className="text-blue-600" to={`/tasks/${task.id}`}>Details</Link>
-                    {task.can?.assign_team && leadTeams.length > 0 && <button className="rounded border px-2 py-1" onClick={() => claimTask(task)}>Für Team übernehmen</button>}
+                    <button className="rounded border px-2 py-1 disabled:opacity-50" disabled={leadTeamsForCampaign(enrichedUserTeams, task.campaign_id).length === 0 || assignTaskMutation.isPending} onClick={() => claimTask(task)}>Für Team übernehmen</button>
+                    <button className="rounded border px-2 py-1 disabled:opacity-50" disabled onClick={() => releaseTask(task)}>Zurückgeben</button>
                   </div>
                 </div>
               ))}
@@ -148,7 +167,11 @@ export function DashboardPage() {
                     <p>Status: {task.status}</p>
                     <p>Fällig: {formatDate(task.due_at)}</p>
                   </div>
-                  <Link className="text-blue-600" to={`/tasks/${task.id}`}>Details</Link>
+                  <div className="flex items-center gap-2">
+                    <Link className="text-blue-600" to={`/tasks/${task.id}`}>Details</Link>
+                    <button className="rounded border px-2 py-1 disabled:opacity-50" disabled onClick={() => claimTask(task)}>Für Team übernehmen</button>
+                    <button className="rounded border px-2 py-1 disabled:opacity-50" disabled={!isAssignedToLeadTeam(task, leadTeamsForCampaign(enrichedUserTeams, task.campaign_id)) || assignTaskMutation.isPending} onClick={() => releaseTask(task)}>Zurückgeben</button>
+                  </div>
                 </div>
               ))}
             </div>

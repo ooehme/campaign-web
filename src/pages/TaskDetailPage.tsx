@@ -13,6 +13,7 @@ import {
   getTaskEventsByPage,
   listCampaignAreas,
   listCampaignTeams,
+  listUserTeams,
   listTaskPoints,
   updateTask,
   updateTaskPoint,
@@ -22,8 +23,9 @@ import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import { MAP_ATTRIBUTION, MAP_TILE_URL, TASK_STATUSES } from '../utils/constants'
 import { can, canPermission, NO_PERMISSION_MESSAGE, permissionErrorMessage } from '../utils/permissions'
 import { getGeometryFromAreaGeoJson } from '../utils/campaignAreaMap'
+import { assignedTeamId, isAssignedToLeadTeam, isClosedTask, leadTeamsByAssignedCampaign } from '../utils/taskAssignment'
 import { GeoJSON, MapContainer, Marker, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet'
-import type { Area, TaskPoint } from '../types/models'
+import type { Area, Task, TaskPoint, UserTeam } from '../types/models'
 
 const DEFAULT_CENTER: [number, number] = [51.1657, 10.4515]
 
@@ -112,6 +114,7 @@ export function TaskDetailPage() {
   const pointsQuery = useQuery({ queryKey: ['task-points', id], queryFn: () => listTaskPoints(id), enabled: Number.isFinite(id) })
   const areasQuery = useQuery({ queryKey: ['campaign-areas', taskQuery.data?.campaign_id], queryFn: () => listCampaignAreas(taskQuery.data!.campaign_id, { per_page: 100 }), enabled: !!taskQuery.data?.campaign_id })
   const teamsQuery = useQuery({ queryKey: ['campaign-teams', taskQuery.data?.campaign_id], queryFn: () => listCampaignTeams(taskQuery.data!.campaign_id, { per_page: 100 }), enabled: !!taskQuery.data?.campaign_id })
+  const userTeamsQuery = useQuery({ queryKey: ['task-detail-user-teams', user?.id], queryFn: () => listUserTeams(user!.id), enabled: Boolean(user?.id), retry: false })
   const eventsQuery = useQuery({ queryKey: ['task-events', id, eventsPage], queryFn: () => getTaskEventsByPage(id, { page: eventsPage, per_page: 100 }), enabled: Number.isFinite(id) })
 
   useEffect(() => {
@@ -124,7 +127,7 @@ export function TaskDetailPage() {
       priority: taskQuery.data.priority,
       boundary_area_id: taskQuery.data.boundary_area?.id ?? taskQuery.data.boundary_area_id ?? undefined,
       area_id: taskQuery.data.target_area?.id ?? taskQuery.data.area?.id ?? taskQuery.data.area_id ?? undefined,
-      assigned_team_id: taskQuery.data.assigned_team?.id,
+      assigned_team_id: taskQuery.data.assigned_team?.id ?? taskQuery.data.assigned_team_id ?? undefined,
       due_at: taskQuery.data.due_at ? String(taskQuery.data.due_at).slice(0, 16) : '',
       payload_json: taskQuery.data.payload ? JSON.stringify(taskQuery.data.payload, null, 2) : '',
     })
@@ -135,6 +138,7 @@ export function TaskDetailPage() {
     queryClient.invalidateQueries({ queryKey: ['task-events', id] })
     queryClient.invalidateQueries({ queryKey: ['task-points', id] })
     queryClient.invalidateQueries({ queryKey: ['tasks', taskQuery.data?.campaign_id] })
+    queryClient.invalidateQueries({ queryKey: ['dashboard-campaign-tasks'] })
   }
 
   const updateTaskMutation = useMutation({
@@ -143,6 +147,11 @@ export function TaskDetailPage() {
       const { payload_json, ...rest } = values
       return updateTask(id, { ...rest, payload })
     },
+    onSuccess: invalidateAll,
+  })
+
+  const assignTaskMutation = useMutation({
+    mutationFn: ({ taskId, teamId }: { taskId: number; teamId: number | null }) => updateTask(taskId, { assigned_team_id: teamId }),
     onSuccess: invalidateAll,
   })
 
@@ -157,6 +166,10 @@ export function TaskDetailPage() {
     return pointList.slice().sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
   }, [pointsQuery.data, task?.points])
   const campaignAreas = areasQuery.data?.data ?? []
+  const campaignTeams = teamsQuery.data?.data ?? []
+  const userTeams = (userTeamsQuery.data ?? []) as UserTeam[]
+  const campaignTeamIds = new Set(campaignTeams.map((team) => team.id))
+  const leadTeams = leadTeamsByAssignedCampaign(userTeams, campaignTeamIds)
   const boundaryArea = campaignAreas.find((a) => a.id === (task?.boundary_area?.id ?? task?.boundary_area_id))
   const targetArea = campaignAreas.find((a) => a.id === (task?.target_area?.id ?? task?.area?.id ?? task?.area_id))
   const mapAreas = [boundaryArea, targetArea].filter(Boolean) as Area[]
@@ -196,12 +209,52 @@ export function TaskDetailPage() {
     }
   }
 
+  const claimTask = (claimableTask: Task) => {
+    if (assignedTeamId(claimableTask) || isClosedTask(claimableTask) || leadTeams.length === 0) return
+    if (leadTeams.length === 1) {
+      assignTaskMutation.mutate({ taskId: claimableTask.id, teamId: leadTeams[0].id })
+      return
+    }
+
+    const promptValue = window.prompt(`Team-ID auswählen (${leadTeams.map((team) => `${team.id}: ${team.name}`).join(', ')})`)
+    if (!promptValue) return
+    const teamId = Number(promptValue)
+    if (!leadTeams.some((team) => team.id === teamId)) {
+      window.alert('Ungültiges Team ausgewählt.')
+      return
+    }
+    assignTaskMutation.mutate({ taskId: claimableTask.id, teamId })
+  }
+
+  const releaseTask = (releasableTask: Task) => {
+    if (!isAssignedToLeadTeam(releasableTask, leadTeams) || isClosedTask(releasableTask)) return
+    assignTaskMutation.mutate({ taskId: releasableTask.id, teamId: null })
+  }
+
+  const taskTeamId = assignedTeamId(task)
+  const assignedToOwnTeam = isAssignedToLeadTeam(task, leadTeams)
+  const closed = isClosedTask(task)
+  const claimDisabled = Boolean(taskTeamId) || closed || leadTeams.length === 0 || assignTaskMutation.isPending
+  const releaseDisabled = !assignedToOwnTeam || closed || assignTaskMutation.isPending
+
   return <section className="space-y-4">
     <div className="flex items-center justify-between"><h1 className="text-2xl font-semibold">Auftrag #{task.id}: {task.title}</h1><Link className="text-blue-600" to={`/campaigns/${task.campaign_id}`}>Zur Kampagne</Link></div>
     <div className="rounded border bg-white p-4"><h2 className="mb-2 font-medium">Übersicht</h2><p>Status: {task.status} · Priorität: {task.priority}</p></div>
     <div className="rounded border bg-white p-4"><h2 className="mb-2 font-medium">Begrenzung</h2><p>{boundaryArea?.name ?? 'Keine Begrenzung zugewiesen.'}</p></div>
     <div className="rounded border bg-white p-4"><h2 className="mb-2 font-medium">Zielgebiet</h2><p>{targetArea?.name ?? 'Kein Zielgebiet zugewiesen.'}</p></div>
-    <div className="rounded border bg-white p-4"><h2 className="mb-2 font-medium">Team</h2><p>{task.assigned_team?.name ?? 'Kein Team zugewiesen.'}</p></div>
+    <div className="rounded border bg-white p-4">
+      <h2 className="mb-2 font-medium">Team</h2>
+      <p>{task.assigned_team?.name ?? task.assigned_team_id ?? 'Kein Team zugewiesen.'}</p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button type="button" className="rounded border px-3 py-1 text-sm disabled:opacity-50" disabled={claimDisabled} onClick={() => claimTask(task)}>
+          Für Team übernehmen
+        </button>
+        <button type="button" className="rounded border px-3 py-1 text-sm disabled:opacity-50" disabled={releaseDisabled} onClick={() => releaseTask(task)}>
+          Zurückgeben
+        </button>
+      </div>
+      {assignTaskMutation.isError && <ErrorState message={requestErrorMessage(assignTaskMutation.error)} />}
+    </div>
     <div className="rounded border bg-white p-4"><h2 className="mb-2 font-medium">Briefing</h2><p>{task.briefing?.trim() ? task.briefing : 'Kein Briefing hinterlegt.'}</p></div>
 
     <div className="rounded border bg-white p-4"><h2 className="mb-2 font-medium">Punkte / Marker</h2>{points.length === 0 ? <EmptyState message="Noch keine Punkte für diesen Auftrag vorhanden." /> : <div className="space-y-2">{points.map((point) => <article key={point.id} className="rounded border p-2 text-sm"><p className="font-medium">{point.label ?? `Punkt #${point.id}`}</p><p>{point.description ?? '—'}</p><p>Koordinaten: {point.latitude}, {point.longitude}</p><p>Sortierung: {point.sort_order ?? 0}</p><div className="mt-2 flex gap-2"><button type="button" className="border px-2 disabled:opacity-50" disabled={!canManagePoints || !can(point.can?.update)} title={!canManagePoints ? NO_PERMISSION_MESSAGE : undefined} onClick={() => pointForm.reset({ id: point.id, label: point.label ?? '', description: point.description ?? '', latitude: point.latitude, longitude: point.longitude, sort_order: point.sort_order ?? 0, payload_json: point.payload ? JSON.stringify(point.payload, null, 2) : '' })}>Punkt bearbeiten</button><button type="button" className="border px-2 disabled:opacity-50" disabled={!canManagePoints || !can(point.can?.delete)} title={!canManagePoints ? NO_PERMISSION_MESSAGE : undefined} onClick={() => deletePointMutation.mutate(point.id)}>Punkt entfernen</button></div></article>)}</div>}</div>

@@ -100,12 +100,7 @@ export interface Team {
       notes?: string | null
     }
   }>
-  campaigns?: Array<{
-    id: number
-    name: string
-    slug?: string
-    status?: string
-  }>
+  campaigns?: Campaign[]
   assigned_task_summary?: {
     total?: number
     open?: number
@@ -305,6 +300,7 @@ export interface User {
 export interface UserTeam {
   id: number
   name: string
+  campaigns?: Campaign[]
   pivot?: {
     role?: TeamRole
     display_name?: string | null
