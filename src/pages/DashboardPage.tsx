@@ -8,6 +8,8 @@ import type { Campaign, Task, UserTeam } from '../types/models'
 
 const CLOSED_STATUSES = new Set(['done', 'completed', 'cancelled', 'archived', 'deleted'])
 
+const asArray = <T,>(value: T[] | null | undefined): T[] => (Array.isArray(value) ? value : [])
+
 const formatDate = (value?: string | null) => {
   if (!value) return '-'
   const date = new Date(value)
@@ -21,7 +23,8 @@ export function DashboardPage() {
   const { data, isLoading, isError, error } = useQuery({ queryKey: ['health'], queryFn: healthCheck })
   const invitationsQuery = useQuery({ queryKey: ['user-invitations'], queryFn: listCurrentUserInvitations, retry: false })
 
-  const campaigns = (user?.campaigns ?? []) as Campaign[]
+  const campaigns = asArray<Campaign>(user?.campaigns)
+  const campaignIds = campaigns.map((campaign) => campaign.id)
   const userTeamsQuery = useQuery({
     queryKey: ['dashboard-user-teams', user?.id],
     queryFn: () => listUserTeams(user!.id),
@@ -30,19 +33,21 @@ export function DashboardPage() {
   })
 
   const taskBoardQuery = useQuery({
-    queryKey: ['dashboard-campaign-tasks', campaigns.map((c) => c.id).join(',')],
+    queryKey: ['dashboard-campaign-tasks', campaignIds.join(',')],
     enabled: campaigns.length > 0,
     queryFn: async () => {
       const responses = await Promise.all(campaigns.map((campaign) => listCampaignTasks(campaign.id, { per_page: 100 })))
       const campaignNameById = new Map(campaigns.map((campaign) => [campaign.id, campaign.name]))
-      const tasks = responses.flatMap((response) => response.data)
+      const tasks = responses.flatMap((response) => asArray<Task>(response.data))
       return { tasks, campaignNameById }
     },
     retry: false,
   })
 
-  const leadTeams = (userTeamsQuery.data ?? []).filter((team: UserTeam) => team.pivot?.role === 'lead')
-  const memberTeamIds = new Set((userTeamsQuery.data ?? []).map((team: UserTeam) => team.id))
+  const invitations = asArray(invitationsQuery.data)
+  const userTeams = asArray<UserTeam>(userTeamsQuery.data)
+  const leadTeams = userTeams.filter((team) => team.pivot?.role === 'lead')
+  const memberTeamIds = new Set(userTeams.map((team) => team.id))
 
   const openTasks = (taskBoardQuery.data?.tasks ?? []).filter((task) =>
     !task.assigned_team_id && !CLOSED_STATUSES.has(String(task.status).toLowerCase()),
@@ -98,8 +103,8 @@ export function DashboardPage() {
         <div className="rounded border bg-white p-4">
           <h2 className="font-medium">Meine Einladungen</h2>
           {invitationsQuery.isError && <p className="text-sm text-slate-600">Einladungen-Endpunkt derzeit nicht verfügbar.</p>}
-          {(invitationsQuery.data ?? []).filter((i) => i.status === 'pending').length === 0 && <p className="text-sm">Keine offenen Einladungen.</p>}
-          <ul className="space-y-2">{(invitationsQuery.data ?? []).filter((i) => i.status === 'pending').map((inv) => <li key={inv.id} className="border rounded p-2 text-sm">{inv.team?.name ?? '-'} ({inv.role})</li>)}</ul>
+          {invitations.filter((i) => i.status === 'pending').length === 0 && <p className="text-sm">Keine offenen Einladungen.</p>}
+          <ul className="space-y-2">{invitations.filter((i) => i.status === 'pending').map((inv) => <li key={inv.id} className="border rounded p-2 text-sm">{inv.team?.name ?? '-'} ({inv.role})</li>)}</ul>
         </div>
 
         <div className="rounded border bg-white p-4 md:col-span-2">
