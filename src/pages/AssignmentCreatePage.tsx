@@ -6,18 +6,20 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { z } from 'zod'
 import { GeoJSON, MapContainer, TileLayer, useMap } from 'react-leaflet'
 import { ApiError } from '../api/client'
-import { createAssignment, createCampaignAssignment, getCampaign, listCampaignAreas, listCampaignTeams } from '../api/endpoints'
+import { createAssignment, createCampaignAssignment, getCampaign, getTeam, listAreas, listCampaignAreas, listCampaignTeams, listUserTeams } from '../api/endpoints'
+import { useAuth } from '../auth/AuthContext'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import { ASSIGNMENT_STATUSES, ASSIGNMENT_TYPES, MAP_ATTRIBUTION, MAP_TILE_URL } from '../utils/constants'
-import { assignmentTypeLabel } from '../utils/assignment'
-import { getAreaGeometryBoundsSafely, getGeometryFromAreaGeoJson, isValidPolygonOrMultiPolygon } from '../utils/campaignAreaMap'
+import { assignmentTypeLabel, uniqueCampaigns } from '../utils/assignment'
+import { getAreaGeometryBoundsSafely, getAreaUsageOptions, getGeometryFromAreaGeoJson, isValidPolygonOrMultiPolygon } from '../utils/campaignAreaMap'
 import { can, NO_PERMISSION_MESSAGE } from '../utils/permissions'
-import type { Area, Assignment } from '../types/models'
+import type { Area, Assignment, Team, UserTeam } from '../types/models'
 
 const deliveryModes = ['letterbox', 'doorstep', 'both'] as const
 const householdTargets = ['all_households', 'selected_buildings', 'commercial_only', 'residential_only'] as const
 const proofTypes = ['photo', 'gps_track', 'completion_checklist'] as const
 const DEFAULT_CENTER: [number, number] = [51.1657, 10.4515]
+const FULL_AREA_ACCESS_ROLES = new Set(['admin', 'manager', 'app-admin', 'campaign-manager'])
 
 const splitLines = (value?: string) => (value ?? '').split('\n').map((line) => line.trim()).filter(Boolean)
 
@@ -130,12 +132,50 @@ const buildTypeConfig = (values: FormValues): Assignment['typeConfig'] => {
 export function AssignmentCreatePage() {
   const { campaignId } = useParams()
   const campaign = campaignId ? Number(campaignId) : null
+  const { user } = useAuth()
   const navigate = useNavigate()
   const qc = useQueryClient()
   const [topError, setTopError] = useState<string | null>(null)
+  const hasFullAreaAccess = FULL_AREA_ACCESS_ROLES.has(String(user?.app_role ?? ''))
 
   const campaignQuery = useQuery({ queryKey: ['campaign', campaign], queryFn: () => getCampaign(campaign!), enabled: Number.isFinite(campaign), retry: false })
-  const areasQuery = useQuery({ queryKey: ['campaign-areas', campaign], queryFn: () => listCampaignAreas(campaign!, { per_page: 100 }), enabled: Number.isFinite(campaign), retry: false })
+  const areaPoolQuery = useQuery({ queryKey: ['areas-pool'], queryFn: () => listAreas({ per_page: 100 }), enabled: hasFullAreaAccess, retry: false })
+  const userTeamsQuery = useQuery({ queryKey: ['assignment-create-user-teams', user?.id], queryFn: () => listUserTeams(user!.id), enabled: Boolean(user?.id && !hasFullAreaAccess), retry: false })
+  const teamDetailsQuery = useQuery({
+    queryKey: ['assignment-create-team-details', userTeamsQuery.data?.map((team) => team.id).join(',')],
+    queryFn: async () => {
+      const results = await Promise.allSettled((userTeamsQuery.data ?? []).map((team) => getTeam(team.id)))
+      return results.flatMap((result) => result.status === 'fulfilled' ? [result.value] : [])
+    },
+    enabled: Boolean(!hasFullAreaAccess && userTeamsQuery.data?.length),
+    retry: false,
+  })
+  const teamCampaignAreasQuery = useQuery({
+    queryKey: [
+      'assignment-create-team-campaign-areas',
+      user?.id,
+      userTeamsQuery.data?.map((team) => `${team.id}:${team.campaigns?.map((teamCampaign) => teamCampaign.id).join(',')}`).join('|'),
+      teamDetailsQuery.data?.map((team) => `${team.id}:${team.campaigns?.map((teamCampaign) => teamCampaign.id).join(',')}`).join('|'),
+    ],
+    queryFn: async () => {
+      const teamDetails = (teamDetailsQuery.data ?? []) as Team[]
+      const leadTeams = ((userTeamsQuery.data ?? []) as UserTeam[])
+        .map((team) => {
+          const detail = teamDetails.find((item) => item.id === team.id)
+          return {
+            ...team,
+            campaigns: team.campaigns ?? detail?.campaigns,
+            pivot: team.pivot ?? detail?.users?.find((member) => member.id === user?.id)?.pivot,
+          }
+        })
+        .filter((team) => team.pivot?.role === 'lead')
+      const campaigns = uniqueCampaigns(leadTeams.flatMap((team) => team.campaigns ?? []))
+      const results = await Promise.allSettled(campaigns.map((teamCampaign) => listCampaignAreas(teamCampaign.id, { per_page: 100 })))
+      return results.flatMap((result) => result.status === 'fulfilled' ? result.value.data : [])
+    },
+    enabled: Boolean(!hasFullAreaAccess && userTeamsQuery.data && (!userTeamsQuery.data.length || teamDetailsQuery.data)),
+    retry: false,
+  })
   const teamsQuery = useQuery({ queryKey: ['campaign-teams', campaign], queryFn: () => listCampaignTeams(campaign!, { per_page: 100 }), enabled: Number.isFinite(campaign), retry: false })
 
   const form = useForm<FormValues>({
@@ -162,10 +202,13 @@ export function AssignmentCreatePage() {
   const selectedTargetAreaId = form.watch('targetAreaId')
   const selectedProofTypes = form.watch('proofTypes') ?? []
   const canCreate = campaignQuery.data ? can(campaignQuery.data.can?.create_assignment) : true
-  const campaignAreas = areasQuery.data?.data ?? []
-  const boundaryAreas = campaignAreas.filter((area) => area.pivot?.usage === 'boundary')
-  const targetAreas = campaignAreas.filter((area) => area.pivot?.usage === 'target')
-  const selectedTarget = targetAreas.find((area) => String(area.id) === selectedTargetAreaId)
+  const availableAreas = hasFullAreaAccess ? areaPoolQuery.data?.data ?? [] : teamCampaignAreasQuery.data ?? []
+  const areasLoading = hasFullAreaAccess ? areaPoolQuery.isLoading : userTeamsQuery.isLoading || teamDetailsQuery.isLoading || teamCampaignAreasQuery.isLoading
+  const areasError = hasFullAreaAccess ? areaPoolQuery.isError : userTeamsQuery.isError || teamDetailsQuery.isError || teamCampaignAreasQuery.isError
+  const boundaryAreaOptions = getAreaUsageOptions(availableAreas, 'boundary')
+  const targetAreaOptions = getAreaUsageOptions(availableAreas, 'target')
+  const selectedTargetOption = targetAreaOptions.find((option) => String(option.area.id) === selectedTargetAreaId)
+  const selectedTarget = selectedTargetOption?.area
 
   const requestPayload = (values: FormValues): Partial<Assignment> & Record<string, unknown> => ({
     type: values.type,
@@ -215,9 +258,9 @@ export function AssignmentCreatePage() {
         <Link className="text-blue-600" to={campaign ? `/campaigns/${campaign}` : '/assignments'}>Zurück</Link>
       </div>
       {topError && <ErrorState message={topError} />}
-      {areasQuery.isError && <ErrorState message="Kampagnenflächen konnten nicht geladen werden." />}
-      {!areasQuery.isLoading && boundaryAreas.length === 0 && <EmptyState message="Keine Begrenzungsgebiete für diese Kampagne zugewiesen." />}
-      {!areasQuery.isLoading && targetAreas.length === 0 && <EmptyState message="Keine Zielgebiete für diese Kampagne zugewiesen." />}
+      {areasError && <ErrorState message="Gebiete konnten nicht geladen werden." />}
+      {!areasLoading && boundaryAreaOptions.length === 0 && <EmptyState message="Keine Begrenzungsgebiete verfügbar." />}
+      {!areasLoading && targetAreaOptions.length === 0 && <EmptyState message="Keine Zielgebiete verfügbar." />}
       {campaign && !teamsQuery.isLoading && (teamsQuery.data?.data ?? []).length === 0 && <EmptyState message="Keine Teams für diese Kampagne zugewiesen." />}
       <form className="space-y-3 rounded border bg-white p-4" onSubmit={form.handleSubmit((values) => createMutation.mutate(values))}>
         <div className="grid gap-2 md:grid-cols-2">
@@ -228,12 +271,12 @@ export function AssignmentCreatePage() {
         {form.formState.errors.title?.message && <ErrorState message={form.formState.errors.title.message} />}
         <textarea rows={3} placeholder="Beschreibung" {...form.register('description')} disabled={!canCreate} />
         <div className="grid gap-2 md:grid-cols-2">
-          <label className="block text-sm">Begrenzungsgebiet *<select className="mt-1" {...form.register('boundaryAreaId')} disabled={!canCreate || areasQuery.isLoading}><option value="">Begrenzungsgebiet auswählen</option>{boundaryAreas.map((area) => <option key={area.id} value={area.id}>{area.name}</option>)}</select></label>
-          <label className="block text-sm">Zielgebiet *<select className="mt-1" {...form.register('targetAreaId')} disabled={!canCreate || areasQuery.isLoading} onChange={(event) => { form.setValue('targetAreaId', event.target.value); const boundaryAreaId = targetAreas.find((area) => String(area.id) === event.target.value)?.pivot?.boundary_area_id; if (boundaryAreaId) form.setValue('boundaryAreaId', String(boundaryAreaId)) }}><option value="">Zielgebiet auswählen</option>{targetAreas.map((area) => <option key={area.id} value={area.id}>{area.name}</option>)}</select></label>
+          <label className="block text-sm">Begrenzungsgebiet *<select className="mt-1" {...form.register('boundaryAreaId')} disabled={!canCreate || areasLoading}><option value="">Begrenzungsgebiet auswählen</option>{boundaryAreaOptions.map(({ area }) => <option key={area.id} value={area.id}>{area.name}</option>)}</select></label>
+          <label className="block text-sm">Zielgebiet *<select className="mt-1" {...form.register('targetAreaId')} disabled={!canCreate || areasLoading} onChange={(event) => { form.setValue('targetAreaId', event.target.value); const boundaryAreaId = targetAreaOptions.find((option) => String(option.area.id) === event.target.value)?.boundaryAreaId; if (boundaryAreaId) form.setValue('boundaryAreaId', String(boundaryAreaId)) }}><option value="">Zielgebiet auswählen</option>{targetAreaOptions.map(({ area }) => <option key={area.id} value={area.id}>{area.name}</option>)}</select></label>
         </div>
         {form.formState.errors.boundaryAreaId?.message && <ErrorState message={form.formState.errors.boundaryAreaId.message} />}
         {form.formState.errors.targetAreaId?.message && <ErrorState message={form.formState.errors.targetAreaId.message} />}
-        {selectedTarget?.pivot?.boundary_area_id && String(selectedTarget.pivot.boundary_area_id) !== form.watch('boundaryAreaId') && <p className="text-sm text-amber-700">Das Zielgebiet gehört nicht zum ausgewählten Begrenzungsgebiet.</p>}
+        {selectedTargetOption?.boundaryAreaId && String(selectedTargetOption.boundaryAreaId) !== form.watch('boundaryAreaId') && <p className="text-sm text-amber-700">Das Zielgebiet gehört nicht zum ausgewählten Begrenzungsgebiet.</p>}
         {selectedTarget && <TargetAreaPreviewMap area={selectedTarget} />}
         <div className="grid gap-2 md:grid-cols-3">
           <select {...form.register('teamId')} disabled={!canCreate}><option value="">Team</option>{(teamsQuery.data?.data ?? []).map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select>

@@ -1,4 +1,4 @@
-import type { Area, GeoJsonFeatureCollection, GeoJsonInput, GeoJsonShape } from '../types/models'
+import type { Area, AreaAssignmentRef, GeoJsonFeatureCollection, GeoJsonInput, GeoJsonShape } from '../types/models'
 
 export type CampaignAreaUsage = 'boundary' | 'target' | 'unknown'
 
@@ -6,6 +6,11 @@ export type SplitCampaignAreas = {
   boundaries: Area[]
   targets: Area[]
   unknown: Area[]
+}
+
+export type AreaUsageOption = {
+  area: Area
+  boundaryAreaId?: number | null
 }
 
 const isFiniteCoordinatePair = (pair: unknown): pair is [number, number] =>
@@ -58,6 +63,32 @@ export const splitCampaignAreasByUsage = (areas: Area[]): SplitCampaignAreas => 
     else result.unknown.push(area)
   })
   return result
+}
+
+export const getAreaAssignments = (area: Area): AreaAssignmentRef[] => {
+  const assignments = area.assignments ?? area.campaigns ?? []
+  if (assignments.length > 0) return assignments
+  if (area.pivot?.usage) return [{ ...area.pivot }] as AreaAssignmentRef[]
+  return []
+}
+
+export const getAreaUsageOptions = (areas: Area[], usage: 'boundary' | 'target'): AreaUsageOption[] => {
+  const options = new Map<number, AreaUsageOption>()
+
+  areas.forEach((area) => {
+    const assignments = getAreaAssignments(area)
+    const matchingAssignments = assignments.filter((assignment) => assignment.usage === usage)
+
+    if (matchingAssignments.length === 0 && assignments.length > 0) return
+
+    const boundaryAreaId = usage === 'target'
+      ? matchingAssignments.find((assignment) => assignment.boundary_area_id != null)?.boundary_area_id ?? area.pivot?.boundary_area_id ?? null
+      : null
+
+    if (!options.has(area.id)) options.set(area.id, { area, boundaryAreaId })
+  })
+
+  return [...options.values()].sort((a, b) => a.area.name.localeCompare(b.area.name, 'de', { sensitivity: 'base' }))
 }
 
 export const getAreaUsageLabel = (usage: CampaignAreaUsage) => {
