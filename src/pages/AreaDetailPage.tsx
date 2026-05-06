@@ -77,15 +77,18 @@ export function AreaDetailPage() {
     <Link to="/areas" className="text-sm text-blue-600">← Zurück zum Flächen-Pool</Link>
     <div className="rounded border bg-white p-4 flex items-center justify-between"><h1 className="text-3xl font-semibold">{area.name || '—'}</h1><div className="flex gap-2"><Link to={`/areas/${id}/edit`} className={`border px-3 py-2 ${!canUpdate ? 'pointer-events-none opacity-50' : ''}`} title={!canUpdate ? NO_PERMISSION_MESSAGE : undefined}>Bearbeiten</Link><button className="bg-red-600 text-white px-3 py-2 disabled:opacity-50" disabled={!canDelete} title={!canDelete ? NO_PERMISSION_MESSAGE : undefined} onClick={() => window.confirm(`Fläche "${area.name}" löschen?`) && remove.mutate()}>Löschen</button></div></div>
 
-    <div className="rounded border bg-white p-4 space-y-1"><h2 className="font-medium">Übersicht</h2><p>ID: {area.id}</p><p>Name: {area.name || '—'}</p><p>Erstellt: {formatDate(area.created_at)}</p><p>Aktualisiert: {formatDate(area.updated_at)}</p><p>GeoJSON-Typ: {summary.type}</p>{summary.valid && summary.type === 'Polygon' && <><p>Anzahl Ringe: {summary.rings}</p><p>Punkte (erste Außenlinie): {summary.firstOuterPoints}</p></>}{summary.valid && summary.type === 'MultiPolygon' && <><p>Anzahl Polygone: {summary.polygons}</p><p>Anzahl Ringe: {summary.rings}</p><p>Punkte (erstes Polygon, Außenlinie): {summary.firstOuterPoints}</p></>}</div>
+    <div className="rounded border bg-white p-4 space-y-1"><h2 className="font-medium">Übersicht</h2><p>ID: {area.id}</p><p>Erstellt: {formatDate(area.created_at)}</p><p>Aktualisiert: {formatDate(area.updated_at)}</p><p>GeoJSON-Typ: {summary.type}</p>{summary.valid && summary.type === 'Polygon' && <><p>Anzahl Ringe: {summary.rings}</p><p>Punkte (erste Außenlinie): {summary.firstOuterPoints}</p></>}{summary.valid && summary.type === 'MultiPolygon' && <><p>Anzahl Polygone: {summary.polygons}</p><p>Anzahl Ringe: {summary.rings}</p><p>Punkte (erstes Polygon, Außenlinie): {summary.firstOuterPoints}</p></>}</div>
 
-    <div className="rounded border bg-white p-4 space-y-2"><h2 className="font-medium">Kartenvorschau</h2>
-      {summary.valid && bounds && geometry ? <div className="h-80 overflow-hidden rounded border"><MapContainer center={DEFAULT_CENTER} zoom={6} className="h-full w-full"><TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} /><FitBounds bounds={bounds} /><GeoJSON data={geometry as GeoJSON.GeoJsonObject} /></MapContainer></div> : <p className="text-sm text-slate-700">Keine darstellbare GeoJSON-Geometrie vorhanden (Polygon/MultiPolygon erwartet).</p>}
+    <div className="rounded border bg-white p-4 space-y-2">
+      <details>
+        <summary className="cursor-pointer font-medium">Kartenvorschau</summary>
+        <div className="mt-3">{summary.valid && bounds && geometry ? <div className="h-80 overflow-hidden rounded border"><MapContainer center={DEFAULT_CENTER} zoom={6} className="h-full w-full"><TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} /><FitBounds bounds={bounds} /><GeoJSON data={geometry as GeoJSON.GeoJsonObject} /></MapContainer></div> : <p className="text-sm text-slate-700">Keine darstellbare GeoJSON-Geometrie vorhanden (Polygon/MultiPolygon erwartet).</p>}</div>
+      </details>
     </div>
 
     <div className="rounded border bg-white p-4"><details><summary className="cursor-pointer font-medium">GeoJSON</summary><pre className="mt-2 max-h-80 overflow-auto rounded border bg-slate-50 p-3 text-xs">{prettyGeoJson}</pre></details></div>
 
-    <div className="rounded border bg-white p-4 space-y-2"><h2 className="font-medium">Kampagnen-Zuweisungen</h2>
+    <div className="rounded border bg-white p-4 space-y-2"><details><summary className="cursor-pointer font-medium">Kampagnen-Zuweisungen</summary><div className="mt-3 space-y-2">
       {!assignments && <p className="text-sm text-slate-600">Kampagnen-Zuweisungen werden von der API auf dieser Flächendetailseite noch nicht bereitgestellt.</p>}
       {Array.isArray(assignments) && assignments.length === 0 && <EmptyState message="Keine Kampagnen-Zuweisungen vorhanden." />}
       {Array.isArray(assignments) && assignments.length > 0 && assignments.map((entry, idx) => {
@@ -93,6 +96,6 @@ export function AreaDetailPage() {
         const campaignId = entry.campaign_id ?? entry.id
         return <div key={`${campaignId ?? idx}`} className="rounded border p-2 text-sm"><p className="font-medium">{entry.campaign_name ?? entry.name ?? `Kampagne ${campaignId ?? '—'}`}</p><p>Nutzung: {usage}</p>{entry.boundary_area_id ? <p>Begrenzungsfläche ID: {entry.boundary_area_id}</p> : null}{entry.notes ? <p>Notizen: {entry.notes}</p> : null}{campaignId ? <Link className="text-blue-600" to={`/campaigns/${campaignId}`}>Zur Kampagne</Link> : null}</div>
       })}
-    </div>
+    </div></details></div>
   </section>
 }

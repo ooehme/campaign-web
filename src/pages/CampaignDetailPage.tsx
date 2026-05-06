@@ -127,12 +127,19 @@ export function CampaignDetailPage() {
       </dl>
     </div>
 
-    <CampaignAreaMap
-      areas={assignedAreas}
-      mapGeoJson={campaignAreasMapQuery.data}
-      isLoading={assignedAreasQuery.isLoading}
-      errorMessage={assignedAreasQuery.isError || campaignAreasMapQuery.isError ? `Karten-/Flächendaten konnten nicht geladen werden: ${message(assignedAreasQuery.error ?? campaignAreasMapQuery.error)}` : null}
-    />
+    <div className="rounded border bg-white p-4">
+      <details>
+        <summary className="cursor-pointer font-medium">Karte</summary>
+        <div className="mt-3">
+          <CampaignAreaMap
+            areas={assignedAreas}
+            mapGeoJson={campaignAreasMapQuery.data}
+            isLoading={assignedAreasQuery.isLoading}
+            errorMessage={assignedAreasQuery.isError || campaignAreasMapQuery.isError ? `Karten-/Flächendaten konnten nicht geladen werden: ${message(assignedAreasQuery.error ?? campaignAreasMapQuery.error)}` : null}
+          />
+        </div>
+      </details>
+    </div>
 
     <div className="grid gap-4 md:grid-cols-2">
       <div className="rounded border bg-white p-4 space-y-3">
