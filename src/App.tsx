@@ -3,6 +3,7 @@ import { AppShell } from './layout/AppShell'
 import { DashboardPage } from './pages/DashboardPage'
 import { CampaignListPage } from './pages/CampaignListPage'
 import { CampaignDetailPage } from './pages/CampaignDetailPage'
+import { CampaignEditPage } from './pages/CampaignEditPage'
 import { CampaignTaskListPage } from './pages/CampaignTaskListPage'
 import { TaskDetailPage } from './pages/TaskDetailPage'
 import { TaskCreatePage } from './pages/TaskCreatePage'
@@ -43,6 +44,7 @@ export default function App() {
           <Route path="/users/:userId/edit" element={<UserEditPage />} />
           <Route path="/admin/feature-permissions" element={<FeaturePermissionsPage />} />
           <Route path="/campaigns/:campaignId" element={<CampaignDetailPage />} />
+          <Route path="/campaigns/:campaignId/edit" element={<CampaignEditPage />} />
           <Route path="/campaigns/:campaignId/tasks" element={<CampaignTaskListPage />} />
           <Route path="/campaigns/:campaignId/tasks/new" element={<TaskCreatePage />} />
           <Route path="/campaigns/:campaignId/areas/new-map" element={<AreaCreateMapPage />} />
