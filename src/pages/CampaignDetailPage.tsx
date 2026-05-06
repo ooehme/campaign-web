@@ -1,11 +1,15 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
-import { getCampaign, getTasksPage, listCampaignAreas, listCampaignAreasMap, listCampaignTeams } from '../api/endpoints'
+import { getCampaign, getTasksPage, listCampaignAreas, listCampaignAreasMap, listCampaignTeams, listUserTeams, updateTask } from '../api/endpoints'
 import { ApiError } from '../api/client'
+import { useAuth } from '../auth/AuthContext'
 import { CampaignAreaMap } from '../components/CampaignAreaMap'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import { splitCampaignAreasByUsage } from '../utils/campaignAreaMap'
 import { can } from '../utils/permissions'
+import type { Task, UserTeam } from '../types/models'
+
+const CLOSED_TASK_STATUSES = new Set(['done', 'cancelled'])
 
 const message = (error: unknown) => {
   if (!(error instanceof ApiError)) return 'Unbekannter Fehler.'
@@ -18,12 +22,25 @@ const message = (error: unknown) => {
 export function CampaignDetailPage() {
   const { campaignId } = useParams()
   const id = Number(campaignId)
+  const { user } = useAuth()
+  const qc = useQueryClient()
 
   const campaignQuery = useQuery({ queryKey: ['campaign', id], queryFn: () => getCampaign(id), enabled: Number.isFinite(id) })
   const assignedAreasQuery = useQuery({ queryKey: ['campaign-areas', id], queryFn: () => listCampaignAreas(id, { per_page: 100 }), enabled: Number.isFinite(id) })
   const campaignAreasMapQuery = useQuery({ queryKey: ['campaign-areas-map', id], queryFn: () => listCampaignAreasMap(id), enabled: Number.isFinite(id) })
   const assignedTeamsQuery = useQuery({ queryKey: ['campaign-teams', id], queryFn: () => listCampaignTeams(id, { per_page: 100 }), enabled: Number.isFinite(id) })
   const tasksQuery = useQuery({ queryKey: ['tasks', id], queryFn: () => getTasksPage(id, { per_page: 100 }), enabled: Number.isFinite(id) })
+  const userTeamsQuery = useQuery({ queryKey: ['campaign-detail-user-teams', user?.id], queryFn: () => listUserTeams(user!.id), enabled: Boolean(user?.id), retry: false })
+
+  const claimTaskMutation = useMutation({
+    mutationFn: ({ taskId, teamId }: { taskId: number; teamId: number }) => updateTask(taskId, { assigned_team_id: teamId }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['tasks', id] })
+      qc.invalidateQueries({ queryKey: ['dashboard-campaign-tasks'] })
+      window.alert('Auftrag wurde übernommen.')
+    },
+    onError: () => window.alert('Auftrag konnte nicht übernommen werden.'),
+  })
 
   if (!Number.isFinite(id)) return <ErrorState message="Ungültige Kampagnen-ID." />
   if (campaignQuery.isLoading) return <LoadingState />
@@ -34,7 +51,26 @@ export function CampaignDetailPage() {
   const { boundaries: boundaryAreas, targets: targetAreas, unknown: unknownAreas } = splitCampaignAreasByUsage(assignedAreas)
   const assignedTeams = assignedTeamsQuery.data?.data ?? []
   const tasks = tasksQuery.data?.data ?? []
-  const openTasks = tasks.filter((task) => task.status !== 'done' && task.status !== 'cancelled')
+  const openTasks = tasks.filter((task) => !CLOSED_TASK_STATUSES.has(task.status))
+  const campaignTeamIds = new Set(assignedTeams.map((team) => team.id))
+  const leadTeams = ((userTeamsQuery.data ?? []) as UserTeam[]).filter((team) => team.pivot?.role === 'lead' && campaignTeamIds.has(team.id))
+
+  const claimTask = (task: Task) => {
+    if (!can(task.can?.assign_team) || task.assigned_team_id || CLOSED_TASK_STATUSES.has(task.status) || leadTeams.length === 0) return
+    if (leadTeams.length === 1) {
+      claimTaskMutation.mutate({ taskId: task.id, teamId: leadTeams[0].id })
+      return
+    }
+
+    const promptValue = window.prompt(`Team-ID auswählen (${leadTeams.map((team) => `${team.id}: ${team.name}`).join(', ')})`)
+    if (!promptValue) return
+    const teamId = Number(promptValue)
+    if (!leadTeams.some((team) => team.id === teamId)) {
+      window.alert('Ungültiges Team ausgewählt.')
+      return
+    }
+    claimTaskMutation.mutate({ taskId: task.id, teamId })
+  }
 
   return <section className="space-y-6">
     <Link to="/campaigns" className="text-sm text-blue-600">← Zurück zur Kampagnenliste</Link>
@@ -110,8 +146,8 @@ export function CampaignDetailPage() {
 
     <div className="rounded border bg-white p-4 space-y-3">
       <div className="flex items-center justify-between">
-        <h2 className="font-medium">Aufgabenübersicht</h2>
-        <Link className="text-sm text-blue-600" to={`/campaigns/${id}/tasks`}>Alle Aufgaben anzeigen</Link>
+        <h2 className="font-medium">Auftragsübersicht</h2>
+        <Link className="text-sm text-blue-600" to={`/campaigns/${id}/tasks`}>Alle Aufträge anzeigen</Link>
       </div>
       {tasksQuery.isLoading && <LoadingState />}
       {tasksQuery.isError && <ErrorState message={message(tasksQuery.error)} />}
@@ -121,7 +157,22 @@ export function CampaignDetailPage() {
         <div className="rounded bg-slate-50 p-3"><p className="text-slate-500">Abgeschlossen</p><p className="text-2xl font-semibold">{tasks.filter((task) => task.status === 'done').length}</p></div>
       </div>
       {tasks.length === 0 && <EmptyState message="Noch keine Aufträge vorhanden." />}
-      {tasks.slice(0, 10).map((task) => <p key={task.id} className="text-sm"><Link className="text-blue-600" to={`/tasks/${task.id}`}>{task.title}</Link> · {task.status}</p>)}
+      {tasks.slice(0, 10).map((task) => {
+        const isClaimable = !task.assigned_team_id && !CLOSED_TASK_STATUSES.has(task.status) && can(task.can?.assign_team) && leadTeams.length > 0
+        return (
+          <div key={task.id} className="flex flex-wrap items-center justify-between gap-2 rounded border p-2 text-sm">
+            <div>
+              <Link className="font-medium text-blue-600" to={`/tasks/${task.id}`}>{task.title}</Link>
+              <p className="text-slate-500">Status: {task.status} · Team: {task.assigned_team?.name ?? '-'}</p>
+            </div>
+            {isClaimable && (
+              <button type="button" className="rounded border px-2 py-1 disabled:opacity-50" disabled={claimTaskMutation.isPending} onClick={() => claimTask(task)}>
+                Für Team übernehmen
+              </button>
+            )}
+          </div>
+        )
+      })}
     </div>
   </section>
 }

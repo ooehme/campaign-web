@@ -93,8 +93,8 @@ export function TeamDetailPage() {
     </div>
 
     <div className="rounded border bg-white p-4 space-y-2">
-      <h2 className="font-medium">Aufgaben-Zusammenfassung</h2>
-      {!team.assigned_task_summary && <EmptyState message="Keine Aufgaben-Zusammenfassung verfügbar." />}
+      <h2 className="font-medium">Auftrags-Zusammenfassung</h2>
+      {!team.assigned_task_summary && <EmptyState message="Keine Auftrags-Zusammenfassung verfügbar." />}
       {team.assigned_task_summary && <ul className="text-sm space-y-1">
         <li>total: {team.assigned_task_summary.total ?? 0}</li>
         <li>open: {team.assigned_task_summary.open ?? 0}</li>

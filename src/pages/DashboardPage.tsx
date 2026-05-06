@@ -60,11 +60,11 @@ export function DashboardPage() {
   const claimTaskMutation = useMutation({
     mutationFn: async ({ taskId, teamId }: { taskId: number; teamId: number }) => updateTask(taskId, { assigned_team_id: teamId }),
     onSuccess: () => {
-      window.alert('Aufgabe wurde übernommen.')
+      window.alert('Auftrag wurde übernommen.')
       qc.invalidateQueries({ queryKey: ['dashboard-campaign-tasks'] })
     },
     onError: () => {
-      window.alert('Aufgabe konnte nicht übernommen werden.')
+      window.alert('Auftrag konnte nicht übernommen werden.')
     },
   })
 
@@ -108,10 +108,10 @@ export function DashboardPage() {
         </div>
 
         <div className="rounded border bg-white p-4 md:col-span-2">
-          <h2 className="font-medium">Offene Aufgaben</h2>
+          <h2 className="font-medium">Offene Aufträge</h2>
           {showTaskLoading && <LoadingState />}
-          {showTaskError && <p className="text-sm text-red-700">Aufgaben konnten nicht geladen werden.</p>}
-          {!showTaskLoading && !showTaskError && openTasks.length === 0 && <p className="text-sm">Keine offenen Aufgaben vorhanden.</p>}
+          {showTaskError && <p className="text-sm text-red-700">Aufträge konnten nicht geladen werden.</p>}
+          {!showTaskLoading && !showTaskError && openTasks.length === 0 && <p className="text-sm">Keine offenen Aufträge vorhanden.</p>}
           {!showTaskLoading && !showTaskError && openTasks.length > 0 && (
             <div className="space-y-2 mt-2">
               {openTasks.map((task) => (
@@ -133,10 +133,10 @@ export function DashboardPage() {
         </div>
 
         <div className="rounded border bg-white p-4 md:col-span-2">
-          <h2 className="font-medium">Übernommene Aufgaben</h2>
+          <h2 className="font-medium">Übernommene Aufträge</h2>
           {showTaskLoading && <LoadingState />}
-          {showTaskError && <p className="text-sm text-red-700">Aufgaben konnten nicht geladen werden.</p>}
-          {!showTaskLoading && !showTaskError && claimedTasks.length === 0 && <p className="text-sm">Keine übernommenen Aufgaben vorhanden.</p>}
+          {showTaskError && <p className="text-sm text-red-700">Aufträge konnten nicht geladen werden.</p>}
+          {!showTaskLoading && !showTaskError && claimedTasks.length === 0 && <p className="text-sm">Keine übernommenen Aufträge vorhanden.</p>}
           {!showTaskLoading && !showTaskError && claimedTasks.length > 0 && (
             <div className="space-y-2 mt-2">
               {claimedTasks.map((task) => (

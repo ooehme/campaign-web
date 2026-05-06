@@ -225,9 +225,9 @@ Die Karten-basierte Flächenerstellung unterstützt im Kampagnenkontext zusätzl
 ## Benutzerdetail, Bearbeitung und Einladungen
 
 - Neue Routen: `/users/new` (Erstellung), `/users/:userId` (Profil/Detail) und `/users/:userId/edit` (Bearbeitung).
-- Benutzerdetail zeigt Profil, Teamzugehörigkeiten, Kampagnenbezug, Aufgaben-Zusammenfassung, Aufgabenliste und Einladungen.
+- Benutzerdetail zeigt Profil, Teamzugehörigkeiten, Kampagnenbezug, Auftrags-Zusammenfassung, Auftragsliste und Einladungen.
 - Benutzer-Bearbeitung nutzt `PATCH /api/users/{user}` mit optionalem Passwort-Update.
-- Nutzer-relevante Aufgaben werden über `/api/users/{user}/tasks` inkl. Statusfilter geladen.
+- Nutzer-relevante Aufträge werden über `/api/users/{user}/tasks` inkl. Statusfilter geladen.
 - Einladungs-Workflow nutzt `/api/user/invitations` sowie Accept/Decline Endpunkte.
 - Team-Einladungsbereich in Team-Bearbeitung nutzt bestehende Benutzer (kein email-only Invite).
 - Rollenmodell: `app_role` ist global (user/admin), `team_user.role` ist teambezogen (member/lead/admin).
