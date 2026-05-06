@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 import { ApiError } from '../api/client'
-import { deleteUser, getUser, listCurrentUserInvitations, listUserAssignments, listUserTeams } from '../api/endpoints'
+import { acceptTeamInvitation, declineTeamInvitation, deleteUser, getUser, listCurrentUserInvitations, listUserAssignments, listUserTeams } from '../api/endpoints'
 import { useAuth } from '../auth/AuthContext'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import type { AssignmentStatus, TeamInvitation, TeamRole, UserAssignmentSummary } from '../types/models'
@@ -44,6 +44,25 @@ export function UserDetailPage() {
       navigate('/users')
     },
   })
+
+  const invitationActionMutation = useMutation({
+    mutationFn: ({ invitationId, action }: { invitationId: number; action: 'accept' | 'decline' }) =>
+      action === 'accept' ? acceptTeamInvitation(invitationId) : declineTeamInvitation(invitationId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['user-invitations'] })
+      qc.invalidateQueries({ queryKey: ['user-invitations', id] })
+      qc.invalidateQueries({ queryKey: ['user', id, 'teams'] })
+      qc.invalidateQueries({ queryKey: ['auth', 'user'] })
+      window.alert('Einladung wurde aktualisiert.')
+    },
+    onError: () => {
+      window.alert('Einladung konnte nicht aktualisiert werden.')
+    },
+  })
+
+  const handleInvitationAction = (invitation: TeamInvitation, action: 'accept' | 'decline') => {
+    invitationActionMutation.mutate({ invitationId: invitation.id, action })
+  }
 
   if (!Number.isFinite(id)) return <ErrorState message="Benutzer nicht gefunden." />
   if (userQuery.isLoading) return <LoadingState />
@@ -90,6 +109,20 @@ export function UserDetailPage() {
       </details>
     </div>
 
-    <div className="rounded border bg-white p-4"><details><summary className="cursor-pointer font-medium">Offene Einladungen ({invitations.length})</summary><div className="mt-3 overflow-auto">{!canViewInvitations && <p className="text-sm text-slate-600">Einladungen sind nur im eigenen Profil verfügbar.</p>}{canViewInvitations && invitationsQuery.isError && <p className="text-sm text-slate-600">Einladungen-Endpunkt derzeit nicht verfügbar.</p>}{canViewInvitations && invitations.length === 0 ? <EmptyState message="Keine offenen Einladungen." /> : canViewInvitations && <table className="min-w-[640px] w-full text-sm"><thead><tr className="text-left"><th>Team</th><th>Rolle</th><th>Eingeladen von</th><th>Läuft ab</th><th>Notizen</th></tr></thead><tbody>{invitations.map((inv) => <tr key={inv.id} className="border-t"><td>{inv.team?.name ?? '-'}</td><td>{roleLabels[inv.role]}</td><td>{inv.invited_by_user?.name ?? '-'}</td><td>{inv.expires_at ?? '-'}</td><td>{inv.notes ?? '-'}</td></tr>)}</tbody></table>}</div></details></div>
+    <div className="rounded border bg-white p-4">
+      <details>
+        <summary className="cursor-pointer font-medium">Offene Einladungen ({invitations.length})</summary>
+        <div className="mt-3 overflow-auto">
+          {!canViewInvitations && <p className="text-sm text-slate-600">Einladungen sind nur im eigenen Profil verfügbar.</p>}
+          {canViewInvitations && invitationsQuery.isError && <p className="text-sm text-slate-600">Einladungen-Endpunkt derzeit nicht verfügbar.</p>}
+          {canViewInvitations && invitations.length === 0 ? <EmptyState message="Keine offenen Einladungen." /> : canViewInvitations && (
+            <table className="min-w-[760px] w-full text-sm">
+              <thead><tr className="text-left"><th>Team</th><th>Rolle</th><th>Eingeladen von</th><th>Läuft ab</th><th>Notizen</th><th>Aktionen</th></tr></thead>
+              <tbody>{invitations.map((inv) => <tr key={inv.id} className="border-t"><td>{inv.team?.name ?? '-'}</td><td>{roleLabels[inv.role]}</td><td>{inv.invited_by_user?.name ?? '-'}</td><td>{inv.expires_at ?? '-'}</td><td>{inv.notes ?? '-'}</td><td><div className="flex flex-wrap gap-2"><button type="button" className="rounded bg-emerald-700 px-2 py-1 text-white disabled:opacity-50" disabled={inv.can?.accept === false || invitationActionMutation.isPending} onClick={() => handleInvitationAction(inv, 'accept')}>Annehmen</button><button type="button" className="rounded border border-red-300 px-2 py-1 text-red-700 disabled:opacity-50" disabled={inv.can?.decline === false || invitationActionMutation.isPending} onClick={() => handleInvitationAction(inv, 'decline')}>Zurückweisen</button></div></td></tr>)}</tbody>
+            </table>
+          )}
+        </div>
+      </details>
+    </div>
   </section>
 }

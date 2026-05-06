@@ -1,11 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { getTeam, healthCheck, listCampaignAssignments, listCurrentUserInvitations, listUserTeams, updateAssignment } from '../api/endpoints'
+import { acceptTeamInvitation, declineTeamInvitation, getTeam, healthCheck, listCampaignAssignments, listCurrentUserInvitations, listUserTeams, updateAssignment } from '../api/endpoints'
 import { ErrorState, LoadingState } from '../components/UiState'
 import { useAuth } from '../auth/AuthContext'
 import { hasVisibleModuleNavigation } from '../utils/navigation'
 import { assignedTeamId, assignmentCampaignId, isAssignedToLeadTeam, isClosedAssignment, leadTeamsForCampaign, teamCampaigns, uniqueCampaigns } from '../utils/assignment'
-import type { Assignment, Campaign, Team, UserTeam } from '../types/models'
+import type { Assignment, Campaign, Team, TeamInvitation, UserTeam } from '../types/models'
 
 const asArray = <T,>(value: T[] | null | undefined): T[] => (Array.isArray(value) ? value : [])
 
@@ -59,6 +59,7 @@ export function DashboardPage() {
   })
 
   const invitations = asArray(invitationsQuery.data)
+  const pendingInvitations = invitations.filter((i) => i.status === 'pending')
   const memberTeamIds = new Set(enrichedUserTeams.map((team) => team.id))
 
   const openAssignments = (assignmentBoardQuery.data?.assignments ?? []).filter((assignment) =>
@@ -80,6 +81,25 @@ export function DashboardPage() {
       window.alert('Auftrag konnte nicht aktualisiert werden.')
     },
   })
+
+  const invitationActionMutation = useMutation({
+    mutationFn: ({ invitationId, action }: { invitationId: number; action: 'accept' | 'decline' }) =>
+      action === 'accept' ? acceptTeamInvitation(invitationId) : declineTeamInvitation(invitationId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['user-invitations'] })
+      qc.invalidateQueries({ queryKey: ['dashboard-user-teams', user?.id] })
+      qc.invalidateQueries({ queryKey: ['dashboard-team-details'] })
+      qc.invalidateQueries({ queryKey: ['auth', 'user'] })
+      window.alert('Einladung wurde aktualisiert.')
+    },
+    onError: () => {
+      window.alert('Einladung konnte nicht aktualisiert werden.')
+    },
+  })
+
+  const handleInvitationAction = (invitation: TeamInvitation, action: 'accept' | 'decline') => {
+    invitationActionMutation.mutate({ invitationId: invitation.id, action })
+  }
 
   const claimAssignment = (assignment: Assignment) => {
     const campaignId = assignmentCampaignId(assignment)
@@ -135,8 +155,8 @@ export function DashboardPage() {
         <div className="rounded border bg-white p-4">
           <h2 className="font-medium">Meine Einladungen</h2>
           {invitationsQuery.isError && <p className="text-sm text-slate-600">Einladungen-Endpunkt derzeit nicht verfügbar.</p>}
-          {invitations.filter((i) => i.status === 'pending').length === 0 && <p className="text-sm">Keine offenen Einladungen.</p>}
-          <ul className="space-y-2">{invitations.filter((i) => i.status === 'pending').map((inv) => <li key={inv.id} className="border rounded p-2 text-sm">{inv.team?.name ?? '-'} ({inv.role})</li>)}</ul>
+          {pendingInvitations.length === 0 && <p className="text-sm">Keine offenen Einladungen.</p>}
+          <ul className="space-y-2">{pendingInvitations.map((inv) => <li key={inv.id} className="flex flex-wrap items-center justify-between gap-2 rounded border p-2 text-sm"><span>{inv.team?.name ?? '-'} ({inv.role})</span><span className="flex gap-2"><button type="button" className="rounded bg-emerald-700 px-2 py-1 text-white disabled:opacity-50" disabled={inv.can?.accept === false || invitationActionMutation.isPending} onClick={() => handleInvitationAction(inv, 'accept')}>Annehmen</button><button type="button" className="rounded border border-red-300 px-2 py-1 text-red-700 disabled:opacity-50" disabled={inv.can?.decline === false || invitationActionMutation.isPending} onClick={() => handleInvitationAction(inv, 'decline')}>Zurückweisen</button></span></li>)}</ul>
         </div>
 
         <div className="rounded border bg-white p-4 md:col-span-2">

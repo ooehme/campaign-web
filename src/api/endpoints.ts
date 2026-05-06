@@ -1,4 +1,4 @@
-import { apiRequest } from './client'
+import { ApiError, apiRequest } from './client'
 import type { Area, Assignment, GeoJsonFeatureCollection, RolePermissionMatrixResponse, RolePermissionUpdatePayload, PaginatedResponse, PosterLocation, Team, TeamInvitation, TeamMembershipPayload, User, UserTeam, Campaign } from '../types/models'
 
 export type PaginationParams = { page?: number; per_page?: number }
@@ -105,3 +105,25 @@ export const listCurrentUserInvitations = () => requestResource<TeamInvitation[]
 export const listTeamInvitations = (teamId: number | string) => requestResource<TeamInvitation[]>(`/api/teams/${teamId}/invitations`)
 export const createTeamInvitation = (teamId: number | string, payload: Record<string, unknown>) => apiRequest<TeamInvitation>(`/api/teams/${teamId}/invitations`, { method: 'POST', body: JSON.stringify(payload) })
 export const deleteTeamInvitation = (invitationId: number | string) => apiRequest(`/api/team-invitations/${invitationId}`, { method: 'DELETE' })
+
+const runInvitationAction = async (invitationId: number | string, action: 'accept' | 'decline') => {
+  const paths = [
+    `/api/team-invitations/${invitationId}/${action}`,
+    `/api/user/invitations/${invitationId}/${action}`,
+    `/api/invitations/${invitationId}/${action}`,
+  ]
+
+  let lastError: unknown
+  for (const path of paths) {
+    try {
+      return await apiRequest<TeamInvitation | void>(path, { method: 'POST' })
+    } catch (error) {
+      lastError = error
+      if (!(error instanceof ApiError) || (error.status !== 404 && error.status !== 405)) throw error
+    }
+  }
+  throw lastError
+}
+
+export const acceptTeamInvitation = (invitationId: number | string) => runInvitationAction(invitationId, 'accept')
+export const declineTeamInvitation = (invitationId: number | string) => runInvitationAction(invitationId, 'decline')
