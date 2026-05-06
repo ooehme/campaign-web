@@ -4,7 +4,7 @@ import { Link, useParams } from 'react-router-dom'
 import { getTasksPage, listCampaignTeams, listUserTeams, updateTask } from '../api/endpoints'
 import { useAuth } from '../auth/AuthContext'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
-import { assignedTeamId, isAssignedToLeadTeam, isClosedTask, leadTeamsByAssignedCampaign } from '../utils/taskAssignment'
+import { assignedTeamId, isAssignedToLeadTeam, isClosedTask, leadTeamsByAssignedCampaign, leadTeamsFromCampaignTeams, uniqueTeams } from '../utils/taskAssignment'
 import type { Task, UserTeam } from '../types/models'
 
 export function CampaignTaskListPage() {
@@ -19,7 +19,10 @@ export function CampaignTaskListPage() {
 
   const assignedTeams = assignedTeamsQuery.data?.data ?? []
   const campaignTeamIds = new Set(assignedTeams.map((team) => team.id))
-  const leadTeams = leadTeamsByAssignedCampaign((userTeamsQuery.data ?? []) as UserTeam[], campaignTeamIds)
+  const leadTeams = uniqueTeams([
+    ...leadTeamsByAssignedCampaign((userTeamsQuery.data ?? []) as UserTeam[], campaignTeamIds),
+    ...leadTeamsFromCampaignTeams(assignedTeams, user?.id),
+  ])
 
   const assignTaskMutation = useMutation({
     mutationFn: ({ taskId, teamId }: { taskId: number; teamId: number | null }) => updateTask(taskId, { assigned_team_id: teamId }),

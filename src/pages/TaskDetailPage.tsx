@@ -23,7 +23,7 @@ import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import { MAP_ATTRIBUTION, MAP_TILE_URL, TASK_STATUSES } from '../utils/constants'
 import { can, canPermission, NO_PERMISSION_MESSAGE, permissionErrorMessage } from '../utils/permissions'
 import { getGeometryFromAreaGeoJson } from '../utils/campaignAreaMap'
-import { assignedTeamId, isAssignedToLeadTeam, isClosedTask, leadTeamsByAssignedCampaign } from '../utils/taskAssignment'
+import { assignedTeamId, isAssignedToLeadTeam, isClosedTask, leadTeamsByAssignedCampaign, leadTeamsFromCampaignTeams, uniqueTeams } from '../utils/taskAssignment'
 import { GeoJSON, MapContainer, Marker, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet'
 import type { Area, Task, TaskPoint, UserTeam } from '../types/models'
 
@@ -169,7 +169,10 @@ export function TaskDetailPage() {
   const campaignTeams = teamsQuery.data?.data ?? []
   const userTeams = (userTeamsQuery.data ?? []) as UserTeam[]
   const campaignTeamIds = new Set(campaignTeams.map((team) => team.id))
-  const leadTeams = leadTeamsByAssignedCampaign(userTeams, campaignTeamIds)
+  const leadTeams = uniqueTeams([
+    ...leadTeamsByAssignedCampaign(userTeams, campaignTeamIds),
+    ...leadTeamsFromCampaignTeams(campaignTeams, user?.id),
+  ])
   const boundaryArea = campaignAreas.find((a) => a.id === (task?.boundary_area?.id ?? task?.boundary_area_id))
   const targetArea = campaignAreas.find((a) => a.id === (task?.target_area?.id ?? task?.area?.id ?? task?.area_id))
   const mapAreas = [boundaryArea, targetArea].filter(Boolean) as Area[]

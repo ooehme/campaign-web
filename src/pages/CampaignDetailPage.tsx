@@ -7,7 +7,7 @@ import { CampaignAreaMap } from '../components/CampaignAreaMap'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import { splitCampaignAreasByUsage } from '../utils/campaignAreaMap'
 import { can } from '../utils/permissions'
-import { assignedTeamId, isAssignedToLeadTeam, isClosedTask, leadTeamsByAssignedCampaign } from '../utils/taskAssignment'
+import { assignedTeamId, isAssignedToLeadTeam, isClosedTask, leadTeamsByAssignedCampaign, leadTeamsFromCampaignTeams, uniqueTeams } from '../utils/taskAssignment'
 import type { Task, UserTeam } from '../types/models'
 
 const message = (error: unknown) => {
@@ -52,7 +52,10 @@ export function CampaignDetailPage() {
   const tasks = tasksQuery.data?.data ?? []
   const openTasks = tasks.filter((task) => !isClosedTask(task))
   const campaignTeamIds = new Set(assignedTeams.map((team) => team.id))
-  const leadTeams = leadTeamsByAssignedCampaign((userTeamsQuery.data ?? []) as UserTeam[], campaignTeamIds)
+  const leadTeams = uniqueTeams([
+    ...leadTeamsByAssignedCampaign((userTeamsQuery.data ?? []) as UserTeam[], campaignTeamIds),
+    ...leadTeamsFromCampaignTeams(assignedTeams, user?.id),
+  ])
 
   const claimTask = (task: Task) => {
     if (assignedTeamId(task) || isClosedTask(task) || leadTeams.length === 0) return

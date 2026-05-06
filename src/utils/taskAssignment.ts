@@ -1,4 +1,4 @@
-import type { Campaign, Task, UserTeam } from '../types/models'
+import type { Campaign, Task, Team, UserTeam } from '../types/models'
 
 export const CLOSED_TASK_STATUSES = new Set(['done', 'completed', 'cancelled', 'archived', 'deleted'])
 
@@ -33,6 +33,22 @@ export const leadTeamsForCampaign = (teams: UserTeam[], campaignId: number): Use
 
 export const leadTeamsByAssignedCampaign = (teams: UserTeam[], campaignTeamIds: Set<number>): UserTeam[] =>
   teams.filter((team) => team.pivot?.role === 'lead' && campaignTeamIds.has(team.id))
+
+export const leadTeamsFromCampaignTeams = (teams: Team[], userId?: number | null): UserTeam[] => {
+  if (!userId) return []
+  return teams
+    .filter((team) => team.users?.some((member) => member.id === userId && member.pivot?.role === 'lead'))
+    .map((team) => ({ id: team.id, name: team.name, campaigns: team.campaigns, pivot: { role: 'lead' } }))
+}
+
+export const uniqueTeams = <T extends { id: number }>(teams: T[]): T[] => {
+  const seen = new Set<number>()
+  return teams.filter((team) => {
+    if (seen.has(team.id)) return false
+    seen.add(team.id)
+    return true
+  })
+}
 
 export const isAssignedToLeadTeam = (task: Task, leadTeams: UserTeam[]): boolean => {
   const teamId = assignedTeamId(task)
