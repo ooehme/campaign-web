@@ -4,7 +4,7 @@ import { PERMISSIONS } from './permissionKeys'
 import { hasPermission } from './permissions'
 
 export type NavigationItem = {
-  key: 'dashboard' | 'campaigns' | 'areas' | 'teams' | 'users' | 'featurePermissions'
+  key: 'dashboard' | 'campaigns' | 'assignments' | 'areas' | 'teams' | 'users' | 'featurePermissions'
   label: string
   to: string
   permissionKey?: PermissionKey
@@ -14,6 +14,7 @@ export type NavigationItem = {
 export const NAVIGATION_ITEMS: NavigationItem[] = [
   { key: 'dashboard', label: 'Dashboard', to: '/dashboard', alwaysVisible: true },
   { key: 'campaigns', label: 'Campaigns', to: '/campaigns', permissionKey: PERMISSIONS.CAMPAIGNS_VIEW },
+  { key: 'assignments', label: 'Aufträge', to: '/assignments', permissionKey: PERMISSIONS.ASSIGNMENTS_VIEW },
   { key: 'areas', label: 'Areas', to: '/areas', permissionKey: PERMISSIONS.AREAS_VIEW },
   { key: 'teams', label: 'Teams', to: '/teams', permissionKey: PERMISSIONS.TEAMS_VIEW },
   { key: 'users', label: 'Users', to: '/users', permissionKey: PERMISSIONS.USERS_VIEW },

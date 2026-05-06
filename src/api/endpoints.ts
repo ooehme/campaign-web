@@ -1,5 +1,5 @@
 import { apiRequest } from './client'
-import type { Area, Campaign, GeoJsonFeatureCollection, RolePermissionMatrixResponse, RolePermissionUpdatePayload, PaginatedResponse, Task, TaskEvent, TaskPoint, Team, TeamInvitation, TeamMembershipPayload, User, UserTeam } from '../types/models'
+import type { Area, Assignment, GeoJsonFeatureCollection, RolePermissionMatrixResponse, RolePermissionUpdatePayload, PaginatedResponse, PosterLocation, Team, TeamInvitation, TeamMembershipPayload, User, UserTeam, Campaign } from '../types/models'
 
 export type PaginationParams = { page?: number; per_page?: number }
 export type LoginPayload = { email: string; password: string; device_name?: string }
@@ -79,30 +79,28 @@ export const addUserToTeam = (teamId: number, payload: TeamMembershipPayload) =>
 export const updateTeamUser = (teamId: number, userId: number, payload: Omit<TeamMembershipPayload, 'user_id'>) => apiRequest(`/api/teams/${teamId}/users/${userId}`, { method: 'PATCH', body: JSON.stringify(payload) })
 export const removeUserFromTeam = (teamId: number, userId: number) => apiRequest(`/api/teams/${teamId}/users/${userId}`, { method: 'DELETE' })
 
-export const listCampaignTasks = (campaignId: number, params?: PaginationParams) => requestPaginated<Task>(`/api/campaigns/${campaignId}/tasks${buildQuery(params)}`)
-export const createTask = (campaignId: number, payload: Partial<Task>) => apiRequest<Task>(`/api/campaigns/${campaignId}/tasks`, { method: 'POST', body: JSON.stringify(payload) })
-export const getTask = (id: number | string) => requestResource<Task>(`/api/tasks/${id}`)
-export const updateTask = (id: number, payload: Partial<Task>) => apiRequest<Task>(`/api/tasks/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
-export const deleteTask = (id: number) => apiRequest<void>(`/api/tasks/${id}`, { method: 'DELETE' })
-export const listTaskEvents = (taskId: number, params?: PaginationParams) => requestPaginated<TaskEvent>(`/api/tasks/${taskId}/events${buildQuery(params)}`)
+export const listAssignments = (params?: PaginationParams) => requestPaginated<Assignment>(`/api/assignments${buildQuery(params)}`)
+export const createAssignment = (payload: Partial<Assignment>) => apiRequest<Assignment>('/api/assignments', { method: 'POST', body: JSON.stringify(payload) })
+export const getAssignment = (assignmentId: number | string) => requestResource<Assignment>(`/api/assignments/${assignmentId}`)
+export const updateAssignment = (assignmentId: number | string, payload: Partial<Assignment>) => apiRequest<Assignment>(`/api/assignments/${assignmentId}`, { method: 'PATCH', body: JSON.stringify(payload) })
+export const deleteAssignment = (assignmentId: number | string) => apiRequest<void>(`/api/assignments/${assignmentId}`, { method: 'DELETE' })
+export const listCampaignAssignments = (campaignId: number | string, params?: PaginationParams) => requestPaginated<Assignment>(`/api/campaigns/${campaignId}/assignments${buildQuery(params)}`)
+export const createCampaignAssignment = (campaignId: number | string, payload: Partial<Assignment>) => apiRequest<Assignment>(`/api/campaigns/${campaignId}/assignments`, { method: 'POST', body: JSON.stringify(payload) })
+export const listTeamAssignments = (teamId: number | string, params?: PaginationParams) => requestPaginated<Assignment>(`/api/teams/${teamId}/assignments${buildQuery(params)}`)
+export const listUserAssignments = (userId: number | string) => requestResource<Assignment[]>(`/api/users/${userId}/assignments`)
 
-
-export const listTaskPoints = (taskId: number | string) => requestResource<TaskPoint[]>(`/api/tasks/${taskId}/points`)
-export const createTaskPoint = (taskId: number | string, payload: Partial<TaskPoint>) => apiRequest<TaskPoint>(`/api/tasks/${taskId}/points`, { method: 'POST', body: JSON.stringify(payload) })
-export const getTaskPoint = (taskPointId: number | string) => requestResource<TaskPoint>(`/api/task-points/${taskPointId}`)
-export const updateTaskPoint = (taskPointId: number | string, payload: Partial<TaskPoint>) => apiRequest<TaskPoint>(`/api/task-points/${taskPointId}`, { method: 'PATCH', body: JSON.stringify(payload) })
-export const deleteTaskPoint = (taskPointId: number | string) => apiRequest<void>(`/api/task-points/${taskPointId}`, { method: 'DELETE' })
+export const listPosterLocations = (assignmentId: number | string) => requestResource<PosterLocation[]>(`/api/assignments/${assignmentId}/poster-locations`)
+export const createPosterLocation = (assignmentId: number | string, payload: Partial<PosterLocation>) => apiRequest<PosterLocation>(`/api/assignments/${assignmentId}/poster-locations`, { method: 'POST', body: JSON.stringify(payload) })
+export const bulkCreatePosterLocations = (assignmentId: number | string, payload: Partial<PosterLocation>[] | { posterLocations: Partial<PosterLocation>[] }) => apiRequest<PosterLocation[]>(`/api/assignments/${assignmentId}/poster-locations/bulk`, { method: 'POST', body: JSON.stringify(payload) })
+export const updatePosterLocation = (posterLocationId: number | string, payload: Partial<PosterLocation>) => apiRequest<PosterLocation>(`/api/poster-locations/${posterLocationId}`, { method: 'PATCH', body: JSON.stringify(payload) })
+export const deletePosterLocation = (posterLocationId: number | string) => apiRequest<void>(`/api/poster-locations/${posterLocationId}`, { method: 'DELETE' })
 // backward-compatible aliases
 export const healthCheck = health
 export const getCampaignsPage = listCampaigns
-export const getTasksPage = listCampaignTasks
-export const getTaskEventsPage = (taskId: number) => listTaskEvents(taskId)
-export const getTaskEventsByPage = listTaskEvents
 export const createAreaForCampaign = createOrAttachAreaToCampaign
 export const createTeamForCampaign = createOrAttachTeamToCampaign
 
 export const listUserTeams = (id: number | string) => requestResource<UserTeam[]>(`/api/users/${id}/teams`)
-export const listUserTasks = (id: number | string, status?: string) => requestResource<Task[]>(`/api/users/${id}/tasks${status ? `?status=${status}` : ''}`)
 export const listCurrentUserInvitations = () => requestResource<TeamInvitation[]>('/api/user/invitations')
 export const listTeamInvitations = (teamId: number | string) => requestResource<TeamInvitation[]>(`/api/teams/${teamId}/invitations`)
 export const createTeamInvitation = (teamId: number | string, payload: Record<string, unknown>) => apiRequest<TeamInvitation>(`/api/teams/${teamId}/invitations`, { method: 'POST', body: JSON.stringify(payload) })

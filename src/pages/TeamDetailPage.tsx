@@ -2,9 +2,9 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ApiError } from '../api/client'
-import { deleteTeam, detachTeamFromCampaign, getTeam, listCampaignTasks } from '../api/endpoints'
+import { deleteTeam, detachTeamFromCampaign, getTeam, listTeamAssignments } from '../api/endpoints'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
-import type { Campaign, Task, Team, TeamMembership, TeamRole } from '../types/models'
+import type { Campaign, Team, TeamMembership, TeamRole } from '../types/models'
 import { can, NO_PERMISSION_MESSAGE } from '../utils/permissions'
 
 const roleLabel: Record<TeamRole, string> = { lead: 'Teamleiter', member: 'Mitglied' }
@@ -31,15 +31,7 @@ export function TeamDetailPage() {
   const [success, setSuccess] = useState('')
   const teamQuery = useQuery({ queryKey: ['team', id], queryFn: () => getTeam(id), enabled: Number.isFinite(id) })
   const assignedCampaigns = Array.isArray(teamQuery.data?.campaigns) ? (teamQuery.data.campaigns as Campaign[]) : null
-
-  const tasksQuery = useQuery({
-    queryKey: ['team-related-tasks', id, assignedCampaigns?.map((c) => c.id).join(',')],
-    enabled: Array.isArray(assignedCampaigns) && assignedCampaigns.length > 0,
-    queryFn: async () => {
-      const rows = await Promise.all(assignedCampaigns!.slice(0, 10).map((campaign) => listCampaignTasks(campaign.id, { per_page: 100 })))
-      return rows.flatMap((resp) => resp.data).filter((task) => Number(task.assigned_team_id) === id)
-    },
-  })
+  const assignmentsQuery = useQuery({ queryKey: ['assignments', 'team', id], queryFn: () => listTeamAssignments(id, { per_page: 100 }), enabled: Number.isFinite(id) })
 
   const deleteMutation = useMutation({
     mutationFn: () => deleteTeam(id),
@@ -55,17 +47,7 @@ export function TeamDetailPage() {
   if (teamQuery.isError) {
     const error = teamQuery.error as ApiError
     if (error.status === 404) return <ErrorState message="Team nicht gefunden." />
-    if (error.status === 403) {
-      return (
-        <ErrorState
-          title="Team nicht freigegeben"
-          message="Ihr Konto darf dieses Team nicht anzeigen."
-          description="Öffnen Sie die Teamliste, um ein verfügbares Team auszuwählen."
-          actionLabel="Zur Teamliste"
-          actionTo="/teams"
-        />
-      )
-    }
+    if (error.status === 403) return <ErrorState title="Team nicht freigegeben" message="Ihr Konto darf dieses Team nicht anzeigen." actionLabel="Zur Teamliste" actionTo="/teams" />
     return <ErrorState message="Serverfehler beim Laden oder Speichern des Teams." />
   }
 
@@ -75,9 +57,11 @@ export function TeamDetailPage() {
   const canUpdateTeam = can(team.can?.update)
   const canDeleteTeam = can(team.can?.delete)
   const canDetach = can(team.can?.detach_from_campaign)
+  const assignmentSummary = team.assigned_assignment_summary
+  const assignments = assignmentsQuery.data?.data ?? []
 
   return <section className="space-y-4">
-    <Link to="/teams" className="text-sm text-blue-600">← Zurück zu Teams</Link>
+    <Link to="/teams" className="text-sm text-blue-600">Zurück zu Teams</Link>
     <div className="rounded border bg-white p-4 flex items-center justify-between">
       <h1 className="text-3xl font-semibold">{team.name ?? '-'}</h1>
       <div className="flex gap-2">
@@ -108,25 +92,18 @@ export function TeamDetailPage() {
 
     <div className="rounded border bg-white p-4 space-y-2">
       <h2 className="font-medium">Auftrags-Zusammenfassung</h2>
-      {!team.assigned_task_summary && <EmptyState message="Keine Auftrags-Zusammenfassung verfügbar." />}
-      {team.assigned_task_summary && <ul className="text-sm space-y-1">
-        <li>total: {team.assigned_task_summary.total ?? 0}</li>
-        <li>open: {team.assigned_task_summary.open ?? 0}</li>
-        <li>in_progress: {team.assigned_task_summary.in_progress ?? 0}</li>
-        <li>blocked: {team.assigned_task_summary.blocked ?? 0}</li>
-        <li>completed: {team.assigned_task_summary.completed ?? 0}</li>
-      </ul>}
+      {!assignmentSummary && <EmptyState message="Keine Auftrags-Zusammenfassung verfügbar." />}
+      {assignmentSummary && <ul className="text-sm space-y-1"><li>total: {assignmentSummary.total ?? 0}</li><li>draft: {assignmentSummary.draft ?? 0}</li><li>active: {assignmentSummary.active ?? 0}</li><li>paused: {assignmentSummary.paused ?? 0}</li><li>completed: {assignmentSummary.completed ?? 0}</li><li>cancelled: {assignmentSummary.cancelled ?? 0}</li></ul>}
     </div>
 
     <div className="rounded border bg-white p-4 space-y-2">
       <details>
-        <summary className="cursor-pointer font-medium">Offene / zugehörige Aufträge</summary>
+        <summary className="cursor-pointer font-medium">Zugehörige Aufträge</summary>
         <div className="mt-3 space-y-2">
-          {Array.isArray(assignedCampaigns) && assignedCampaigns.length > 10 && <p className="text-sm text-slate-600">Es werden maximal 10 Kampagnen berücksichtigt, um unnötige API-Aufrufe zu vermeiden.</p>}
-          {tasksQuery.isLoading && <LoadingState />}
-          {!tasksQuery.isLoading && assignedCampaigns === null && <EmptyState message="Dieses Team ist noch keiner Kampagne zugewiesen." />}
-          {!tasksQuery.isLoading && tasksQuery.data?.length === 0 && <EmptyState message="Keine offenen Aufträge für dieses Team gefunden." />}
-          {tasksQuery.data && tasksQuery.data.length > 0 && <div className="overflow-auto"><table className="min-w-[640px] w-full text-sm"><thead><tr className="text-left"><th>Titel</th><th>Status</th><th>Priorität</th><th>Kampagne</th><th>Fällig</th></tr></thead><tbody>{tasksQuery.data.map((task: Task) => <tr key={task.id} className="border-t"><td><Link className="text-blue-600" to={`/tasks/${task.id}`}>{task.title}</Link></td><td>{task.status}</td><td>{task.priority}</td><td>{assignedCampaigns?.find((c) => c.id === task.campaign_id)?.name ?? task.campaign_id}</td><td>{task.due_at ?? '-'}</td></tr>)}</tbody></table></div>}
+          <Link className="text-sm text-blue-600" to={`/teams/${id}/assignments`}>Alle Team-Aufträge anzeigen</Link>
+          {assignmentsQuery.isLoading && <LoadingState />}
+          {!assignmentsQuery.isLoading && assignments.length === 0 && <EmptyState message="Keine Aufträge für dieses Team gefunden." />}
+          {assignments.length > 0 && <div className="overflow-auto"><table className="min-w-[640px] w-full text-sm"><thead><tr className="text-left"><th>Titel</th><th>Status</th><th>Typ</th><th>Fällig</th></tr></thead><tbody>{assignments.map((assignment) => <tr key={assignment.id} className="border-t"><td><Link className="text-blue-600" to={`/assignments/${assignment.id}`}>{assignment.title}</Link></td><td>{assignment.status}</td><td>{assignment.type}</td><td>{assignment.dueAt ?? '-'}</td></tr>)}</tbody></table></div>}
         </div>
       </details>
     </div>

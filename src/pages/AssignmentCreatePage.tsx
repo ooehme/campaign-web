@@ -1,0 +1,230 @@
+import { zodResolver } from '@hookform/resolvers/zod'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMemo, useState } from 'react'
+import { useForm } from 'react-hook-form'
+import { Link, useNavigate, useParams } from 'react-router-dom'
+import { z } from 'zod'
+import { ApiError } from '../api/client'
+import { createAssignment, createCampaignAssignment, getCampaign, listCampaignTeams } from '../api/endpoints'
+import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
+import { ASSIGNMENT_STATUSES, ASSIGNMENT_TYPES } from '../utils/constants'
+import { assignmentTypeLabel } from '../utils/assignment'
+import { can, NO_PERMISSION_MESSAGE } from '../utils/permissions'
+import type { Assignment } from '../types/models'
+
+const deliveryModes = ['letterbox', 'doorstep', 'both'] as const
+const householdTargets = ['all_households', 'selected_buildings', 'commercial_only', 'residential_only'] as const
+const proofTypes = ['photo', 'gps_track', 'completion_checklist'] as const
+
+const splitLines = (value?: string) => (value ?? '').split('\n').map((line) => line.trim()).filter(Boolean)
+
+const formSchema = z.object({
+  type: z.enum(ASSIGNMENT_TYPES),
+  title: z.string().min(1, 'Titel ist erforderlich.'),
+  description: z.string().optional(),
+  targetArea: z.string().min(1, 'Zielgebiet ist erforderlich.'),
+  teamId: z.string().optional(),
+  startsAt: z.string().optional(),
+  dueAt: z.string().optional(),
+  status: z.enum(ASSIGNMENT_STATUSES),
+  mandatoryInstructions: z.string().optional(),
+  materialName: z.string().optional(),
+  estimatedQuantity: z.string().optional(),
+  deliveryMode: z.enum(deliveryModes).optional(),
+  householdTargeting: z.enum(householdTargets).optional(),
+  avoidDuplicateDelivery: z.boolean().optional(),
+  requireNoAdsStickerRespect: z.boolean().optional(),
+  proofRequired: z.boolean().optional(),
+  proofTypes: z.array(z.enum(proofTypes)).optional(),
+  notesForTeam: z.string().optional(),
+  posterName: z.string().optional(),
+  estimatedPosterCount: z.string().optional(),
+  requirePhotoProof: z.boolean().optional(),
+}).superRefine((value, ctx) => {
+  const instructions = splitLines(value.mandatoryInstructions)
+  if (value.type === 'letterbox_distribution') {
+    if (!value.materialName?.trim()) ctx.addIssue({ code: 'custom', path: ['materialName'], message: 'Materialname ist erforderlich.' })
+    if (instructions.length === 0) ctx.addIssue({ code: 'custom', path: ['mandatoryInstructions'], message: 'Mindestens eine Anweisung ist erforderlich.' })
+    if (!value.deliveryMode) ctx.addIssue({ code: 'custom', path: ['deliveryMode'], message: 'Verteilmodus ist erforderlich.' })
+    if (!value.householdTargeting) ctx.addIssue({ code: 'custom', path: ['householdTargeting'], message: 'Haushaltsauswahl ist erforderlich.' })
+  }
+  if (value.type === 'poster_free' || value.type === 'poster_guided') {
+    if (!value.posterName?.trim()) ctx.addIssue({ code: 'custom', path: ['posterName'], message: 'Plakatname ist erforderlich.' })
+    if (instructions.length === 0) ctx.addIssue({ code: 'custom', path: ['mandatoryInstructions'], message: 'Mindestens eine Anweisung ist erforderlich.' })
+  }
+})
+
+type FormValues = z.infer<typeof formSchema>
+
+const buildTypeConfig = (values: FormValues): Assignment['typeConfig'] => {
+  const mandatoryInstructions = splitLines(values.mandatoryInstructions)
+  if (values.type === 'letterbox_distribution') {
+    return {
+      mandatoryInstructions,
+      materialName: values.materialName?.trim() ?? '',
+      estimatedQuantity: values.estimatedQuantity ? Number(values.estimatedQuantity) : undefined,
+      deliveryMode: values.deliveryMode ?? 'letterbox',
+      householdTargeting: values.householdTargeting ?? 'all_households',
+      avoidDuplicateDelivery: Boolean(values.avoidDuplicateDelivery),
+      requireNoAdsStickerRespect: Boolean(values.requireNoAdsStickerRespect),
+      proofRequired: Boolean(values.proofRequired),
+      proofTypes: values.proofTypes ?? [],
+      notesForTeam: values.notesForTeam?.trim() || undefined,
+    }
+  }
+  if (values.type === 'poster_free') {
+    return {
+      posterName: values.posterName?.trim() ?? '',
+      estimatedPosterCount: values.estimatedPosterCount ? Number(values.estimatedPosterCount) : undefined,
+      mandatoryInstructions,
+      allowTeamToCreateLocations: true,
+      requirePhotoProof: Boolean(values.requirePhotoProof),
+    }
+  }
+  if (values.type === 'poster_guided') {
+    return {
+      posterName: values.posterName?.trim() ?? '',
+      mandatoryInstructions,
+      allowTeamToCreateLocations: false,
+      requirePhotoProof: Boolean(values.requirePhotoProof),
+    }
+  }
+  return {}
+}
+
+export function AssignmentCreatePage() {
+  const { campaignId } = useParams()
+  const campaign = campaignId ? Number(campaignId) : null
+  const navigate = useNavigate()
+  const qc = useQueryClient()
+  const [topError, setTopError] = useState<string | null>(null)
+
+  const campaignQuery = useQuery({ queryKey: ['campaign', campaign], queryFn: () => getCampaign(campaign!), enabled: Number.isFinite(campaign), retry: false })
+  const teamsQuery = useQuery({ queryKey: ['campaign-teams', campaign], queryFn: () => listCampaignTeams(campaign!, { per_page: 100 }), enabled: Number.isFinite(campaign), retry: false })
+
+  const form = useForm<FormValues>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      type: 'standard',
+      title: '',
+      description: '',
+      targetArea: '',
+      teamId: '',
+      startsAt: '',
+      dueAt: '',
+      status: 'draft',
+      mandatoryInstructions: '',
+      materialName: '',
+      deliveryMode: 'letterbox',
+      householdTargeting: 'all_households',
+      proofTypes: [],
+      posterName: '',
+    },
+  })
+  const type = form.watch('type')
+  const selectedProofTypes = form.watch('proofTypes') ?? []
+  const canCreate = campaignQuery.data ? can(campaignQuery.data.can?.create_assignment) : true
+
+  const requestPayload = (values: FormValues): Partial<Assignment> => ({
+    type: values.type,
+    title: values.title,
+    description: values.description || null,
+    targetArea: values.targetArea,
+    teamId: values.teamId ? Number(values.teamId) : null,
+    startsAt: values.startsAt || null,
+    dueAt: values.dueAt || null,
+    status: values.status,
+    typeConfig: buildTypeConfig(values),
+  })
+
+  const createMutation = useMutation({
+    mutationFn: (values: FormValues) => {
+      const payload = requestPayload(values)
+      return campaign ? createCampaignAssignment(campaign, payload) : createAssignment(payload)
+    },
+    onSuccess: (assignment) => {
+      qc.invalidateQueries({ queryKey: ['assignments'] })
+      if (campaign) qc.invalidateQueries({ queryKey: ['campaign', campaign] })
+      navigate(assignment?.id ? `/assignments/${assignment.id}` : (campaign ? `/campaigns/${campaign}/assignments` : '/assignments'))
+    },
+    onError: (error) => {
+      if (error instanceof ApiError && error.status === 403) setTopError('Keine Berechtigung für diese Aktion.')
+      else if (error instanceof ApiError && error.status === 422) setTopError('Bitte prüfen Sie die Formularfelder.')
+      else setTopError('Auftrag konnte nicht gespeichert werden.')
+    },
+  })
+
+  const proofOptions = useMemo(() => proofTypes.map((proofType) => ({
+    key: proofType,
+    checked: selectedProofTypes.includes(proofType),
+  })), [selectedProofTypes])
+
+  if (campaignQuery.isLoading) return <LoadingState />
+  if (campaignQuery.isError) return <ErrorState message="Kampagne konnte nicht geladen werden." />
+  if (!canCreate) {
+    return <ErrorState title="Auftrag erstellen nicht erlaubt" message="Ihr Konto darf in dieser Kampagne keine Aufträge erstellen." actionLabel="Zurück zur Kampagne" actionTo={`/campaigns/${campaign}`} />
+  }
+
+  return (
+    <section className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-semibold">Auftrag erstellen</h1>
+        <Link className="text-blue-600" to={campaign ? `/campaigns/${campaign}` : '/assignments'}>Zurück</Link>
+      </div>
+      {topError && <ErrorState message={topError} />}
+      {campaign && !teamsQuery.isLoading && (teamsQuery.data?.data ?? []).length === 0 && <EmptyState message="Keine Teams für diese Kampagne zugewiesen." />}
+      <form className="space-y-3 rounded border bg-white p-4" onSubmit={form.handleSubmit((values) => createMutation.mutate(values))}>
+        <div className="grid gap-2 md:grid-cols-2">
+          <label className="block text-sm">Typ *<select className="mt-1" {...form.register('type')} disabled={!canCreate}>{ASSIGNMENT_TYPES.map((entry) => <option key={entry} value={entry}>{assignmentTypeLabel[entry]}</option>)}</select></label>
+          <label className="block text-sm">Status<select className="mt-1" {...form.register('status')} disabled={!canCreate}>{ASSIGNMENT_STATUSES.map((status) => <option key={status}>{status}</option>)}</select></label>
+        </div>
+        <input placeholder="Titel *" {...form.register('title')} disabled={!canCreate} title={!canCreate ? NO_PERMISSION_MESSAGE : undefined} />
+        {form.formState.errors.title?.message && <ErrorState message={form.formState.errors.title.message} />}
+        <textarea rows={3} placeholder="Beschreibung" {...form.register('description')} disabled={!canCreate} />
+        <input placeholder="Zielgebiet *" {...form.register('targetArea')} disabled={!canCreate} />
+        {form.formState.errors.targetArea?.message && <ErrorState message={form.formState.errors.targetArea.message} />}
+        <div className="grid gap-2 md:grid-cols-3">
+          <select {...form.register('teamId')} disabled={!canCreate}><option value="">Team</option>{(teamsQuery.data?.data ?? []).map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select>
+          <input type="datetime-local" {...form.register('startsAt')} disabled={!canCreate} />
+          <input type="datetime-local" {...form.register('dueAt')} disabled={!canCreate} />
+        </div>
+
+        {type !== 'standard' && (
+          <div className="space-y-3 rounded border p-3">
+            <textarea rows={4} placeholder="Pflichtanweisungen, eine pro Zeile *" {...form.register('mandatoryInstructions')} disabled={!canCreate} />
+            {form.formState.errors.mandatoryInstructions?.message && <ErrorState message={form.formState.errors.mandatoryInstructions.message} />}
+            {type === 'letterbox_distribution' && (
+              <>
+                <div className="grid gap-2 md:grid-cols-2">
+                  <input placeholder="Materialname *" {...form.register('materialName')} disabled={!canCreate} />
+                  <input type="number" placeholder="Geschätzte Menge" {...form.register('estimatedQuantity')} disabled={!canCreate} />
+                </div>
+                {form.formState.errors.materialName?.message && <ErrorState message={form.formState.errors.materialName.message} />}
+                <div className="grid gap-2 md:grid-cols-2">
+                  <select {...form.register('deliveryMode')} disabled={!canCreate}>{deliveryModes.map((entry) => <option key={entry}>{entry}</option>)}</select>
+                  <select {...form.register('householdTargeting')} disabled={!canCreate}>{householdTargets.map((entry) => <option key={entry}>{entry}</option>)}</select>
+                </div>
+                <label className="flex gap-2 text-sm"><input type="checkbox" {...form.register('avoidDuplicateDelivery')} disabled={!canCreate} /> Doppelte Zustellung vermeiden</label>
+                <label className="flex gap-2 text-sm"><input type="checkbox" {...form.register('requireNoAdsStickerRespect')} disabled={!canCreate} /> Keine-Werbung-Aufkleber beachten</label>
+                <label className="flex gap-2 text-sm"><input type="checkbox" {...form.register('proofRequired')} disabled={!canCreate} /> Nachweis erforderlich</label>
+                <div className="flex flex-wrap gap-3 text-sm">{proofOptions.map((option) => <label key={option.key} className="flex gap-2"><input type="checkbox" checked={option.checked} onChange={(event) => form.setValue('proofTypes', event.target.checked ? [...selectedProofTypes, option.key] : selectedProofTypes.filter((entry) => entry !== option.key))} disabled={!canCreate} /> {option.key}</label>)}</div>
+                <textarea rows={3} placeholder="Notizen für Team" {...form.register('notesForTeam')} disabled={!canCreate} />
+              </>
+            )}
+            {(type === 'poster_free' || type === 'poster_guided') && (
+              <>
+                <div className="grid gap-2 md:grid-cols-2">
+                  <input placeholder="Plakatname *" {...form.register('posterName')} disabled={!canCreate} />
+                  {type === 'poster_free' && <input type="number" placeholder="Geschätzte Plakatanzahl" {...form.register('estimatedPosterCount')} disabled={!canCreate} />}
+                </div>
+                {form.formState.errors.posterName?.message && <ErrorState message={form.formState.errors.posterName.message} />}
+                <label className="flex gap-2 text-sm"><input type="checkbox" {...form.register('requirePhotoProof')} disabled={!canCreate} /> Foto-Nachweis erforderlich</label>
+              </>
+            )}
+          </div>
+        )}
+        <button className="bg-slate-900 px-3 py-1 text-white disabled:opacity-50" type="submit" disabled={!canCreate || createMutation.isPending}>Auftrag erstellen</button>
+      </form>
+    </section>
+  )
+}

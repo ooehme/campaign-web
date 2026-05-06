@@ -1,11 +1,26 @@
-import type { Campaign, Task, Team, UserTeam } from '../types/models'
+import type { Assignment, AssignmentStatus, AssignmentType, Campaign, Team, UserTeam } from '../types/models'
 
-export const CLOSED_TASK_STATUSES = new Set(['done', 'completed', 'cancelled', 'archived', 'deleted'])
+export const CLOSED_ASSIGNMENT_STATUSES = new Set<AssignmentStatus>(['completed', 'cancelled'])
 
-export const isClosedTask = (task: Task) => CLOSED_TASK_STATUSES.has(String(task.status).toLowerCase())
+export const assignmentStatusLabel: Record<AssignmentStatus, string> = {
+  draft: 'Entwurf',
+  active: 'Aktiv',
+  paused: 'Pausiert',
+  completed: 'Abgeschlossen',
+  cancelled: 'Abgebrochen',
+}
 
-export const assignedTeamId = (task: Task): number | null => {
-  const value = task.assigned_team_id ?? task.assigned_team?.id
+export const assignmentTypeLabel: Record<AssignmentType, string> = {
+  standard: 'Standardauftrag',
+  letterbox_distribution: 'Briefkastenverteilung',
+  poster_free: 'Freie Plakatierung',
+  poster_guided: 'Geführte Plakatierung',
+}
+
+export const isClosedAssignment = (assignment: Assignment) => CLOSED_ASSIGNMENT_STATUSES.has(assignment.status)
+
+export const assignedTeamId = (assignment: Assignment): number | null => {
+  const value = assignment.teamId ?? assignment.team?.id
   return value == null ? null : Number(value)
 }
 
@@ -50,7 +65,7 @@ export const uniqueTeams = <T extends { id: number }>(teams: T[]): T[] => {
   })
 }
 
-export const isAssignedToLeadTeam = (task: Task, leadTeams: UserTeam[]): boolean => {
-  const teamId = assignedTeamId(task)
+export const isAssignedToLeadTeam = (assignment: Assignment, leadTeams: UserTeam[]): boolean => {
+  const teamId = assignedTeamId(assignment)
   return teamId != null && leadTeams.some((team) => team.id === teamId)
 }

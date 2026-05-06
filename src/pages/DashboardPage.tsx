@@ -1,11 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { getTeam, healthCheck, listCampaignTasks, listCurrentUserInvitations, listUserTeams, updateTask } from '../api/endpoints'
+import { getTeam, healthCheck, listCampaignAssignments, listCurrentUserInvitations, listUserTeams, updateAssignment } from '../api/endpoints'
 import { ErrorState, LoadingState } from '../components/UiState'
 import { useAuth } from '../auth/AuthContext'
 import { hasVisibleModuleNavigation } from '../utils/navigation'
-import { assignedTeamId, isAssignedToLeadTeam, isClosedTask, leadTeamsForCampaign, teamCampaigns, uniqueCampaigns } from '../utils/taskAssignment'
-import type { Campaign, Task, Team, UserTeam } from '../types/models'
+import { assignedTeamId, isAssignedToLeadTeam, isClosedAssignment, leadTeamsForCampaign, teamCampaigns, uniqueCampaigns } from '../utils/assignment'
+import type { Assignment, Campaign, Team, UserTeam } from '../types/models'
 
 const asArray = <T,>(value: T[] | null | undefined): T[] => (Array.isArray(value) ? value : [])
 
@@ -46,14 +46,14 @@ export function DashboardPage() {
   const campaigns = uniqueCampaigns([...asArray<Campaign>(user?.campaigns), ...teamCampaigns(enrichedUserTeams), ...teamCampaigns(teamDetails)])
   const campaignIds = campaigns.map((campaign) => campaign.id)
 
-  const taskBoardQuery = useQuery({
-    queryKey: ['dashboard-campaign-tasks', campaignIds.join(',')],
+  const assignmentBoardQuery = useQuery({
+    queryKey: ['dashboard-campaign-assignments', campaignIds.join(',')],
     enabled: campaigns.length > 0,
     queryFn: async () => {
-      const responses = await Promise.all(campaigns.map((campaign) => listCampaignTasks(campaign.id, { per_page: 100 })))
+      const responses = await Promise.all(campaigns.map((campaign) => listCampaignAssignments(campaign.id, { per_page: 100 })))
       const campaignNameById = new Map(campaigns.map((campaign) => [campaign.id, campaign.name]))
-      const tasks = responses.flatMap((response) => asArray<Task>(response.data))
-      return { tasks, campaignNameById }
+      const assignments = responses.flatMap((response) => asArray<Assignment>(response.data))
+      return { assignments, campaignNameById }
     },
     retry: false,
   })
@@ -61,30 +61,31 @@ export function DashboardPage() {
   const invitations = asArray(invitationsQuery.data)
   const memberTeamIds = new Set(enrichedUserTeams.map((team) => team.id))
 
-  const openTasks = (taskBoardQuery.data?.tasks ?? []).filter((task) =>
-    !assignedTeamId(task) && !isClosedTask(task),
+  const openAssignments = (assignmentBoardQuery.data?.assignments ?? []).filter((assignment) =>
+    !assignedTeamId(assignment) && !isClosedAssignment(assignment),
   )
 
-  const claimedTasks = (taskBoardQuery.data?.tasks ?? []).filter((task) =>
-    Boolean(assignedTeamId(task)) && memberTeamIds.has(Number(assignedTeamId(task))) && !isClosedTask(task),
+  const claimedAssignments = (assignmentBoardQuery.data?.assignments ?? []).filter((assignment) =>
+    Boolean(assignedTeamId(assignment)) && memberTeamIds.has(Number(assignedTeamId(assignment))) && !isClosedAssignment(assignment),
   )
 
-  const assignTaskMutation = useMutation({
-    mutationFn: async ({ taskId, teamId }: { taskId: number; teamId: number | null }) => updateTask(taskId, { assigned_team_id: teamId }),
+  const assignAssignmentMutation = useMutation({
+    mutationFn: async ({ assignmentId, teamId }: { assignmentId: number; teamId: number | null }) => updateAssignment(assignmentId, { teamId }),
     onSuccess: () => {
       window.alert('Auftrag wurde aktualisiert.')
-      qc.invalidateQueries({ queryKey: ['dashboard-campaign-tasks'] })
+      qc.invalidateQueries({ queryKey: ['dashboard-campaign-assignments'] })
+      qc.invalidateQueries({ queryKey: ['assignments'] })
     },
     onError: () => {
       window.alert('Auftrag konnte nicht aktualisiert werden.')
     },
   })
 
-  const claimTask = (task: Task) => {
-    const campaignLeadTeams = leadTeamsForCampaign(enrichedUserTeams, task.campaign_id)
-    if (campaignLeadTeams.length === 0 || assignedTeamId(task) || isClosedTask(task)) return
+  const claimAssignment = (assignment: Assignment) => {
+    const campaignLeadTeams = leadTeamsForCampaign(enrichedUserTeams, Number(assignment.campaignId))
+    if (campaignLeadTeams.length === 0 || assignedTeamId(assignment) || isClosedAssignment(assignment)) return
     if (campaignLeadTeams.length === 1) {
-      assignTaskMutation.mutate({ taskId: task.id, teamId: campaignLeadTeams[0].id })
+      assignAssignmentMutation.mutate({ assignmentId: assignment.id, teamId: campaignLeadTeams[0].id })
       return
     }
 
@@ -95,17 +96,17 @@ export function DashboardPage() {
       window.alert('Ungültiges Team ausgewählt.')
       return
     }
-    assignTaskMutation.mutate({ taskId: task.id, teamId })
+    assignAssignmentMutation.mutate({ assignmentId: assignment.id, teamId })
   }
 
-  const releaseTask = (task: Task) => {
-    const campaignLeadTeams = leadTeamsForCampaign(enrichedUserTeams, task.campaign_id)
-    if (!isAssignedToLeadTeam(task, campaignLeadTeams) || isClosedTask(task)) return
-    assignTaskMutation.mutate({ taskId: task.id, teamId: null })
+  const releaseAssignment = (assignment: Assignment) => {
+    const campaignLeadTeams = leadTeamsForCampaign(enrichedUserTeams, Number(assignment.campaignId))
+    if (!isAssignedToLeadTeam(assignment, campaignLeadTeams) || isClosedAssignment(assignment)) return
+    assignAssignmentMutation.mutate({ assignmentId: assignment.id, teamId: null })
   }
 
-  const showTaskLoading = userTeamsQuery.isLoading || teamDetailsQuery.isLoading || (campaigns.length > 0 && taskBoardQuery.isLoading)
-  const showTaskError = userTeamsQuery.isError || teamDetailsQuery.isError || taskBoardQuery.isError
+  const showAssignmentLoading = userTeamsQuery.isLoading || teamDetailsQuery.isLoading || (campaigns.length > 0 && assignmentBoardQuery.isLoading)
+  const showAssignmentError = userTeamsQuery.isError || teamDetailsQuery.isError || assignmentBoardQuery.isError
 
   return (
     <section className="space-y-4">
@@ -128,23 +129,23 @@ export function DashboardPage() {
 
         <div className="rounded border bg-white p-4 md:col-span-2">
           <h2 className="font-medium">Offene Aufträge</h2>
-          {showTaskLoading && <LoadingState />}
-          {showTaskError && <p className="text-sm text-red-700">Aufträge konnten nicht geladen werden.</p>}
-          {!showTaskLoading && !showTaskError && openTasks.length === 0 && <p className="text-sm">Keine offenen Aufträge vorhanden.</p>}
-          {!showTaskLoading && !showTaskError && openTasks.length > 0 && (
+          {showAssignmentLoading && <LoadingState />}
+          {showAssignmentError && <p className="text-sm text-red-700">Aufträge konnten nicht geladen werden.</p>}
+          {!showAssignmentLoading && !showAssignmentError && openAssignments.length === 0 && <p className="text-sm">Keine offenen Aufträge vorhanden.</p>}
+          {!showAssignmentLoading && !showAssignmentError && openAssignments.length > 0 && (
             <div className="space-y-2 mt-2">
-              {openTasks.map((task) => (
-                <div key={task.id} className="rounded border p-3 text-sm flex flex-wrap gap-3 items-center justify-between">
+              {openAssignments.map((assignment) => (
+                <div key={assignment.id} className="rounded border p-3 text-sm flex flex-wrap gap-3 items-center justify-between">
                   <div>
-                    <p className="font-medium">{task.title}</p>
-                    <p>Kampagne: {taskBoardQuery.data?.campaignNameById.get(task.campaign_id) ?? task.campaign_id}</p>
-                    <p>Status: {task.status}</p>
-                    <p>Fällig: {formatDate(task.due_at)}</p>
+                    <p className="font-medium">{assignment.title}</p>
+                    <p>Kampagne: {assignmentBoardQuery.data?.campaignNameById.get(Number(assignment.campaignId)) ?? assignment.campaignId}</p>
+                    <p>Status: {assignment.status}</p>
+                    <p>Fällig: {formatDate(assignment.dueAt)}</p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Link className="text-blue-600" to={`/tasks/${task.id}`}>Details</Link>
-                    <button className="rounded border px-2 py-1 disabled:opacity-50" disabled={leadTeamsForCampaign(enrichedUserTeams, task.campaign_id).length === 0 || assignTaskMutation.isPending} onClick={() => claimTask(task)}>Für Team übernehmen</button>
-                    <button className="rounded border px-2 py-1 disabled:opacity-50" disabled onClick={() => releaseTask(task)}>Zurückgeben</button>
+                    <Link className="text-blue-600" to={`/assignments/${assignment.id}`}>Details</Link>
+                    <button className="rounded border px-2 py-1 disabled:opacity-50" disabled={leadTeamsForCampaign(enrichedUserTeams, Number(assignment.campaignId)).length === 0 || assignAssignmentMutation.isPending} onClick={() => claimAssignment(assignment)}>Für Team übernehmen</button>
+                    <button className="rounded border px-2 py-1 disabled:opacity-50" disabled onClick={() => releaseAssignment(assignment)}>Zurückgeben</button>
                   </div>
                 </div>
               ))}
@@ -154,24 +155,24 @@ export function DashboardPage() {
 
         <div className="rounded border bg-white p-4 md:col-span-2">
           <h2 className="font-medium">Übernommene Aufträge</h2>
-          {showTaskLoading && <LoadingState />}
-          {showTaskError && <p className="text-sm text-red-700">Aufträge konnten nicht geladen werden.</p>}
-          {!showTaskLoading && !showTaskError && claimedTasks.length === 0 && <p className="text-sm">Keine übernommenen Aufträge vorhanden.</p>}
-          {!showTaskLoading && !showTaskError && claimedTasks.length > 0 && (
+          {showAssignmentLoading && <LoadingState />}
+          {showAssignmentError && <p className="text-sm text-red-700">Aufträge konnten nicht geladen werden.</p>}
+          {!showAssignmentLoading && !showAssignmentError && claimedAssignments.length === 0 && <p className="text-sm">Keine übernommenen Aufträge vorhanden.</p>}
+          {!showAssignmentLoading && !showAssignmentError && claimedAssignments.length > 0 && (
             <div className="space-y-2 mt-2">
-              {claimedTasks.map((task) => (
-                <div key={task.id} className="rounded border p-3 text-sm flex flex-wrap gap-3 items-center justify-between">
+              {claimedAssignments.map((assignment) => (
+                <div key={assignment.id} className="rounded border p-3 text-sm flex flex-wrap gap-3 items-center justify-between">
                   <div>
-                    <p className="font-medium">{task.title}</p>
-                    <p>Kampagne: {taskBoardQuery.data?.campaignNameById.get(task.campaign_id) ?? task.campaign_id}</p>
-                    <p>Team: {task.assigned_team?.name ?? task.assigned_team_id}</p>
-                    <p>Status: {task.status}</p>
-                    <p>Fällig: {formatDate(task.due_at)}</p>
+                    <p className="font-medium">{assignment.title}</p>
+                    <p>Kampagne: {assignmentBoardQuery.data?.campaignNameById.get(Number(assignment.campaignId)) ?? assignment.campaignId}</p>
+                    <p>Team: {assignment.team?.name ?? assignment.teamId}</p>
+                    <p>Status: {assignment.status}</p>
+                    <p>Fällig: {formatDate(assignment.dueAt)}</p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Link className="text-blue-600" to={`/tasks/${task.id}`}>Details</Link>
-                    <button className="rounded border px-2 py-1 disabled:opacity-50" disabled onClick={() => claimTask(task)}>Für Team übernehmen</button>
-                    <button className="rounded border px-2 py-1 disabled:opacity-50" disabled={!isAssignedToLeadTeam(task, leadTeamsForCampaign(enrichedUserTeams, task.campaign_id)) || assignTaskMutation.isPending} onClick={() => releaseTask(task)}>Zurückgeben</button>
+                    <Link className="text-blue-600" to={`/assignments/${assignment.id}`}>Details</Link>
+                    <button className="rounded border px-2 py-1 disabled:opacity-50" disabled onClick={() => claimAssignment(assignment)}>Für Team übernehmen</button>
+                    <button className="rounded border px-2 py-1 disabled:opacity-50" disabled={!isAssignedToLeadTeam(assignment, leadTeamsForCampaign(enrichedUserTeams, Number(assignment.campaignId))) || assignAssignmentMutation.isPending} onClick={() => releaseAssignment(assignment)}>Zurückgeben</button>
                   </div>
                 </div>
               ))}

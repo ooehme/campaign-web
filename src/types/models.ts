@@ -6,7 +6,7 @@ export interface CampaignCan {
   detach_area?: boolean
   attach_team?: boolean
   detach_team?: boolean
-  create_task?: boolean
+  create_assignment?: boolean
   create_team?: boolean
   create_area?: boolean
 }
@@ -28,17 +28,17 @@ export interface TeamCan {
   detach_from_campaign?: boolean
 }
 
-export interface TaskCan {
+export interface AssignmentCan {
   view?: boolean
   update?: boolean
   delete?: boolean
   change_status?: boolean
   assign_team?: boolean
   complete?: boolean
-  manage_points?: boolean
+  manage_poster_locations?: boolean
 }
 
-export interface TaskPointCan {
+export interface PosterLocationCan {
   view?: boolean
   update?: boolean
   delete?: boolean
@@ -101,12 +101,13 @@ export interface Team {
     }
   }>
   campaigns?: Campaign[]
-  assigned_task_summary?: {
+  assigned_assignment_summary?: {
     total?: number
-    open?: number
-    in_progress?: number
-    blocked?: number
+    draft?: number
+    active?: number
+    paused?: number
     completed?: number
+    cancelled?: number
   }
   created_at?: string
   updated_at?: string
@@ -114,72 +115,91 @@ export interface Team {
   [key: string]: unknown
 }
 
-export interface TaskAreaRef {
+export interface AssignmentTeamRef {
   id: number
   name?: string | null
   [key: string]: unknown
 }
 
-export interface TaskAssignedTeamRef {
+export interface Assignment {
   id: number
-  name?: string | null
-  [key: string]: unknown
-}
-
-export interface Task {
-  id: number
-  campaign_id: number
-  boundary_area_id?: number | null
-  area_id?: number | null
-  assigned_team_id?: number | null
-  type: string
+  type: AssignmentType
   title: string
   description?: string | null
-  briefing?: string | null
-  status: TaskStatus
-  priority: number
-  boundary_area?: TaskAreaRef | null
-  area?: TaskAreaRef | null
-  target_area?: TaskAreaRef | null
-  assigned_team?: TaskAssignedTeamRef | null
-  payload?: Record<string, unknown> | null
-  due_at?: string | null
-  completed_at?: string | null
-  points?: TaskPoint[]
-  point_count?: number
-  can?: TaskCan
+  targetArea: string
+  campaignId?: number | null
+  teamId?: number | null
+  createdByUserId?: number | null
+  status: AssignmentStatus
+  startsAt?: string | null
+  dueAt?: string | null
+  typeConfig?: AssignmentTypeConfig | null
+  createdAt?: string | null
+  updatedAt?: string | null
+  campaign?: Campaign | null
+  team?: AssignmentTeamRef | null
+  posterLocations?: PosterLocation[]
+  posterLocationCount?: number
+  can?: AssignmentCan
   [key: string]: unknown
 }
 
+export type AssignmentType = 'standard' | 'letterbox_distribution' | 'poster_free' | 'poster_guided'
+export type AssignmentStatus = 'draft' | 'active' | 'paused' | 'completed' | 'cancelled'
 
-export interface TaskPoint {
+export type AssignmentProofType = 'photo' | 'gps_track' | 'completion_checklist'
+export type AssignmentDeliveryMode = 'letterbox' | 'doorstep' | 'both'
+export type AssignmentHouseholdTargeting = 'all_households' | 'selected_buildings' | 'commercial_only' | 'residential_only'
+
+export type StandardAssignmentConfig = Record<string, never>
+
+export interface LetterboxDistributionConfig {
+  mandatoryInstructions: string[]
+  materialName: string
+  estimatedQuantity?: number
+  deliveryMode: AssignmentDeliveryMode
+  householdTargeting: AssignmentHouseholdTargeting
+  avoidDuplicateDelivery: boolean
+  requireNoAdsStickerRespect: boolean
+  proofRequired: boolean
+  proofTypes: AssignmentProofType[]
+  notesForTeam?: string
+}
+
+export interface PosterFreeConfig {
+  posterName: string
+  estimatedPosterCount?: number
+  mandatoryInstructions: string[]
+  allowTeamToCreateLocations: true
+  requirePhotoProof: boolean
+}
+
+export interface PosterGuidedConfig {
+  posterName: string
+  mandatoryInstructions: string[]
+  allowTeamToCreateLocations: false
+  requirePhotoProof: boolean
+}
+
+export type AssignmentTypeConfig = StandardAssignmentConfig | LetterboxDistributionConfig | PosterFreeConfig | PosterGuidedConfig
+
+export interface PosterLocation {
   id: number
-  task_id: number
+  assignmentId: number
+  lat: number
+  lng: number
+  status: PosterLocationStatus
   label?: string | null
-  description?: string | null
-  latitude: number
-  longitude: number
-  sort_order?: number
-  payload?: unknown
-  can?: TaskPointCan
+  notes?: string | null
+  installedByUserId?: number | null
+  installedAt?: string | null
+  photoUrl?: string | null
+  createdAt?: string | null
+  updatedAt?: string | null
+  can?: PosterLocationCan
 }
 
-export interface TaskEventCan { view?: boolean }
-
-export interface TaskEvent {
-  id: number
-  task_id: number
-  user_id?: number | null
-  event_type: string
-  old_values?: Record<string, unknown> | null
-  new_values?: Record<string, unknown> | null
-  note?: string | null
-  created_at?: string | null
-  can?: TaskEventCan
-  [key: string]: unknown
-}
-
-export type TaskStatus = 'open' | 'assigned' | 'in_progress' | 'done' | 'cancelled'
+export type PosterLocationStatus = 'planned' | 'installed' | 'removed' | 'damaged' | 'missing'
 export type TeamRole = 'member' | 'lead'
 
 
@@ -290,7 +310,7 @@ export interface User {
   updated_at?: string | null
   teams?: UserTeam[]
   campaigns?: Campaign[]
-  task_summary?: UserTaskSummary
+  assignment_summary?: UserAssignmentSummary
   invitation_summary?: Record<string, number>
   can?: UserCan
   roles?: string[]
@@ -309,12 +329,12 @@ export interface UserTeam {
   can?: TeamCan
 }
 
-export interface UserTaskSummary {
+export interface UserAssignmentSummary {
   total?: number
-  open?: number
-  assigned?: number
-  in_progress?: number
-  done?: number
+  draft?: number
+  active?: number
+  paused?: number
+  completed?: number
   cancelled?: number
 }
 
