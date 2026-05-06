@@ -58,7 +58,17 @@ export function AreaDetailPage() {
   if (areaQuery.isError || !area) {
     const error = areaQuery.error as ApiError
     if (error?.status === 401) return <Navigate to="/login" replace />
-    if (error?.status === 403) return <ErrorState message="Keine Berechtigung für diese Aktion." />
+    if (error?.status === 403) {
+      return (
+        <ErrorState
+          title="Fläche nicht freigegeben"
+          message="Ihr Konto darf diese Fläche nicht anzeigen."
+          description="Öffnen Sie den Flächen-Pool, um eine verfügbare Fläche auszuwählen."
+          actionLabel="Zurück zum Flächen-Pool"
+          actionTo="/areas"
+        />
+      )
+    }
     if (error?.status === 404) return <ErrorState message="Fläche nicht gefunden." />
     return <ErrorState message="Serverfehler beim Laden oder Speichern der Fläche." />
   }

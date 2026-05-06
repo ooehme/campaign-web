@@ -209,8 +209,31 @@ export function CampaignEditPage() {
 
   if (!Number.isFinite(id)) return <ErrorState message="Ungültige Kampagnen-ID." />
   if (campaignQuery.isLoading) return <LoadingState />
-  if (campaignQuery.isError || !campaign) return <ErrorState message="Kampagne konnte nicht geladen werden." />
-  if (!can(campaign.can?.update)) return <ErrorState message="Keine Berechtigung zum Bearbeiten dieser Kampagne." />
+  if (campaignQuery.isError || !campaign) {
+    if (campaignQuery.error instanceof ApiError && campaignQuery.error.status === 403) {
+      return (
+        <ErrorState
+          title="Kampagne nicht freigegeben"
+          message="Ihr Konto darf diese Kampagne nicht bearbeiten oder anzeigen."
+          description="Öffnen Sie die Kampagnenliste, um mit einer verfügbaren Kampagne fortzufahren."
+          actionLabel="Zur Kampagnenliste"
+          actionTo="/campaigns"
+        />
+      )
+    }
+    return <ErrorState message="Kampagne konnte nicht geladen werden." />
+  }
+  if (!can(campaign.can?.update)) {
+    return (
+      <ErrorState
+        title="Bearbeitung nicht erlaubt"
+        message="Ihr Konto darf diese Kampagne nicht bearbeiten."
+        description="Sie können die Kampagne weiterhin ansehen, sofern Sie Leserechte haben."
+        actionLabel="Zurück zur Kampagne"
+        actionTo={`/campaigns/${id}`}
+      />
+    )
+  }
 
   return <section className="space-y-6">
     <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">

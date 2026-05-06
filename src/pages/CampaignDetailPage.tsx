@@ -52,7 +52,20 @@ export function CampaignDetailPage() {
 
   if (!Number.isFinite(id)) return <ErrorState message="Ungültige Kampagnen-ID." />
   if (campaignQuery.isLoading) return <LoadingState />
-  if (campaignQuery.isError || !campaignQuery.data) return <ErrorState message="Kampagne konnte nicht geladen werden." />
+  if (campaignQuery.isError || !campaignQuery.data) {
+    if (campaignQuery.error instanceof ApiError && campaignQuery.error.status === 403) {
+      return (
+        <ErrorState
+          title="Kampagne nicht freigegeben"
+          message="Ihr Konto darf diese Kampagne nicht anzeigen."
+          description="Öffnen Sie die Kampagnenliste, um eine verfügbare Kampagne auszuwählen."
+          actionLabel="Zur Kampagnenliste"
+          actionTo="/campaigns"
+        />
+      )
+    }
+    return <ErrorState message="Kampagne konnte nicht geladen werden." />
+  }
 
   const campaign = campaignQuery.data
   const assignedAreas = assignedAreasQuery.data?.data ?? []

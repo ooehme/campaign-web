@@ -207,9 +207,35 @@ export function TaskDetailPage() {
 
   if (!Number.isFinite(id)) return <ErrorState message="Auftrag nicht gefunden." />
   if (taskQuery.isLoading) return <LoadingState />
-  if (taskQuery.isError) return <ErrorState message={requestErrorMessage(taskQuery.error)} />
+  if (taskQuery.isError) {
+    if (taskQuery.error instanceof ApiError && taskQuery.error.status === 403) {
+      return (
+        <ErrorState
+          title="Auftrag nicht freigegeben"
+          message="Ihr Konto darf diesen Auftrag nicht anzeigen."
+          description="Öffnen Sie die Kampagnenliste, um mit einer verfügbaren Kampagne fortzufahren."
+          actionLabel="Zur Kampagnenliste"
+          actionTo="/campaigns"
+        />
+      )
+    }
+    return <ErrorState message={requestErrorMessage(taskQuery.error)} />
+  }
   if (pointsQuery.isLoading) return <LoadingState />
-  if (pointsQuery.isError) return <ErrorState message={requestErrorMessage(pointsQuery.error)} />
+  if (pointsQuery.isError) {
+    if (pointsQuery.error instanceof ApiError && pointsQuery.error.status === 403) {
+      return (
+        <ErrorState
+          title="Auftragspunkte nicht freigegeben"
+          message="Ihr Konto darf die Punkte dieses Auftrags nicht anzeigen."
+          description="Kehren Sie zur Kampagne zurück, um andere verfügbare Aufträge zu öffnen."
+          actionLabel="Zurück zur Kampagne"
+          actionTo={task?.campaign_id ? `/campaigns/${task.campaign_id}` : '/campaigns'}
+        />
+      )
+    }
+    return <ErrorState message={requestErrorMessage(pointsQuery.error)} />
+  }
   if (!task) return <EmptyState message="Auftrag nicht gefunden." />
 
   const savePoint = (values: PointFormValues) => {

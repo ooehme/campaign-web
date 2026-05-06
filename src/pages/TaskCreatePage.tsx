@@ -124,7 +124,17 @@ export function TaskCreatePage() {
   if (campaignQuery.isError) {
     const status = campaignQuery.error instanceof ApiError ? campaignQuery.error.status : 0
     if (status === 401) setRedirectToLogin(true)
-    if (status === 403) return <ErrorState message="Keine Berechtigung für diese Aktion." />
+    if (status === 403) {
+      return (
+        <ErrorState
+          title="Kampagne nicht freigegeben"
+          message="Ihr Konto darf für diese Kampagne keinen Auftrag erstellen."
+          description="Öffnen Sie die Kampagnenliste, um mit einer verfügbaren Kampagne fortzufahren."
+          actionLabel="Zur Kampagnenliste"
+          actionTo="/campaigns"
+        />
+      )
+    }
     if (status === 404) return <ErrorState message="Auftrag oder Kampagne nicht gefunden." />
     return <ErrorState message="Kampagne konnte nicht geladen werden." />
   }
@@ -133,7 +143,15 @@ export function TaskCreatePage() {
 
   return <section className="space-y-4">
     <div className="flex items-center justify-between"><h1 className="text-2xl font-semibold">Auftrag erstellen</h1><Link className="text-blue-600" to={`/campaigns/${id}`}>Zur Kampagne</Link></div>
-    {!can(campaign.can?.create_task) && <ErrorState message="Keine Berechtigung für diese Aktion." />}
+    {!can(campaign.can?.create_task) && (
+      <ErrorState
+        title="Auftrag erstellen nicht erlaubt"
+        message="Ihr Konto darf in dieser Kampagne keine Aufträge erstellen."
+        description="Sie können zur Kampagne zurückkehren und die vorhandenen Informationen ansehen."
+        actionLabel="Zurück zur Kampagne"
+        actionTo={`/campaigns/${id}`}
+      />
+    )}
     {topError && <ErrorState message={topError} />}
     {areasQuery.isError && <ErrorState message="Auftrag oder Kampagne nicht gefunden." />}
     {teamsQuery.isError && <ErrorState message="Auftrag oder Kampagne nicht gefunden." />}

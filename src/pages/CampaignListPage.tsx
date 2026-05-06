@@ -38,6 +38,7 @@ export function CampaignListPage() {
   const { data, isLoading, isError, error } = useQuery({ queryKey: ['campaigns'], queryFn: () => getCampaignsPage({ per_page: 100 }) })
   const form = useForm<FormValues>({ resolver: zodResolver(schema), defaultValues: { name: '', slug: '', description: '', status: 'draft', starts_at: '', ends_at: '' } })
   const editForm = useForm<FormValues>({ resolver: zodResolver(schema) })
+  const listForbidden = isError && error instanceof ApiError && error.status === 403
 
   const invalidateAll = () => {
     qc.invalidateQueries({ queryKey: ['campaigns'] })
@@ -59,6 +60,18 @@ export function CampaignListPage() {
   })
 
   const campaignCreateAllowed = canPermission(user?.can, 'campaigns.create')
+
+  if (listForbidden) {
+    return (
+      <ErrorState
+        title="Kampagnen nicht verfügbar"
+        message="Ihr Konto darf die Kampagnenliste nicht anzeigen."
+        description="Sie können zum Dashboard zurückkehren oder die benötigte Berechtigung anfragen."
+        actionLabel="Zurück zum Dashboard"
+        actionTo="/dashboard"
+      />
+    )
+  }
 
   return <section className="space-y-4">
     <h1 className="text-2xl font-semibold">Kampagnen</h1>

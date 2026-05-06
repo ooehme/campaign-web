@@ -19,7 +19,17 @@ export function UsersPage() {
   if (usersQuery.isError) {
     const err = usersQuery.error as ApiError
     if (err.status === 401) return <ErrorState message='Bitte erneut einloggen.' />
-    if (err.status === 403) return <ErrorState message='Keine Berechtigung für diese Aktion.' />
+    if (err.status === 403) {
+      return (
+        <ErrorState
+          title='Benutzer nicht verfügbar'
+          message='Ihr Konto darf die Benutzerliste nicht anzeigen.'
+          description='Sie können zum Dashboard zurückkehren oder die benötigte Berechtigung anfragen.'
+          actionLabel='Zurück zum Dashboard'
+          actionTo='/dashboard'
+        />
+      )
+    }
     return <ErrorState message='Serverfehler beim Laden oder Speichern.' />
   }
 

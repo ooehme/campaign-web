@@ -14,6 +14,19 @@ export function TeamsPage() {
   const { data, isLoading, isError, error } = useQuery({ queryKey: ['teams-pool'], queryFn: () => listTeams({ per_page: 100 }) })
   const form = useForm({ defaultValues: { name: '' } })
   const del = useMutation({ mutationFn: deleteTeam, onSuccess: () => { qc.invalidateQueries({ queryKey: ['teams-pool'] }); setSuccess('Team gelöscht.') } })
+  const teamsForbidden = isError && (error as { status?: number }).status === 403
+
+  if (teamsForbidden) {
+    return (
+      <ErrorState
+        title="Teams nicht verfügbar"
+        message="Ihr Konto darf die Teamliste nicht anzeigen."
+        description="Sie können zum Dashboard zurückkehren oder die benötigte Berechtigung anfragen."
+        actionLabel="Zurück zum Dashboard"
+        actionTo="/dashboard"
+      />
+    )
+  }
 
   return <section className="space-y-4"><h1 className="text-2xl font-semibold">Team-Pool</h1>
     {success && <p className="rounded border border-emerald-200 bg-emerald-50 p-2 text-sm text-emerald-700">{success}</p>}

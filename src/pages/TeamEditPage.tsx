@@ -140,7 +140,17 @@ export function TeamEditPage() {
   if (teamQuery.isError || !team) {
     const error = teamQuery.error as ApiError
     if (error?.status === 404) return <ErrorState message="Team nicht gefunden." />
-    if (error?.status === 403) return <ErrorState message="Keine Berechtigung für diese Aktion." />
+    if (error?.status === 403) {
+      return (
+        <ErrorState
+          title="Team nicht freigegeben"
+          message="Ihr Konto darf dieses Team nicht bearbeiten oder anzeigen."
+          description="Öffnen Sie die Teamliste, um mit einem verfügbaren Team fortzufahren."
+          actionLabel="Zur Teamliste"
+          actionTo="/teams"
+        />
+      )
+    }
     return <ErrorState message="Serverfehler beim Laden oder Speichern des Teams." />
   }
 

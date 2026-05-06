@@ -73,7 +73,20 @@ export function FeaturePermissionsPage() {
   }, [localMatrix, serverMatrix])
 
   if (matrixQuery.isLoading) return <LoadingState />
-  if (matrixQuery.isError) return <ErrorState message={toReadableError(matrixQuery.error)} />
+  if (matrixQuery.isError) {
+    if (matrixQuery.error instanceof ApiError && matrixQuery.error.status === 403) {
+      return (
+        <ErrorState
+          title="Feature-Rechte nicht freigegeben"
+          message="Ihr Konto darf die Berechtigungsmatrix nicht anzeigen oder bearbeiten."
+          description="Kehren Sie zum Dashboard zurück oder fragen Sie die Berechtigung feature_permissions.manage an."
+          actionLabel="Zurück zum Dashboard"
+          actionTo="/dashboard"
+        />
+      )
+    }
+    return <ErrorState message={toReadableError(matrixQuery.error)} />
+  }
   if (matrixQuery.data && !isValidMatrixResponse(matrixQuery.data)) return <ErrorState message={INVALID_MATRIX_MESSAGE} />
   if (!localMatrix || localMatrix.permissions.length === 0 || localMatrix.roles.length === 0) {
     return <EmptyState message='Keine Berechtigungen vorhanden.' />
@@ -135,7 +148,15 @@ export function FeaturePermissionsPage() {
         </div>
       </div>
 
-      {!canManage && <ErrorState message={NO_PERMISSION_MESSAGE} />}
+      {!canManage && (
+        <ErrorState
+          title="Änderungen nicht erlaubt"
+          message={NO_PERMISSION_MESSAGE}
+          description="Sie können die Matrix ansehen, aber ohne feature_permissions.manage nicht speichern."
+          actionLabel="Zurück zum Dashboard"
+          actionTo="/dashboard"
+        />
+      )}
       {mutation.isError && <ErrorState message={toReadableError(mutation.error)} />}
       {hasMissingRows && <ErrorState message={MISSING_MATRIX_ROW_MESSAGE} />}
       {adminManageDisabled && (

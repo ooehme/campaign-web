@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Link, Navigate, useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { ApiError } from '../api/client'
 import { createUser } from '../api/endpoints'
 import { useAuth } from '../auth/AuthContext'
@@ -89,7 +89,17 @@ export function UserCreatePage() {
     },
   })
 
-  if (!canCreateUser) return <Navigate to="/users" replace />
+  if (!canCreateUser) {
+    return (
+      <ErrorState
+        title="Benutzer erstellen nicht erlaubt"
+        message="Ihr Konto darf keine neuen Benutzer anlegen."
+        description="Öffnen Sie die Benutzerliste, um vorhandene Datensätze anzusehen."
+        actionLabel="Zur Benutzerliste"
+        actionTo="/users"
+      />
+    )
+  }
 
   return <section className='space-y-4'>
     <div className='flex items-center justify-between'>

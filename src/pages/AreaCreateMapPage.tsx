@@ -167,7 +167,15 @@ export function AreaCreateMapPage() {
       </div>
 
       {validationMessage && <ErrorState message={validationMessage} />}
-      {saveMutation.isError && <ErrorState message={formatError(saveMutation.error)} />}
+      {saveMutation.isError && saveMutation.error instanceof ApiError && saveMutation.error.status === 403 ? (
+        <ErrorState
+          title="Fläche speichern nicht erlaubt"
+          message="Ihr Konto darf diese Fläche nicht erstellen oder der Kampagne zuweisen."
+          description="Kehren Sie zur vorherigen Übersicht zurück und wählen Sie einen verfügbaren Arbeitsbereich."
+          actionLabel={isCampaignMode ? 'Zurück zur Kampagne' : 'Zurück zum Flächen-Pool'}
+          actionTo={isCampaignMode && campaignNumericId ? `/campaigns/${campaignNumericId}` : '/areas'}
+        />
+      ) : saveMutation.isError && <ErrorState message={formatError(saveMutation.error)} />}
 
       <div className="flex gap-2">
         <button type="button" className="bg-slate-900 text-white disabled:opacity-50" disabled={!canSave || !!validationMessage || saveMutation.isPending} title={!canSave ? validationMessage : undefined} onClick={() => saveMutation.mutate()}>Speichern</button>

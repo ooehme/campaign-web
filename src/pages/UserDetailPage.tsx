@@ -51,7 +51,17 @@ export function UserDetailPage() {
   if (userQuery.isError) {
     const err = userQuery.error as ApiError
     if (err.status === 401) return <Navigate to="/login" replace />
-    if (err.status === 403) return <ErrorState message="Keine Berechtigung für diese Aktion." />
+    if (err.status === 403) {
+      return (
+        <ErrorState
+          title="Benutzer nicht freigegeben"
+          message="Ihr Konto darf diesen Benutzer nicht anzeigen."
+          description="Öffnen Sie die Benutzerliste, um einen verfügbaren Datensatz auszuwählen."
+          actionLabel="Zur Benutzerliste"
+          actionTo="/users"
+        />
+      )
+    }
     if (err.status === 404) return <ErrorState message="Benutzer nicht gefunden." />
     return <ErrorState message="Serverfehler beim Laden des Benutzers." />
   }

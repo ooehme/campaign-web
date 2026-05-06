@@ -65,7 +65,17 @@ export function UserEditPage() {
   if (userQuery.isError) {
     const status = (userQuery.error as ApiError).status
     if (status === 401) return <ErrorState message="Bitte erneut einloggen." />
-    if (status === 403) return <ErrorState message="Keine Berechtigung für diese Aktion." />
+    if (status === 403) {
+      return (
+        <ErrorState
+          title="Benutzer nicht freigegeben"
+          message="Ihr Konto darf diesen Benutzer nicht bearbeiten oder anzeigen."
+          description="Öffnen Sie die Benutzerliste, um mit einem verfügbaren Datensatz fortzufahren."
+          actionLabel="Zur Benutzerliste"
+          actionTo="/users"
+        />
+      )
+    }
     if (status === 404) return <ErrorState message="Benutzer nicht gefunden." />
     return <ErrorState message="Serverfehler beim Laden oder Speichern." />
   }
