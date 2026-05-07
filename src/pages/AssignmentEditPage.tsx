@@ -51,7 +51,8 @@ const assignmentAreaBuildingIds = (assignment: Assignment) => {
     return assignment.assignment_buildings.flatMap((entry) => {
       if ('area_building_id' in entry && Number.isFinite(entry.area_building_id)) return [entry.area_building_id as number]
       if ('areaBuildingId' in entry && Number.isFinite(entry.areaBuildingId)) return [entry.areaBuildingId as number]
-      if ('area_building' in entry && typeof entry.area_building?.id === 'number') return [entry.area_building.id]
+      const areaBuilding = 'area_building' in entry ? entry.area_building : undefined
+      if (areaBuilding && typeof areaBuilding.id === 'number') return [areaBuilding.id]
       return []
     })
   }
