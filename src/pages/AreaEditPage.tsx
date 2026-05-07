@@ -5,7 +5,7 @@ import { CircleMarker, GeoJSON, MapContainer, TileLayer, useMap, useMapEvents } 
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 import { ApiError } from '../api/client'
 import { deleteArea, getArea, updateArea } from '../api/endpoints'
-import { AreaBuildingsImport, AreaBuildingsLayer, getAreaBuildings } from '../components/AreaBuildingsImport'
+import { AreaBuildingsImport, AreaBuildingsLayer, getAreaBuildings, useAreaBuildings } from '../components/AreaBuildingsImport'
 import { ErrorState, LoadingState } from '../components/UiState'
 import type { Area, GeoJsonGeometry, GeoJsonInput } from '../types/models'
 import { MAP_ATTRIBUTION, MAP_TILE_URL } from '../utils/constants'
@@ -112,7 +112,8 @@ export function AreaEditPage() {
     [midpoints.length, normalizedGeometryType, parsedResult.parsed, vertices.length],
   )
   const area = areaQuery.data as Area | undefined
-  const buildings = useMemo(() => getAreaBuildings(area), [area])
+  const buildingsQuery = useAreaBuildings(area?.id)
+  const buildings = buildingsQuery.data ?? getAreaBuildings(area)
   const canUpdate = can(area?.can?.update)
   const canDelete = can(area?.can?.delete)
   const hasUnsavedChanges = name.trim() !== originalName.trim() || geojsonText !== originalGeometryText

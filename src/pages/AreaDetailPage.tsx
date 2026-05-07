@@ -5,7 +5,7 @@ import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 import type { LatLngBoundsExpression } from 'leaflet'
 import { ApiError } from '../api/client'
 import { deleteArea, getArea } from '../api/endpoints'
-import { AreaBuildingsImport, AreaBuildingsLayer, getAreaBuildings } from '../components/AreaBuildingsImport'
+import { AreaBuildingsImport, AreaBuildingsLayer, getAreaBuildings, useAreaBuildings } from '../components/AreaBuildingsImport'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import type { Area, AreaAssignmentRef } from '../types/models'
 import { extractGeometry, getBoundsPoints, getGeometryStats } from '../utils/areaGeometry'
@@ -44,7 +44,8 @@ export function AreaDetailPage() {
   const geometry = useMemo(() => extractGeometry(area?.geojson), [area?.geojson])
   const summary = useMemo(() => getGeometryStats(area?.geojson), [area?.geojson])
   const bounds = useMemo(() => { const pts = getBoundsPoints(area?.geojson); return pts.length > 2 ? pts as LatLngBoundsExpression : null }, [area?.geojson])
-  const buildings = useMemo(() => getAreaBuildings(area), [area])
+  const buildingsQuery = useAreaBuildings(area?.id)
+  const buildings = buildingsQuery.data ?? getAreaBuildings(area)
   const canUpdate = can(area?.can?.update)
   const canDelete = can(area?.can?.delete)
   const assignments = (area?.campaigns ?? area?.assignments) as AreaAssignmentRef[] | undefined

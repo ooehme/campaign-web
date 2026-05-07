@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CircleMarker, GeoJSON } from 'react-leaflet'
 import { ApiError } from '../api/client'
-import { importAreaBuildingsFromOsm } from '../api/endpoints'
+import { importAreaBuildingsFromOsm, listAreaBuildings } from '../api/endpoints'
 import type { Area, AreaBuilding, GeoJsonInput } from '../types/models'
 import { can, NO_PERMISSION_MESSAGE } from '../utils/permissions'
 
@@ -13,6 +13,13 @@ const buildingKey = (building: AreaBuilding, index = 0) =>
 
 const normalizeBuildings = (area?: Area | null): AreaBuilding[] =>
   (area?.area_buildings ?? area?.buildings ?? []) as AreaBuilding[]
+
+export const useAreaBuildings = (areaId?: number) => useQuery({
+  queryKey: ['area-buildings', areaId],
+  queryFn: () => listAreaBuildings(areaId as number),
+  enabled: Boolean(areaId),
+  retry: false,
+})
 
 const getBuildingGeometry = (building: AreaBuilding): GeoJsonInput | null => {
   const geometry = building.geojson ?? building.geometry
@@ -92,7 +99,9 @@ export function AreaBuildingsImport({
 }) {
   const qc = useQueryClient()
   const [successMessage, setSuccessMessage] = useState('')
-  const buildings = useMemo(() => normalizeBuildings(area), [area])
+  const embeddedBuildings = useMemo(() => normalizeBuildings(area), [area])
+  const buildingsQuery = useAreaBuildings(area.id)
+  const buildings = buildingsQuery.data ?? embeddedBuildings
   const canManageBuildings = can(area.can?.manage_buildings)
 
   const importMutation = useMutation({
@@ -100,9 +109,11 @@ export function AreaBuildingsImport({
     onMutate: () => setSuccessMessage(''),
     onSuccess: (imported) => {
       const merged = mergeBuildings(buildings, imported)
+      qc.setQueryData<AreaBuilding[]>(['area-buildings', area.id], merged)
       qc.setQueryData<Area>(['area', area.id], (current) => current
         ? { ...current, area_buildings: merged, buildings: merged, building_count: merged.length }
         : current)
+      qc.invalidateQueries({ queryKey: ['area-buildings', area.id] })
       qc.invalidateQueries({ queryKey: ['area', area.id] })
       qc.invalidateQueries({ queryKey: ['areas-pool'] })
       qc.invalidateQueries({ queryKey: ['campaign-areas'] })
@@ -121,7 +132,7 @@ export function AreaBuildingsImport({
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div>
         <h2 className="font-medium">Gebäude</h2>
-        <p className="text-sm text-slate-600">Erfasste Gebäude: {area.building_count ?? buildings.length}</p>
+        <p className="text-sm text-slate-600">Erfasste Gebäude: {buildings.length || area.building_count || 0}</p>
       </div>
       <button
         type="button"
@@ -135,6 +146,8 @@ export function AreaBuildingsImport({
     </div>
 
     {successMessage && <p className="rounded border border-emerald-200 bg-emerald-50 p-2 text-sm text-emerald-700">{successMessage}</p>}
+    {buildingsQuery.isLoading && <p className="text-sm text-slate-600">Gebäude werden geladen ...</p>}
+    {buildingsQuery.isError && <p className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">Gebäude konnten nicht geladen werden.</p>}
     {importMutation.isError && <p className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">{formatImportError(importMutation.error)}</p>}
 
     {buildings.length > 0 ? (
@@ -154,7 +167,7 @@ export function AreaBuildingsImport({
           </tbody>
         </table>
       </div>
-    ) : <p className="text-sm text-slate-600">Noch keine Gebäude für diese Fläche erfasst.</p>}
+    ) : !buildingsQuery.isLoading && <p className="text-sm text-slate-600">Noch keine Gebäude für diese Fläche erfasst.</p>}
   </div>
 }
 
