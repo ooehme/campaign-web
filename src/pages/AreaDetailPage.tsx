@@ -5,6 +5,7 @@ import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 import type { LatLngBoundsExpression } from 'leaflet'
 import { ApiError } from '../api/client'
 import { deleteArea, getArea } from '../api/endpoints'
+import { AreaBuildingsImport, AreaBuildingsLayer, getAreaBuildings } from '../components/AreaBuildingsImport'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import type { Area, AreaAssignmentRef } from '../types/models'
 import { extractGeometry, getBoundsPoints, getGeometryStats } from '../utils/areaGeometry'
@@ -43,6 +44,7 @@ export function AreaDetailPage() {
   const geometry = useMemo(() => extractGeometry(area?.geojson), [area?.geojson])
   const summary = useMemo(() => getGeometryStats(area?.geojson), [area?.geojson])
   const bounds = useMemo(() => { const pts = getBoundsPoints(area?.geojson); return pts.length > 2 ? pts as LatLngBoundsExpression : null }, [area?.geojson])
+  const buildings = useMemo(() => getAreaBuildings(area), [area])
   const canUpdate = can(area?.can?.update)
   const canDelete = can(area?.can?.delete)
   const assignments = (area?.campaigns ?? area?.assignments) as AreaAssignmentRef[] | undefined
@@ -82,9 +84,11 @@ export function AreaDetailPage() {
     <div className="rounded border bg-white p-4 space-y-2">
       <details>
         <summary className="cursor-pointer font-medium">Kartenvorschau</summary>
-        <div className="mt-3">{summary.valid && bounds && geometry ? <div className="h-80 overflow-hidden rounded border"><MapContainer center={DEFAULT_CENTER} zoom={6} className="h-full w-full"><TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} /><FitBounds bounds={bounds} /><GeoJSON data={geometry as GeoJSON.GeoJsonObject} /></MapContainer></div> : <p className="text-sm text-slate-700">Keine darstellbare GeoJSON-Geometrie vorhanden (Polygon/MultiPolygon erwartet).</p>}</div>
+        <div className="mt-3">{summary.valid && bounds && geometry ? <div className="h-80 overflow-hidden rounded border"><MapContainer center={DEFAULT_CENTER} zoom={6} className="h-full w-full"><TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} /><FitBounds bounds={bounds} /><GeoJSON data={geometry as GeoJSON.GeoJsonObject} /><AreaBuildingsLayer buildings={buildings} /></MapContainer></div> : <p className="text-sm text-slate-700">Keine darstellbare GeoJSON-Geometrie vorhanden (Polygon/MultiPolygon erwartet).</p>}</div>
       </details>
     </div>
+
+    <AreaBuildingsImport area={area} hasValidPolygon={summary.valid && Boolean(bounds)} />
 
     <div className="rounded border bg-white p-4"><details><summary className="cursor-pointer font-medium">GeoJSON</summary><pre className="mt-2 max-h-80 overflow-auto rounded border bg-slate-50 p-3 text-xs">{prettyGeoJson}</pre></details></div>
 

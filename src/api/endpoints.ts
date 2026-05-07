@@ -1,5 +1,5 @@
 import { ApiError, apiRequest } from './client'
-import type { Area, Assignment, GeoJsonFeatureCollection, RolePermissionMatrixResponse, RolePermissionUpdatePayload, PaginatedResponse, PosterLocation, Team, TeamInvitation, TeamMembershipPayload, User, UserTeam, Campaign } from '../types/models'
+import type { Area, AreaBuilding, Assignment, GeoJsonFeatureCollection, RolePermissionMatrixResponse, RolePermissionUpdatePayload, PaginatedResponse, PosterLocation, Team, TeamInvitation, TeamMembershipPayload, User, UserTeam, Campaign } from '../types/models'
 
 export type PaginationParams = { page?: number; per_page?: number }
 export type LoginPayload = { email: string; password: string; device_name?: string }
@@ -53,6 +53,20 @@ export const createArea = (payload: Partial<Area>) => apiRequest<Area>('/api/are
 export const getArea = (id: number) => requestResource<Area>(`/api/areas/${id}`)
 export const updateArea = (id: number, payload: Partial<Area>) => apiRequest<Area>(`/api/areas/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
 export const deleteArea = (id: number) => apiRequest<void>(`/api/areas/${id}`, { method: 'DELETE' })
+export const listAreaBuildings = async (id: number | string) => {
+  const response = await apiRequest<AreaBuilding[] | { data?: AreaBuilding[]; area_buildings?: AreaBuilding[]; buildings?: AreaBuilding[] }>(`/api/areas/${id}/buildings`)
+  if (response && typeof response === 'object' && 'data' in response) return response.data ?? []
+  if (response && typeof response === 'object' && 'area_buildings' in response) return response.area_buildings ?? []
+  if (response && typeof response === 'object' && 'buildings' in response) return response.buildings ?? []
+  return Array.isArray(response) ? response : []
+}
+export const importAreaBuildingsFromOsm = async (id: number | string) => {
+  const response = await apiRequest<AreaBuilding[] | { data?: AreaBuilding[]; area_buildings?: AreaBuilding[]; buildings?: AreaBuilding[] }>(`/api/areas/${id}/buildings/import-osm`, { method: 'POST' })
+  if (response && typeof response === 'object' && 'data' in response) return response.data ?? []
+  if (response && typeof response === 'object' && 'area_buildings' in response) return response.area_buildings ?? []
+  if (response && typeof response === 'object' && 'buildings' in response) return response.buildings ?? []
+  return Array.isArray(response) ? response : []
+}
 export const listCampaignAreas = (campaignId: number, params?: PaginationParams) => requestPaginated<Area>(`/api/campaigns/${campaignId}/areas${buildQuery(params)}`)
 export const listCampaignAreasMap = (campaignId: number) => requestResource<GeoJsonFeatureCollection>(`/api/campaigns/${campaignId}/areas?map=1`)
 export const createOrAttachAreaToCampaign = (campaignId: number, payload: Partial<Area> & { area_id?: number; usage?: 'boundary' | 'target'; boundary_area_id?: number | null; notes?: string | null }) => apiRequest<Area>(`/api/campaigns/${campaignId}/areas`, { method: 'POST', body: JSON.stringify(payload) })

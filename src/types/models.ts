@@ -15,6 +15,7 @@ export interface AreaCan {
   view?: boolean
   update?: boolean
   delete?: boolean
+  manage_buildings?: boolean
   attach_to_campaign?: boolean
   detach_from_campaign?: boolean
 }
@@ -82,6 +83,9 @@ export interface Area {
   id: number
   name: string
   geojson?: GeoJsonInput | null
+  area_buildings?: AreaBuilding[]
+  buildings?: AreaBuilding[]
+  building_count?: number
   created_at?: string | null
   updated_at?: string | null
   campaigns?: AreaAssignmentRef[]
@@ -125,6 +129,29 @@ export interface AssignmentTeamRef {
   [key: string]: unknown
 }
 
+export interface AreaBuilding {
+  id?: number
+  area_id?: number
+  osm_type?: string | null
+  osm_id?: number | string | null
+  geometry?: GeoJsonInput | null
+  geojson?: GeoJsonInput | null
+  centroid?: GeoJsonInput | null
+  lat?: number | string | null
+  lng?: number | string | null
+  latitude?: number | string | null
+  longitude?: number | string | null
+  housenumber?: string | null
+  house_number?: string | null
+  addr_housenumber?: string | null
+  street?: string | null
+  addr_street?: string | null
+  city?: string | null
+  addr_city?: string | null
+  properties?: Record<string, unknown> | null
+  [key: string]: unknown
+}
+
 export interface Assignment {
   id: number
   type: AssignmentType
@@ -159,6 +186,9 @@ export interface Assignment {
   created_by_user?: User | null
   posterLocations?: PosterLocation[]
   posterLocationCount?: number
+  area_building_ids?: number[]
+  area_buildings?: AreaBuilding[]
+  assignment_buildings?: Array<AreaBuilding | { area_building?: AreaBuilding; area_building_id?: number; areaBuildingId?: number; id?: number }>
   can?: AssignmentCan
   [key: string]: unknown
 }

@@ -8,6 +8,7 @@ import { GeoJSON, MapContainer, TileLayer, useMap } from 'react-leaflet'
 import { ApiError } from '../api/client'
 import { createAssignment, createCampaignAssignment, getCampaign, getTeam, listCampaigns, listCampaignAreas, listCampaignTeams, listUserTeams } from '../api/endpoints'
 import { useAuth } from '../auth/AuthContext'
+import { AssignmentBuildingSelector } from '../components/AssignmentBuildingSelector'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import { ASSIGNMENT_STATUSES, ASSIGNMENT_TYPES, MAP_ATTRIBUTION, MAP_TILE_URL } from '../utils/constants'
 import { assignmentTypeLabel, uniqueCampaigns } from '../utils/assignment'
@@ -137,6 +138,7 @@ export function AssignmentCreatePage() {
   const qc = useQueryClient()
   const [topError, setTopError] = useState<string | null>(null)
   const [selectedCampaignId, setSelectedCampaignId] = useState(() => Number.isFinite(routeCampaign) ? String(routeCampaign) : '')
+  const [areaBuildingIds, setAreaBuildingIds] = useState<number[]>([])
   const hasCampaignPoolAccess = CAMPAIGN_POOL_ACCESS_ROLES.has(String(user?.app_role ?? ''))
   const selectedCampaign = selectedCampaignId ? Number(selectedCampaignId) : null
 
@@ -177,6 +179,7 @@ export function AssignmentCreatePage() {
   })
   const type = form.watch('type')
   const selectedTargetAreaId = form.watch('targetAreaId')
+  const householdTargeting = form.watch('householdTargeting')
   const selectedProofTypes = form.watch('proofTypes') ?? []
   const teamDetails = (teamDetailsQuery.data ?? []) as Team[]
   const leadTeamCampaigns = ((userTeamsQuery.data ?? []) as UserTeam[])
@@ -214,21 +217,28 @@ export function AssignmentCreatePage() {
     form.setValue('boundaryAreaId', '')
     form.setValue('targetAreaId', '')
     form.setValue('teamId', '')
+    setAreaBuildingIds([])
   }, [form, selectedCampaignId])
 
-  const requestPayload = (values: FormValues): Partial<Assignment> & Record<string, unknown> => ({
-    type: values.type,
-    title: values.title,
-    description: values.description || null,
-    campaign_id: selectedCampaign,
-    boundary_area_id: Number(values.boundaryAreaId),
-    target_area_id: Number(values.targetAreaId),
-    team_id: values.teamId ? Number(values.teamId) : null,
-    starts_at: values.startsAt || null,
-    due_at: values.dueAt || null,
-    status: values.status,
-    type_config: buildTypeConfig(values),
-  })
+  const requestPayload = (values: FormValues): Partial<Assignment> & Record<string, unknown> => {
+    const payload: Partial<Assignment> & Record<string, unknown> = {
+      type: values.type,
+      title: values.title,
+      description: values.description || null,
+      campaign_id: selectedCampaign,
+      boundary_area_id: Number(values.boundaryAreaId),
+      target_area_id: Number(values.targetAreaId),
+      team_id: values.teamId ? Number(values.teamId) : null,
+      starts_at: values.startsAt || null,
+      due_at: values.dueAt || null,
+      status: values.status,
+      type_config: buildTypeConfig(values),
+    }
+    if (values.type === 'letterbox_distribution' && values.householdTargeting === 'selected_buildings') {
+      payload.area_building_ids = areaBuildingIds
+    }
+    return payload
+  }
 
   const createMutation = useMutation({
     mutationFn: (values: FormValues) => {
@@ -286,7 +296,7 @@ export function AssignmentCreatePage() {
         <textarea rows={3} placeholder="Beschreibung" {...form.register('description')} disabled={!canCreate} />
         <div className="grid gap-2 md:grid-cols-2">
           <label className="block text-sm">Begrenzungsgebiet *<select className="mt-1" {...form.register('boundaryAreaId')} disabled={!canCreate || areasLoading}><option value="">Begrenzungsgebiet auswählen</option>{boundaryAreaOptions.map(({ area }) => <option key={area.id} value={area.id}>{area.name}</option>)}</select></label>
-          <label className="block text-sm">Zielgebiet *<select className="mt-1" {...form.register('targetAreaId')} disabled={!canCreate || areasLoading} onChange={(event) => { form.setValue('targetAreaId', event.target.value); const boundaryAreaId = targetAreaOptions.find((option) => String(option.area.id) === event.target.value)?.boundaryAreaId; if (boundaryAreaId) form.setValue('boundaryAreaId', String(boundaryAreaId)) }}><option value="">Zielgebiet auswählen</option>{targetAreaOptions.map(({ area }) => <option key={area.id} value={area.id}>{area.name}</option>)}</select></label>
+          <label className="block text-sm">Zielgebiet *<select className="mt-1" {...form.register('targetAreaId')} disabled={!canCreate || areasLoading} onChange={(event) => { form.setValue('targetAreaId', event.target.value); setAreaBuildingIds([]); const boundaryAreaId = targetAreaOptions.find((option) => String(option.area.id) === event.target.value)?.boundaryAreaId; if (boundaryAreaId) form.setValue('boundaryAreaId', String(boundaryAreaId)) }}><option value="">Zielgebiet auswählen</option>{targetAreaOptions.map(({ area }) => <option key={area.id} value={area.id}>{area.name}</option>)}</select></label>
         </div>
         {form.formState.errors.boundaryAreaId?.message && <ErrorState message={form.formState.errors.boundaryAreaId.message} />}
         {form.formState.errors.targetAreaId?.message && <ErrorState message={form.formState.errors.targetAreaId.message} />}
@@ -313,6 +323,7 @@ export function AssignmentCreatePage() {
                   <select {...form.register('deliveryMode')} disabled={!canCreate}>{deliveryModes.map((entry) => <option key={entry}>{entry}</option>)}</select>
                   <select {...form.register('householdTargeting')} disabled={!canCreate}>{householdTargets.map((entry) => <option key={entry}>{entry}</option>)}</select>
                 </div>
+                {selectedTarget && <AssignmentBuildingSelector targetArea={selectedTarget} householdTargeting={householdTargeting} selectedIds={areaBuildingIds} onSelectedIdsChange={setAreaBuildingIds} disabled={!canCreate} />}
                 <label className="flex gap-2 text-sm"><input type="checkbox" {...form.register('avoidDuplicateDelivery')} disabled={!canCreate} /> Doppelte Zustellung vermeiden</label>
                 <label className="flex gap-2 text-sm"><input type="checkbox" {...form.register('requireNoAdsStickerRespect')} disabled={!canCreate} /> Keine-Werbung-Aufkleber beachten</label>
                 <label className="flex gap-2 text-sm"><input type="checkbox" {...form.register('proofRequired')} disabled={!canCreate} /> Nachweis erforderlich</label>

@@ -5,11 +5,13 @@ import { CircleMarker, GeoJSON, MapContainer, TileLayer, useMap, useMapEvents } 
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 import { ApiError } from '../api/client'
 import { deleteArea, getArea, updateArea } from '../api/endpoints'
+import { AreaBuildingsImport, AreaBuildingsLayer, getAreaBuildings } from '../components/AreaBuildingsImport'
 import { ErrorState, LoadingState } from '../components/UiState'
 import type { Area, GeoJsonGeometry, GeoJsonInput } from '../types/models'
 import { MAP_ATTRIBUTION, MAP_TILE_URL } from '../utils/constants'
 import { can, NO_PERMISSION_MESSAGE } from '../utils/permissions'
 import { getSuggestedAreaName, normalizeGeoJsonInput } from '../utils/geojson'
+import { getBoundsPoints } from '../utils/areaGeometry'
 import { deleteVertex, getEditableMidpoints, getEditableVertices, insertMidpoint, moveVertex } from '../utils/areaEditorGeometry'
 
 const DEFAULT_CENTER: [number, number] = [51.1657, 10.4515]
@@ -87,6 +89,7 @@ export function AreaEditPage() {
   }, [parsedResult.preview])
   const normalizedGeometryType = editableGeometry?.type
   const hasRenderableAreaGeometry = normalizedGeometryType === 'Polygon' || normalizedGeometryType === 'MultiPolygon'
+  const hasValidImportPolygon = hasRenderableAreaGeometry && getBoundsPoints(parsedResult.preview).length > 2
   const shouldRenderEditHandles = editActive && hasRenderableAreaGeometry
   const areaGeometryFeature = useMemo<GeoJSON.Feature | null>(() => {
     if (!editableGeometry || !hasRenderableAreaGeometry) return null
@@ -109,6 +112,7 @@ export function AreaEditPage() {
     [midpoints.length, normalizedGeometryType, parsedResult.parsed, vertices.length],
   )
   const area = areaQuery.data as Area | undefined
+  const buildings = useMemo(() => getAreaBuildings(area), [area])
   const canUpdate = can(area?.can?.update)
   const canDelete = can(area?.can?.delete)
   const hasUnsavedChanges = name.trim() !== originalName.trim() || geojsonText !== originalGeometryText
@@ -251,6 +255,7 @@ export function AreaEditPage() {
             fillOpacity: 0.2,
           })}
         />}
+        <AreaBuildingsLayer buildings={buildings} />
         <EditMapClicks enabled={false} onAdd={() => {}} />
         {shouldRenderEditHandles && vertices.map((vertex) => <CircleMarker
             key={`${vertex.geometryType}-${vertex.polygonIndex}-${vertex.ringIndex}-${vertex.vertexIndex}-${vertex.coordinate[0]}-${vertex.coordinate[1]}`}
@@ -319,6 +324,12 @@ export function AreaEditPage() {
       {validation.geojson && <p className="text-sm text-red-700">{validation.geojson}</p>}
       {edit.isError && (edit.error as ApiError)?.status !== 422 && <ErrorState message="Serverfehler beim Laden oder Speichern der Fläche." />}
     </div>
+
+    <AreaBuildingsImport
+      area={area}
+      hasValidPolygon={hasValidImportPolygon}
+      disabledReason={hasUnsavedChanges ? 'Fläche zuerst speichern, damit der Import das aktuelle Zielgebiet verwendet.' : undefined}
+    />
 
     <div className="flex gap-2">
       <button className="border px-3 py-2 disabled:opacity-50" disabled={!canUpdate || !hasUnsavedChanges || edit.isPending} onClick={handleSave} title={!canUpdate ? NO_PERMISSION_MESSAGE : undefined}>Speichern</button>
