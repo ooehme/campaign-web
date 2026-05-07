@@ -44,6 +44,8 @@ const boundaryAreaIdForTarget = (targetAreaOptions: ReturnType<typeof getAreaUsa
   targetAreaOptions.find((option) => String(option.area.id) === targetAreaId)?.boundaryAreaId ?? null
 const isLetterboxConfig = (config: Assignment['typeConfig'] | Assignment['type_config']): config is LetterboxDistributionConfig =>
   Boolean(config && 'householdTargeting' in config)
+const areaBuildingId = (value: unknown) =>
+  value && typeof value === 'object' && 'id' in value && typeof value.id === 'number' ? value.id : null
 const assignmentAreaBuildingIds = (assignment: Assignment) => {
   if (Array.isArray(assignment.area_building_ids)) return assignment.area_building_ids.filter((id): id is number => Number.isFinite(id))
   if (Array.isArray(assignment.area_buildings)) return assignment.area_buildings.flatMap((building) => typeof building.id === 'number' ? [building.id] : [])
@@ -51,8 +53,8 @@ const assignmentAreaBuildingIds = (assignment: Assignment) => {
     return assignment.assignment_buildings.flatMap((entry) => {
       if ('area_building_id' in entry && Number.isFinite(entry.area_building_id)) return [entry.area_building_id as number]
       if ('areaBuildingId' in entry && Number.isFinite(entry.areaBuildingId)) return [entry.areaBuildingId as number]
-      const areaBuilding = 'area_building' in entry ? entry.area_building : undefined
-      if (areaBuilding && typeof areaBuilding.id === 'number') return [areaBuilding.id]
+      const nestedId = areaBuildingId('area_building' in entry ? entry.area_building : undefined)
+      if (nestedId) return [nestedId]
       return []
     })
   }
