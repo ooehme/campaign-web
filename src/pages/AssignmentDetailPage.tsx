@@ -1,15 +1,15 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { Link, useParams } from 'react-router-dom'
 import { z } from 'zod'
-import { GeoJSON, MapContainer, Marker, Pane, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet'
-import { latLngBounds } from 'leaflet'
+import { GeoJSON, MapContainer, Marker, Popup, TileLayer, useMapEvents } from 'react-leaflet'
 import { ApiError } from '../api/client'
 import { createPosterLocation, deletePosterLocation, getAssignment, listAreaBuildings, listAssignmentBuildings, listCampaignAreas, listPosterLocations, updatePosterLocation } from '../api/endpoints'
 import { useAuth } from '../auth/AuthContext'
 import { AssignmentBuildingsLayer } from '../components/AssignmentBuildingSelector'
+import { getAreaMaskGeometry, getAreaPositions, MAP_PANES, MapLayerPanes, MapMask, MapViewportController } from '../components/MapViewport'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import { MAP_ATTRIBUTION, MAP_TILE_URL, POSTER_LOCATION_STATUSES } from '../utils/constants'
 import { assignmentStatusLabel, assignmentTypeLabel } from '../utils/assignment'
@@ -20,14 +20,6 @@ import { PERMISSIONS } from '../utils/permissionKeys'
 import type { Area, AreaBuilding, Assignment, AssignmentBuilding, AssignmentHouseholdTargeting, AssignmentTypeConfig, LetterboxDistributionConfig, PosterLocation } from '../types/models'
 
 const DEFAULT_CENTER: [number, number] = [51.1657, 10.4515]
-const MAP_PANES = {
-  mask: 'assignment-mask',
-  boundary: 'assignment-boundary',
-  target: 'assignment-target',
-  buildings: 'assignment-buildings',
-  markers: 'assignment-markers',
-} as const
-
 const posterLocationSchema = z.object({
   id: z.number().optional(),
   label: z.string().max(255).optional().nullable(),
@@ -135,73 +127,6 @@ const dedupeAreas = (areas: Array<Area | null | undefined>) => {
   return [...byId.values()]
 }
 
-const areaPositions = (area: Area | null | undefined) => {
-  const positions: [number, number][] = []
-  const geo = getGeometryFromAreaGeoJson(area?.geojson)
-  if (!geo) return positions
-  if (geo.type === 'FeatureCollection') {
-    for (const feature of geo.features) {
-      if (!feature.geometry) continue
-      const coordinates = feature.geometry.type === 'Polygon' ? feature.geometry.coordinates.flat() : feature.geometry.coordinates.flat(2)
-      for (const [lng, lat] of coordinates) positions.push([lat, lng])
-    }
-    return positions
-  }
-  const coordinates = geo.type === 'Polygon' ? geo.coordinates.flat() : geo.coordinates.flat(2)
-  for (const [lng, lat] of coordinates) positions.push([lat, lng])
-  return positions
-}
-
-const maskGeometryForArea = (area: Area | null | undefined): GeoJSON.Polygon | null => {
-  const geo = getGeometryFromAreaGeoJson(area?.geojson)
-  if (!geo) return null
-  const worldRing: number[][] = [[-180, -90], [-180, 90], [180, 90], [180, -90], [-180, -90]]
-  const holes: number[][][] = []
-  const collectPolygon = (coordinates: GeoJSON.Position[][]) => {
-    const outerRing = coordinates[0]
-    if (outerRing?.length) holes.push(outerRing.map(([lng, lat]) => [lng, lat]))
-  }
-  if (geo.type === 'FeatureCollection') {
-    geo.features.forEach((feature) => {
-      if (feature.geometry?.type === 'Polygon') collectPolygon(feature.geometry.coordinates)
-      if (feature.geometry?.type === 'MultiPolygon') feature.geometry.coordinates.forEach(collectPolygon)
-    })
-  } else if (geo.type === 'Polygon') {
-    collectPolygon(geo.coordinates)
-  } else {
-    geo.coordinates.forEach(collectPolygon)
-  }
-  return holes.length ? { type: 'Polygon', coordinates: [worldRing, ...holes] } : null
-}
-
-function ConstrainMapBounds({ area }: { area?: Area | null }) {
-  const map = useMap()
-  useEffect(() => {
-    const positions = areaPositions(area)
-    if (positions.length === 0) return
-    const bounds = latLngBounds(positions).pad(0.18)
-    const previousMinZoom = map.getMinZoom()
-    map.setMaxBounds(bounds)
-    map.setMinZoom(map.getBoundsZoom(bounds, false))
-    return () => {
-      map.setMinZoom(previousMinZoom)
-    }
-  }, [area, map])
-  return null
-}
-
-function FitMap({ targetArea, fallbackAreas, posterLocations }: { targetArea?: Area | null; fallbackAreas: Area[]; posterLocations: PosterLocation[] }) {
-  const map = useMap()
-  useEffect(() => {
-    const targetPositions = areaPositions(targetArea)
-    const posterPositions = posterLocations.map((posterLocation): [number, number] => [posterLocation.lat, posterLocation.lng])
-    const fallbackPositions = fallbackAreas.flatMap(areaPositions)
-    const positions = targetPositions.length > 0 ? targetPositions : posterPositions.length > 0 ? posterPositions : fallbackPositions
-    if (positions.length > 0) map.fitBounds(positions, { padding: [30, 30] })
-  }, [targetArea, fallbackAreas, posterLocations, map])
-  return null
-}
-
 function MapClickPicker({ enabled, onPick }: { enabled: boolean; onPick: (lat: number, lng: number) => void }) {
   useMapEvents({ click: (event) => { if (enabled) onPick(event.latlng.lat, event.latlng.lng) } })
   return null
@@ -273,7 +198,12 @@ export function AssignmentDetailPage() {
   const mapAreas = dedupeAreas([boundaryArea, targetArea])
   const boundaryGeometry = getGeometryFromAreaGeoJson(boundaryArea?.geojson)
   const targetGeometry = getGeometryFromAreaGeoJson(targetArea?.geojson)
-  const boundaryMaskGeometry = maskGeometryForArea(boundaryArea)
+  const boundaryMaskGeometry = getAreaMaskGeometry([boundaryArea])
+  const targetPositions = getAreaPositions(targetArea)
+  const posterPositions = posterLocations.map((posterLocation): [number, number] => [posterLocation.lat, posterLocation.lng])
+  const fallbackPositions = mapAreas.flatMap(getAreaPositions)
+  const fitPositions = targetPositions.length > 0 ? targetPositions : posterPositions.length > 0 ? posterPositions : fallbackPositions
+  const constrainPositions = getAreaPositions(boundaryArea ?? targetArea)
   const canManagePosterLocations = canPermission(user?.can, PERMISSIONS.POSTER_LOCATIONS_MANAGE) && can(assignment.can?.manage_poster_locations ?? true)
   const canCreatePosterLocations = assignment.type === 'poster_free' && canManagePosterLocations
   const photoRequired = requiresPhotoProof(assignment)
@@ -358,12 +288,8 @@ export function AssignmentDetailPage() {
             {!boundaryGeometry && !targetGeometry && posterLocations.length === 0 && visibleAssignmentBuildings.length === 0 ? <div className="p-3 text-sm text-slate-600">Keine Kartenobjekte für diesen Auftrag vorhanden.</div> : (
               <MapContainer center={DEFAULT_CENTER} zoom={6} maxBoundsViscosity={0.85} className="h-full w-full">
                 <TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} />
-                <Pane name={MAP_PANES.mask} style={{ zIndex: 405, pointerEvents: 'none' }} />
-                <Pane name={MAP_PANES.boundary} style={{ zIndex: 410 }} />
-                <Pane name={MAP_PANES.target} style={{ zIndex: 420 }} />
-                <Pane name={MAP_PANES.buildings} style={{ zIndex: 430 }} />
-                <Pane name={MAP_PANES.markers} style={{ zIndex: 440 }} />
-                {boundaryMaskGeometry && <GeoJSON pane={MAP_PANES.mask} data={boundaryMaskGeometry as GeoJSON.GeoJsonObject} interactive={false} style={{ stroke: false, fillColor: '#0f172a', fillOpacity: 0.18, fillRule: 'evenodd' }} />}
+                <MapLayerPanes />
+                <MapMask geometry={boundaryMaskGeometry} />
                 {posterLocationToolsVisible && <MapClickPicker enabled={canCreatePosterLocations} onPick={(lat, lng) => { posterLocationForm.setValue('lat', Number(lat.toFixed(6))); posterLocationForm.setValue('lng', Number(lng.toFixed(6))); setPosterLocationEditorOpen(true) }} />}
                 {boundaryArea && boundaryGeometry && <GeoJSON pane={MAP_PANES.boundary} data={boundaryGeometry as GeoJSON.GeoJsonObject} style={{ color: '#1d4ed8', weight: 5, fillOpacity: 0, opacity: 0.95 }}><Popup><p className="font-medium">{boundaryArea.name}</p><p>Begrenzungsgebiet</p></Popup></GeoJSON>}
                 {targetArea && targetGeometry && <GeoJSON pane={MAP_PANES.target} data={targetGeometry as GeoJSON.GeoJsonObject} style={{ color: '#0f766e', weight: 2, fillColor: '#14b8a6', fillOpacity: 0.2, opacity: 0.9 }}><Popup><p className="font-medium">{targetArea.name}</p><p>Zielgebiet</p></Popup></GeoJSON>}
@@ -373,8 +299,7 @@ export function AssignmentDetailPage() {
                     <Popup><p className="font-medium">{posterLocation.label ?? `Standort #${posterLocation.id}`}</p><p>{posterLocation.notes ?? '-'}</p><p>Status: {posterLocation.status}</p></Popup>
                   </Marker>
                 ))}
-                <ConstrainMapBounds area={boundaryArea ?? targetArea} />
-                <FitMap targetArea={targetArea} fallbackAreas={mapAreas} posterLocations={posterLocations} />
+                <MapViewportController fitPositions={fitPositions} constrainPositions={constrainPositions} padding={[30, 30]} />
               </MapContainer>
             )}
           </div>

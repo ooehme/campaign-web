@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import L from 'leaflet'
-import { CircleMarker, GeoJSON, MapContainer, TileLayer, useMap, useMapEvents } from 'react-leaflet'
+import { CircleMarker, GeoJSON, MapContainer, TileLayer, useMapEvents } from 'react-leaflet'
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 import { ApiError } from '../api/client'
 import { deleteArea, getArea, updateArea } from '../api/endpoints'
 import { AreaBuildingsImport, AreaBuildingsLayer, getAreaBuildings, useAreaBuildings } from '../components/AreaBuildingsImport'
+import { getGeoJsonMaskGeometry, getGeoJsonPositions, MAP_PANES, MapLayerPanes, MapMask, MapViewportController } from '../components/MapViewport'
 import { ErrorState, LoadingState } from '../components/UiState'
 import type { Area, GeoJsonGeometry, GeoJsonInput } from '../types/models'
 import { MAP_ATTRIBUTION, MAP_TILE_URL } from '../utils/constants'
@@ -15,8 +15,6 @@ import { getBoundsPoints } from '../utils/areaGeometry'
 import { deleteVertex, getEditableMidpoints, getEditableVertices, insertMidpoint, moveVertex } from '../utils/areaEditorGeometry'
 
 const DEFAULT_CENTER: [number, number] = [51.1657, 10.4515]
-const FIT_BOUNDS_PADDING: [number, number] = [32, 32]
-const FIT_BOUNDS_MAX_ZOOM = 18
 const EMPTY_POLYGON_TEXT = '{"type":"Polygon","coordinates":[]}'
 type LatLngTuple = [number, number]
 
@@ -27,32 +25,6 @@ function EditMapClicks({ enabled, onAdd }: { enabled: boolean; onAdd: (p: LatLng
       if (enabled) onAdd([event.latlng.lat, event.latlng.lng])
     },
   })
-  return null
-}
-
-function FitBoundsToGeoJson({ geojson, fitTrigger, autoFitEnabled, onAutoFitDone }: { geojson?: GeoJsonGeometry | GeoJsonInput; fitTrigger: number; autoFitEnabled: boolean; onAutoFitDone: () => void }) {
-  const map = useMap()
-  const bounds = useMemo(() => {
-    if (!geojson) return null
-    try {
-      const computedBounds = L.geoJSON(geojson as GeoJSON.GeoJsonObject).getBounds()
-      return computedBounds.isValid() ? computedBounds : null
-    } catch {
-      return null
-    }
-  }, [geojson])
-
-  useEffect(() => {
-    if (!autoFitEnabled || !bounds) return
-    map.fitBounds(bounds, { padding: FIT_BOUNDS_PADDING, maxZoom: FIT_BOUNDS_MAX_ZOOM })
-    onAutoFitDone()
-  }, [autoFitEnabled, bounds, map, onAutoFitDone])
-
-  useEffect(() => {
-    if (!bounds || fitTrigger < 1) return
-    map.fitBounds(bounds, { padding: FIT_BOUNDS_PADDING, maxZoom: FIT_BOUNDS_MAX_ZOOM })
-  }, [bounds, fitTrigger, map])
-
   return null
 }
 
@@ -74,7 +46,6 @@ export function AreaEditPage() {
   const [originalGeometryText, setOriginalGeometryText] = useState(EMPTY_POLYGON_TEXT)
   const [validation, setValidation] = useState<Record<string, string>>({})
   const [success, setSuccess] = useState('')
-  const [hasAutoFitted, setHasAutoFitted] = useState(false)
   const [fitTrigger, setFitTrigger] = useState(0)
   const [editActive, setEditActive] = useState(false)
   const [drawMode, setDrawMode] = useState(false)
@@ -98,6 +69,8 @@ export function AreaEditPage() {
     return { type: 'Feature', geometry: editableGeometry as GeoJSON.Geometry, properties: {} }
   }, [editableGeometry, hasRenderableAreaGeometry])
   const areaGeometryLayerKey = useMemo(() => `${normalizedGeometryType ?? 'none'}-${geojsonText}`, [geojsonText, normalizedGeometryType])
+  const mapPositions = useMemo(() => getGeoJsonPositions(parsedResult.preview), [parsedResult.preview])
+  const mapMaskGeometry = useMemo(() => getGeoJsonMaskGeometry(parsedResult.preview), [parsedResult.preview])
   const vertices = useMemo(() => (shouldRenderEditHandles && editableGeometry ? getEditableVertices(editableGeometry) : []), [editableGeometry, shouldRenderEditHandles])
   const midpoints = useMemo(() => (shouldRenderEditHandles && editableGeometry ? getEditableMidpoints(editableGeometry) : []), [editableGeometry, shouldRenderEditHandles])
   const editDebug = useMemo(
@@ -133,7 +106,6 @@ export function AreaEditPage() {
     setOriginalGeometryText(loadedGeometryText)
     setValidation({})
     setSuccess('')
-    setHasAutoFitted(false)
     setFitTrigger(0)
     setEditActive(false)
     setDrawMode(false)
@@ -246,10 +218,13 @@ export function AreaEditPage() {
       <p className="text-xs text-slate-500">
         Debug: parsed={editDebug.parsedGeometryType ?? 'n/a'} | normalized={editDebug.normalizedGeometryType ?? 'n/a'} | vertices={editDebug.verticesLength} | midpoints={editDebug.midpointsLength}
       </p>
-      {parsedResult.preview && <div className="h-72 overflow-hidden rounded border"><MapContainer center={DEFAULT_CENTER} zoom={6} className="h-full w-full">
+      {parsedResult.preview && <div className="aspect-square w-full overflow-hidden rounded border"><MapContainer center={DEFAULT_CENTER} zoom={6} maxBoundsViscosity={0.85} className="h-full w-full">
         <TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} />
+        <MapLayerPanes />
+        <MapMask geometry={mapMaskGeometry} />
         {areaGeometryFeature && <GeoJSON
           key={areaGeometryLayerKey}
+          pane={MAP_PANES.areas}
           data={areaGeometryFeature}
           style={() => ({
             color: editActive ? '#0f766e' : '#2563eb',
@@ -258,11 +233,12 @@ export function AreaEditPage() {
             fillOpacity: 0.2,
           })}
         />}
-        <AreaBuildingsLayer buildings={buildings} focusedBuildingId={focusedBuildingId} focusKey={buildingFocusKey} />
+        <AreaBuildingsLayer pane={MAP_PANES.buildings} buildings={buildings} focusedBuildingId={focusedBuildingId} focusKey={buildingFocusKey} />
         <EditMapClicks enabled={false} onAdd={() => {}} />
         {shouldRenderEditHandles && vertices.map((vertex) => <CircleMarker
             key={`${vertex.geometryType}-${vertex.polygonIndex}-${vertex.ringIndex}-${vertex.vertexIndex}-${vertex.coordinate[0]}-${vertex.coordinate[1]}`}
             center={[vertex.coordinate[1], vertex.coordinate[0]]}
+            pane={MAP_PANES.markers}
             radius={6}
             pathOptions={{ color: '#1e293b', fillColor: '#ffffff', fillOpacity: 1, weight: 2 }}
             eventHandlers={{
@@ -288,6 +264,7 @@ export function AreaEditPage() {
         {shouldRenderEditHandles && midpoints.map((midpoint) => <CircleMarker
               key={`mid-${midpoint.geometryType}-${midpoint.polygonIndex}-${midpoint.ringIndex}-${midpoint.vertexIndex}-${midpoint.coordinate[0]}-${midpoint.coordinate[1]}`}
               center={[midpoint.coordinate[1], midpoint.coordinate[0]]}
+              pane={MAP_PANES.markers}
               radius={5}
               pathOptions={{ color: '#1d4ed8', fillColor: '#bfdbfe', fillOpacity: 1, weight: 2 }}
               eventHandlers={{
@@ -309,7 +286,7 @@ export function AreaEditPage() {
                 },
               }}
             />)}
-        <FitBoundsToGeoJson geojson={parsedResult.preview} fitTrigger={fitTrigger} autoFitEnabled={!hasAutoFitted} onAutoFitDone={() => setHasAutoFitted(true)} />
+        <MapViewportController key={`${fitTrigger}-${areaGeometryLayerKey}`} fitPositions={mapPositions} constrainPositions={mapPositions} maxZoom={18} padding={[32, 32]} />
       </MapContainer></div>}
 
       <div className="flex flex-wrap gap-2">

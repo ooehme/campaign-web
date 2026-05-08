@@ -1,13 +1,13 @@
 import { useEffect, useMemo } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CircleMarker, GeoJSON, MapContainer, Popup, TileLayer, useMap } from 'react-leaflet'
-import type { LatLngBoundsExpression } from 'leaflet'
+import { CircleMarker, GeoJSON, MapContainer, Popup, TileLayer } from 'react-leaflet'
 import type { Path } from 'leaflet'
 import { ApiError } from '../api/client'
 import { importAreaBuildingsFromOsm, listAreaBuildings } from '../api/endpoints'
 import type { Area, AreaBuilding, AssignmentHouseholdTargeting, GeoJsonInput } from '../types/models'
+import { getAreaMaskGeometry, getAreaPositions, MAP_PANES, MapLayerPanes, MapMask, MapViewportController } from './MapViewport'
 import { MAP_ATTRIBUTION, MAP_TILE_URL } from '../utils/constants'
-import { getAreaGeometryBoundsSafely, getGeometryFromAreaGeoJson } from '../utils/campaignAreaMap'
+import { getGeometryFromAreaGeoJson } from '../utils/campaignAreaMap'
 import { NO_PERMISSION_MESSAGE } from '../utils/permissions'
 
 const DEFAULT_CENTER: [number, number] = [51.1657, 10.4515]
@@ -89,25 +89,6 @@ const formatImportError = (error: unknown) => {
   if (error.status === 422) return 'Das Zielgebiet ist ungültig oder kann nicht importiert werden.'
   if (error.status >= 500) return 'OSM/Overpass ist gerade nicht erreichbar oder der Import ist fehlgeschlagen.'
   return 'Gebäude konnten nicht aus OSM importiert werden.'
-}
-
-function FitBuildingsMap({ targetArea, buildings }: { targetArea: Area; buildings: AreaBuilding[] }) {
-  const map = useMap()
-  const bounds = useMemo(() => {
-    const areaBounds = getAreaGeometryBoundsSafely(targetArea.geojson)
-    if (areaBounds?.length) return areaBounds as LatLngBoundsExpression
-    const points = buildings.flatMap((building) => {
-      const point = getBuildingPoint(building)
-      return point ? [point] : []
-    })
-    return points.length ? points as LatLngBoundsExpression : null
-  }, [buildings, targetArea.geojson])
-
-  useEffect(() => {
-    if (bounds) map.fitBounds(bounds, { padding: [24, 24], maxZoom: 17 })
-  }, [bounds, map])
-
-  return null
 }
 
 export function AssignmentBuildingsLayer({
@@ -240,13 +221,20 @@ export function AssignmentBuildingSelector({
     return [...byId.values(), ...anonymous]
   }, [buildingsQuery.data, fallbackBuildings])
 
-  if (!targetArea) return null
-
   const visibleBuildings = selectedOnly ? buildings.filter((building) => {
     const id = getBuildingId(building)
     return Boolean(id && selectedSet.has(id))
   }) : buildings
-  const targetGeometry = getGeometryFromAreaGeoJson(targetArea.geojson)
+  const targetGeometry = getGeometryFromAreaGeoJson(targetArea?.geojson)
+  const targetPositions = useMemo(() => getAreaPositions(targetArea), [targetArea])
+  const buildingPositions = useMemo(() => visibleBuildings.flatMap((building) => {
+    const point = getBuildingPoint(building)
+    return point ? [point] : []
+  }), [visibleBuildings])
+  const mapPositions = targetPositions.length > 0 ? targetPositions : buildingPositions
+  const maskGeometry = useMemo(() => getAreaMaskGeometry([targetArea]), [targetArea])
+
+  if (!targetArea) return null
 
   return <div className="space-y-3 rounded border bg-slate-50 p-3">
     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -278,11 +266,13 @@ export function AssignmentBuildingSelector({
     )}
 
     <div className="aspect-square w-full overflow-hidden rounded border bg-white">
-      <MapContainer center={DEFAULT_CENTER} zoom={6} className="h-full w-full">
+      <MapContainer center={DEFAULT_CENTER} zoom={6} maxBoundsViscosity={0.85} className="h-full w-full">
         <TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} />
-        {targetGeometry && <GeoJSON data={targetGeometry as GeoJSON.GeoJsonObject} style={{ color: '#0f766e', fillColor: '#14b8a6', fillOpacity: 0.12, weight: 2 }} />}
-        <AssignmentBuildingsLayer buildings={buildings} householdTargeting={householdTargeting} selectedIds={selectedIds} onSelectedIdsChange={onSelectedIdsChange} disabled={disabled} selectedOnly={selectedOnly} />
-        <FitBuildingsMap targetArea={targetArea} buildings={visibleBuildings} />
+        <MapLayerPanes />
+        <MapMask geometry={maskGeometry} />
+        {targetGeometry && <GeoJSON pane={MAP_PANES.target} data={targetGeometry as GeoJSON.GeoJsonObject} style={{ color: '#0f766e', fillColor: '#14b8a6', fillOpacity: 0.12, weight: 2 }} />}
+        <AssignmentBuildingsLayer pane={MAP_PANES.buildings} buildings={buildings} householdTargeting={householdTargeting} selectedIds={selectedIds} onSelectedIdsChange={onSelectedIdsChange} disabled={disabled} selectedOnly={selectedOnly} />
+        {mapPositions.length > 0 && <MapViewportController fitPositions={mapPositions} constrainPositions={targetPositions.length > 0 ? targetPositions : mapPositions} />}
       </MapContainer>
     </div>
   </div>

@@ -1,28 +1,20 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { GeoJSON, MapContainer, TileLayer, useMap } from 'react-leaflet'
+import { GeoJSON, MapContainer, TileLayer } from 'react-leaflet'
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
-import type { LatLngBoundsExpression } from 'leaflet'
 import { ApiError } from '../api/client'
 import { deleteArea, getArea } from '../api/endpoints'
 import { AreaBuildingsImport, AreaBuildingsLayer, getAreaBuildings, useAreaBuildings } from '../components/AreaBuildingsImport'
+import { getAreaMaskGeometry, getAreaPositions, MAP_PANES, MapLayerPanes, MapMask, MapViewportController } from '../components/MapViewport'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import type { Area, AreaAssignmentRef } from '../types/models'
-import { extractGeometry, getBoundsPoints, getGeometryStats } from '../utils/areaGeometry'
+import { extractGeometry, getGeometryStats } from '../utils/areaGeometry'
 import { MAP_ATTRIBUTION, MAP_TILE_URL } from '../utils/constants'
 import { can, NO_PERMISSION_MESSAGE } from '../utils/permissions'
 
 const DEFAULT_CENTER: [number, number] = [51.1657, 10.4515]
 
 const formatDate = (value?: string | null) => (value ? new Date(value).toLocaleString('de-DE') : '—')
-
-function FitBounds({ bounds }: { bounds: LatLngBoundsExpression | null }) {
-  const map = useMap()
-  useEffect(() => {
-    if (bounds) map.fitBounds(bounds, { padding: [16, 16] })
-  }, [bounds, map])
-  return null
-}
 
 export function AreaDetailPage() {
   const { areaId } = useParams()
@@ -45,7 +37,8 @@ export function AreaDetailPage() {
   const area = areaQuery.data as Area | undefined
   const geometry = useMemo(() => extractGeometry(area?.geojson), [area?.geojson])
   const summary = useMemo(() => getGeometryStats(area?.geojson), [area?.geojson])
-  const bounds = useMemo(() => { const pts = getBoundsPoints(area?.geojson); return pts.length > 2 ? pts as LatLngBoundsExpression : null }, [area?.geojson])
+  const areaPositions = useMemo(() => getAreaPositions(area), [area])
+  const areaMaskGeometry = useMemo(() => getAreaMaskGeometry([area]), [area])
   const buildingsQuery = useAreaBuildings(area?.id)
   const buildings = buildingsQuery.data ?? getAreaBuildings(area)
   const canUpdate = can(area?.can?.update)
@@ -87,13 +80,13 @@ export function AreaDetailPage() {
     <div className="rounded border bg-white p-4 space-y-2">
       <details>
         <summary className="cursor-pointer font-medium">Kartenvorschau</summary>
-        <div className="mt-3">{summary.valid && bounds && geometry ? <div className="h-80 overflow-hidden rounded border"><MapContainer center={DEFAULT_CENTER} zoom={6} className="h-full w-full"><TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} /><FitBounds bounds={bounds} /><GeoJSON data={geometry as GeoJSON.GeoJsonObject} /><AreaBuildingsLayer buildings={buildings} focusedBuildingId={focusedBuildingId} focusKey={buildingFocusKey} /></MapContainer></div> : <p className="text-sm text-slate-700">Keine darstellbare GeoJSON-Geometrie vorhanden (Polygon/MultiPolygon erwartet).</p>}</div>
+        <div className="mt-3">{summary.valid && areaPositions.length > 0 && geometry ? <div className="aspect-square w-full overflow-hidden rounded border"><MapContainer center={DEFAULT_CENTER} zoom={6} maxBoundsViscosity={0.85} className="h-full w-full"><TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} /><MapLayerPanes /><MapMask geometry={areaMaskGeometry} /><GeoJSON pane={MAP_PANES.areas} data={geometry as GeoJSON.GeoJsonObject} /><AreaBuildingsLayer pane={MAP_PANES.buildings} buildings={buildings} focusedBuildingId={focusedBuildingId} focusKey={buildingFocusKey} /><MapViewportController fitPositions={areaPositions} constrainPositions={areaPositions} padding={[16, 16]} /></MapContainer></div> : <p className="text-sm text-slate-700">Keine darstellbare GeoJSON-Geometrie vorhanden (Polygon/MultiPolygon erwartet).</p>}</div>
       </details>
     </div>
 
     <AreaBuildingsImport
       area={area}
-      hasValidPolygon={summary.valid && Boolean(bounds)}
+      hasValidPolygon={summary.valid && areaPositions.length > 0}
       focusedBuildingId={focusedBuildingId}
       onBuildingFocus={(building) => {
         setFocusedBuildingId(building.id ?? null)

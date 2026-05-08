@@ -1,8 +1,9 @@
-import { useEffect, useMemo } from 'react'
-import { GeoJSON, MapContainer, Popup, TileLayer, useMap } from 'react-leaflet'
+import { useMemo } from 'react'
+import { GeoJSON, MapContainer, Popup, TileLayer } from 'react-leaflet'
 import { Link } from 'react-router-dom'
 import type { PathOptions } from 'leaflet'
 import type { Area, GeoJsonFeatureCollection } from '../types/models'
+import { getAreaMaskGeometry, getAreaPositions, MAP_PANES, MapLayerPanes, MapMask, MapViewportController } from './MapViewport'
 import { MAP_ATTRIBUTION, MAP_TILE_URL } from '../utils/constants'
 import { getAreaGeometryBoundsSafely, getAreaUsageLabel, isValidPolygonOrMultiPolygon, sanitizeFeatureCollection, splitCampaignAreasByUsage } from '../utils/campaignAreaMap'
 
@@ -14,24 +15,7 @@ const areaMapStyles: Record<'boundary' | 'target' | 'unknown', PathOptions> = {
   unknown: { color: '#475569', weight: 2, fillColor: '#94a3b8', fillOpacity: 0.08, opacity: 0.8 },
 }
 
-function FitCampaignAreaBounds({ bounds }: { bounds: [number, number][] | null }) {
-  const map = useMap()
-  useEffect(() => {
-    if (bounds?.length) map.fitBounds(bounds, { padding: [24, 24], maxZoom: 15 })
-  }, [bounds, map])
-  return null
-}
-
 export function CampaignAreaMap({ areas, mapGeoJson, isLoading, errorMessage }: { areas: Area[]; mapGeoJson?: GeoJsonFeatureCollection | null; isLoading?: boolean; errorMessage?: string | null }) {
-
-  if (isLoading) {
-    return <div className="rounded border bg-white p-4 space-y-2"><h2 className="font-medium">Karte</h2><p className="text-sm text-slate-600">Kartenflächen werden geladen…</p></div>
-  }
-
-  if (errorMessage) {
-    return <div className="rounded border bg-white p-4 space-y-2"><h2 className="font-medium">Karte</h2><p className="text-sm text-red-700">{errorMessage}</p></div>
-  }
-
   const { boundaries, targets, unknown } = useMemo(() => splitCampaignAreasByUsage(areas), [areas])
   const boundariesById = useMemo(() => new Map(boundaries.map((boundary) => [boundary.id, boundary.name])), [boundaries])
 
@@ -50,9 +34,10 @@ export function CampaignAreaMap({ areas, mapGeoJson, isLoading, errorMessage }: 
   }, [boundaries, targets, unknown])
 
   const allBounds = useMemo(() => mapFeatures.flatMap((feature) => feature.bounds ?? []), [mapFeatures])
+  const boundaryBounds = useMemo(() => boundaries.flatMap(getAreaPositions), [boundaries])
   const invalidGeometryCount = useMemo(() => mapFeatures.filter((feature) => !feature.validGeometry).length, [mapFeatures])
   const hasAnyGeometry = allBounds.length > 0
-
+  const maskGeometry = useMemo(() => getAreaMaskGeometry(boundaries), [boundaries])
   const sanitizedMapGeoJson = useMemo(() => (mapGeoJson?.type === 'FeatureCollection' ? sanitizeFeatureCollection(mapGeoJson) : null), [mapGeoJson])
 
   const groupedTargets = useMemo(() => {
@@ -70,22 +55,32 @@ export function CampaignAreaMap({ areas, mapGeoJson, isLoading, errorMessage }: 
     return { groups, unassigned }
   }, [targets, boundariesById])
 
+  if (isLoading) {
+    return <div className="rounded border bg-white p-4 space-y-2"><h2 className="font-medium">Karte</h2><p className="text-sm text-slate-600">Kartenflächen werden geladen...</p></div>
+  }
+
+  if (errorMessage) {
+    return <div className="rounded border bg-white p-4 space-y-2"><h2 className="font-medium">Karte</h2><p className="text-sm text-red-700">{errorMessage}</p></div>
+  }
+
   return <div className="rounded border bg-white p-4 space-y-3"><h2 className="font-medium">Karte</h2>
     <p className="text-xs text-slate-600">Begrenzung = starke Außenlinie, keine Füllung · Zielgebiet = transparente Füllung</p>
     {unknown.length > 0 && <p className="text-sm text-amber-700">Einige Flächen haben keine Nutzungsart.</p>}
     {invalidGeometryCount > 0 && <p className="text-sm text-amber-700">Eine oder mehrere Flächen haben keine gültige Geometrie. (Ungültige Geometrie: {invalidGeometryCount})</p>}
 
-    <div className="h-96 overflow-hidden rounded border">
-      <MapContainer center={DEFAULT_CENTER} zoom={6} className="h-full w-full">
+    <div className="aspect-square w-full overflow-hidden rounded border">
+      <MapContainer center={DEFAULT_CENTER} zoom={6} maxBoundsViscosity={0.85} className="h-full w-full">
         <TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} />
-        {hasAnyGeometry && <FitCampaignAreaBounds bounds={allBounds} />}
+        <MapLayerPanes />
+        <MapMask geometry={maskGeometry} />
         {sanitizedMapGeoJson && sanitizedMapGeoJson.features.length > 0
-          ? <GeoJSON data={sanitizedMapGeoJson as GeoJSON.GeoJsonObject} style={(layerFeature) => {
+          ? <GeoJSON pane={MAP_PANES.areas} data={sanitizedMapGeoJson as GeoJSON.GeoJsonObject} style={(layerFeature) => {
             const props = (layerFeature?.properties ?? {}) as Record<string, unknown>
             const usage = props.usage === 'boundary' || props.usage === 'target' ? props.usage : 'unknown'
             return areaMapStyles[usage]
           }} />
-          : mapFeatures.filter((feature) => feature.validGeometry).map((feature) => <GeoJSON key={`${feature.usage}-${feature.area.id}`} data={feature.area.geojson as GeoJSON.GeoJsonObject} style={areaMapStyles[feature.usage]}><Popup><div className="space-y-1 text-sm"><p className="font-medium">{feature.area.name}</p><p>{getAreaUsageLabel(feature.usage)}</p>{feature.usage === 'target' && <p>Zugeordnete Begrenzung: {feature.area.pivot?.boundary_area_id ? (boundariesById.get(feature.area.pivot.boundary_area_id) ?? `ID ${feature.area.pivot.boundary_area_id}`) : 'Keine'}</p>}{feature.usage === 'target' && feature.area.pivot?.notes && <p>Notizen: {feature.area.pivot.notes}</p>}<Link className="text-blue-600" to={`/areas/${feature.area.id}`}>Zur Flächendetailseite</Link></div></Popup></GeoJSON>)}
+          : mapFeatures.filter((feature) => feature.validGeometry).map((feature) => <GeoJSON key={`${feature.usage}-${feature.area.id}`} pane={feature.usage === 'boundary' ? MAP_PANES.boundary : feature.usage === 'target' ? MAP_PANES.target : MAP_PANES.areas} data={feature.area.geojson as GeoJSON.GeoJsonObject} style={areaMapStyles[feature.usage]}><Popup><div className="space-y-1 text-sm"><p className="font-medium">{feature.area.name}</p><p>{getAreaUsageLabel(feature.usage)}</p>{feature.usage === 'target' && <p>Zugeordnete Begrenzung: {feature.area.pivot?.boundary_area_id ? (boundariesById.get(feature.area.pivot.boundary_area_id) ?? `ID ${feature.area.pivot.boundary_area_id}`) : 'Keine'}</p>}{feature.usage === 'target' && feature.area.pivot?.notes && <p>Notizen: {feature.area.pivot.notes}</p>}<Link className="text-blue-600" to={`/areas/${feature.area.id}`}>Zur Flächendetailseite</Link></div></Popup></GeoJSON>)}
+        {hasAnyGeometry && <MapViewportController fitPositions={allBounds} constrainPositions={boundaryBounds.length > 0 ? boundaryBounds : allBounds} maxZoom={15} />}
       </MapContainer>
       {!hasAnyGeometry && <div className="p-3 text-sm text-slate-600">Keine Kartenflächen für diese Kampagne vorhanden.</div>}
     </div>

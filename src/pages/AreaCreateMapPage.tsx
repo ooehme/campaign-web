@@ -5,8 +5,9 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { GeoJSON, MapContainer, Marker, Polygon, TileLayer, useMapEvents } from 'react-leaflet'
 import { createArea, createOrAttachAreaToCampaign, listCampaignAreas } from '../api/endpoints'
 import { ApiError } from '../api/client'
+import { getGeoJsonMaskGeometry, getGeoJsonPositions, MAP_PANES, MapLayerPanes, MapMask, MapViewportController } from '../components/MapViewport'
 import { ErrorState } from '../components/UiState'
-import type { GeoJsonInput, GeoJsonPolygon } from '../types/models'
+import type { GeoJsonFeatureCollection, GeoJsonInput, GeoJsonPolygon } from '../types/models'
 import { MAP_ATTRIBUTION, MAP_TILE_URL } from '../utils/constants'
 import { getSuggestedAreaName, normalizeGeoJsonInput, parseGeoJsonImport } from '../utils/geojson'
 
@@ -91,6 +92,10 @@ export function AreaCreateMapPage() {
   const geometry = useMemo(() => toGeoJson(points), [points])
   const parsedManual = useMemo(() => normalizeGeoJsonInput(manualGeoJson), [manualGeoJson])
   const parsedImport = useMemo(() => parseGeoJsonImport(importText), [importText])
+  const drawnMapMaskGeometry = useMemo(() => getGeoJsonMaskGeometry(geometry), [geometry])
+  const importPreviewGeoJson = useMemo<GeoJsonFeatureCollection>(() => ({ type: 'FeatureCollection', features: parsedImport.items.map((item) => item.feature) }), [parsedImport.items])
+  const importMapPositions = useMemo(() => getGeoJsonPositions(importPreviewGeoJson), [importPreviewGeoJson])
+  const importMapMaskGeometry = useMemo(() => getGeoJsonMaskGeometry(importPreviewGeoJson), [importPreviewGeoJson])
   const allImportsNamed = parsedImport.items.every((item) => Boolean(importNames[item.id]?.trim()))
   const canSaveSingle = name.trim().length > 0 && (mode === 'map' ? !!geometry : mode === 'manual' ? !!parsedManual.parsed : false)
 
@@ -219,12 +224,14 @@ export function AreaCreateMapPage() {
         <div className="space-y-3 rounded border bg-white p-4">
           <label className="block text-sm font-medium" htmlFor="area-name">Name</label>
           <input id="area-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="z. B. Einsatzgebiet Nord" />
-          <div className="h-96 overflow-hidden rounded border">
-            <MapContainer center={DEFAULT_CENTER} zoom={6} className="h-full w-full">
+          <div className="aspect-square w-full overflow-hidden rounded border">
+            <MapContainer center={DEFAULT_CENTER} zoom={6} maxBoundsViscosity={0.85} className="h-full w-full">
               <TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} />
+              <MapLayerPanes />
+              <MapMask geometry={drawnMapMaskGeometry} />
               <MapClickHandler disabled={false} onPointAdd={(point) => setPoints((prev) => [...prev, point])} />
-              {points.map((p, idx) => <Marker key={`${p[0]}-${p[1]}-${idx}`} position={p} icon={markerIcon} draggable eventHandlers={{ dragend: (e) => { const next = [...points]; const ll = (e.target as L.Marker).getLatLng(); next[idx] = [ll.lat, ll.lng]; setPoints(next) } }} />)}
-              {points.length >= 3 && <Polygon positions={points} pathOptions={{ color: '#0f172a' }} />}
+              {points.map((p, idx) => <Marker key={`${p[0]}-${p[1]}-${idx}`} pane={MAP_PANES.markers} position={p} icon={markerIcon} draggable eventHandlers={{ dragend: (e) => { const next = [...points]; const ll = (e.target as L.Marker).getLatLng(); next[idx] = [ll.lat, ll.lng]; setPoints(next) } }} />)}
+              {points.length >= 3 && <Polygon pane={MAP_PANES.areas} positions={points} pathOptions={{ color: '#0f172a' }} />}
             </MapContainer>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -243,10 +250,13 @@ export function AreaCreateMapPage() {
 
           {parsedImport.items.length > 0 && (
             <div className="grid gap-3 lg:grid-cols-2">
-              <div className="h-72 overflow-hidden rounded border">
-                <MapContainer center={DEFAULT_CENTER} zoom={6} className="h-full w-full">
+              <div className="aspect-square w-full overflow-hidden rounded border">
+                <MapContainer center={DEFAULT_CENTER} zoom={6} maxBoundsViscosity={0.85} className="h-full w-full">
                   <TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} />
-                  <GeoJSON data={{ type: 'FeatureCollection', features: parsedImport.items.map((item) => item.feature) } as GeoJSON.GeoJsonObject} style={{ color: '#0f172a', fillOpacity: 0.1 }} />
+                  <MapLayerPanes />
+                  <MapMask geometry={importMapMaskGeometry} />
+                  <GeoJSON pane={MAP_PANES.areas} data={importPreviewGeoJson as GeoJSON.GeoJsonObject} style={{ color: '#0f172a', fillOpacity: 0.1 }} />
+                  {importMapPositions.length > 0 && <MapViewportController fitPositions={importMapPositions} constrainPositions={importMapPositions} />}
                 </MapContainer>
               </div>
               <div className="max-h-72 space-y-2 overflow-auto">

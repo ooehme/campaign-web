@@ -121,7 +121,7 @@ function FocusBuilding({ building, focusKey }: { building?: AreaBuilding | null;
   return null
 }
 
-export function AreaBuildingsLayer({ buildings, focusedBuildingId, focusKey }: { buildings: AreaBuilding[]; focusedBuildingId?: number | null; focusKey?: number }) {
+export function AreaBuildingsLayer({ buildings, focusedBuildingId, focusKey, pane }: { buildings: AreaBuilding[]; focusedBuildingId?: number | null; focusKey?: number; pane?: string }) {
   const focusedBuilding = useMemo(
     () => buildings.find((building) => building.id === focusedBuildingId) ?? null,
     [buildings, focusedBuildingId],
@@ -135,6 +135,7 @@ export function AreaBuildingsLayer({ buildings, focusedBuildingId, focusKey }: {
         return <GeoJSON
           key={buildingKey(building, index)}
           data={geometry as GeoJSON.GeoJsonObject}
+          pane={pane}
           style={() => ({ color: '#7c2d12', fillColor: '#fb923c', fillOpacity: 0.35, weight: 1.5 })}
         />
       }
@@ -143,6 +144,7 @@ export function AreaBuildingsLayer({ buildings, focusedBuildingId, focusKey }: {
       return point ? <CircleMarker
         key={buildingKey(building, index)}
         center={point}
+        pane={pane}
         radius={4}
         pathOptions={{ color: '#7c2d12', fillColor: '#fb923c', fillOpacity: 0.85, weight: 1 }}
       /> : null

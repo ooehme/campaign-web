@@ -5,14 +5,15 @@ import { useForm } from 'react-hook-form'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { z } from 'zod'
 import { ApiError } from '../api/client'
-import { GeoJSON, MapContainer, Marker, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet'
+import { GeoJSON, MapContainer, Marker, Popup, TileLayer, useMapEvents } from 'react-leaflet'
 import { createPosterLocation, deleteAssignment, deletePosterLocation, getAssignment, listAssignmentBuildings, listCampaignAreas, listCampaignTeams, listPosterLocations, updateAssignment, updatePosterLocation } from '../api/endpoints'
 import { useAuth } from '../auth/AuthContext'
 import { AssignmentBuildingSelector } from '../components/AssignmentBuildingSelector'
+import { getAreaMaskGeometry, getAreaPositions, MAP_PANES, MapLayerPanes, MapMask, MapViewportController } from '../components/MapViewport'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import { ASSIGNMENT_STATUSES, MAP_ATTRIBUTION, MAP_TILE_URL, POSTER_LOCATION_STATUSES } from '../utils/constants'
 import { assignmentStatusLabel, assignmentTypeLabel } from '../utils/assignment'
-import { getAreaGeometryBoundsSafely, getAreaUsageOptions, getGeometryFromAreaGeoJson } from '../utils/campaignAreaMap'
+import { getAreaUsageOptions, getGeometryFromAreaGeoJson } from '../utils/campaignAreaMap'
 import { posterLocationIcon } from '../utils/mapIcons'
 import { can, canPermission, NO_PERMISSION_MESSAGE, permissionErrorMessage } from '../utils/permissions'
 import { PERMISSIONS } from '../utils/permissionKeys'
@@ -82,22 +83,6 @@ const assignmentAreaBuildingIds = (assignment: Assignment) => {
   return []
 }
 
-function FitPosterLocationMap({ targetArea, posterLocations }: { targetArea?: Area; posterLocations: PosterLocation[] }) {
-  const map = useMap()
-  const areaBounds = useMemo(() => targetArea ? getAreaGeometryBoundsSafely(targetArea.geojson) : null, [targetArea])
-
-  useEffect(() => {
-    if (areaBounds?.length) {
-      map.fitBounds(areaBounds, { padding: [24, 24], maxZoom: 17 })
-      return
-    }
-    const points = posterLocations.map((posterLocation): [number, number] => [posterLocation.lat, posterLocation.lng])
-    if (points.length) map.fitBounds(points, { padding: [24, 24], maxZoom: 17 })
-  }, [areaBounds, map, posterLocations])
-
-  return null
-}
-
 function PosterLocationMapClicks({ enabled, onAdd }: { enabled: boolean; onAdd: (lat: number, lng: number) => void }) {
   useMapEvents({
     click: (event) => {
@@ -129,6 +114,10 @@ function GuidedPosterLocationEditor({
   onDelete: (posterLocationId: number) => void
 }) {
   const targetGeometry = getGeometryFromAreaGeoJson(targetArea?.geojson)
+  const targetPositions = useMemo(() => getAreaPositions(targetArea), [targetArea])
+  const posterPositions = useMemo(() => posterLocations.map((posterLocation): [number, number] => [posterLocation.lat, posterLocation.lng]), [posterLocations])
+  const fitPositions = targetPositions.length > 0 ? targetPositions : posterPositions
+  const maskGeometry = useMemo(() => getAreaMaskGeometry([targetArea]), [targetArea])
 
   return (
     <div className="space-y-3 rounded border p-3">
@@ -139,14 +128,17 @@ function GuidedPosterLocationEditor({
         </p>
       </div>
 
-      <div className="aspect-[4/3] w-full overflow-hidden rounded border bg-white">
-        <MapContainer center={DEFAULT_CENTER} zoom={6} className="h-full w-full">
+      <div className="aspect-square w-full overflow-hidden rounded border bg-white">
+        <MapContainer center={DEFAULT_CENTER} zoom={6} maxBoundsViscosity={0.85} className="h-full w-full">
           <TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} />
-          {targetGeometry && <GeoJSON data={targetGeometry as GeoJSON.GeoJsonObject} style={{ color: '#0f766e', fillColor: '#14b8a6', fillOpacity: 0.16, weight: 2 }} />}
+          <MapLayerPanes />
+          <MapMask geometry={maskGeometry} />
+          {targetGeometry && <GeoJSON pane={MAP_PANES.target} data={targetGeometry as GeoJSON.GeoJsonObject} style={{ color: '#0f766e', fillColor: '#14b8a6', fillOpacity: 0.16, weight: 2 }} />}
           <PosterLocationMapClicks enabled={!disabled && !pending} onAdd={onCreate} />
           {posterLocations.map((posterLocation) => (
             <Marker
               key={posterLocation.id}
+              pane={MAP_PANES.markers}
               position={[posterLocation.lat, posterLocation.lng]}
               icon={posterLocationIcon}
               draggable={!disabled && can(posterLocation.can?.update ?? true)}
@@ -164,7 +156,7 @@ function GuidedPosterLocationEditor({
               </Popup>
             </Marker>
           ))}
-          <FitPosterLocationMap targetArea={targetArea} posterLocations={posterLocations} />
+          {fitPositions.length > 0 && <MapViewportController fitPositions={fitPositions} constrainPositions={targetPositions.length > 0 ? targetPositions : fitPositions} />}
         </MapContainer>
       </div>
 

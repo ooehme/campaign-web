@@ -4,11 +4,12 @@ import { useEffect, useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { z } from 'zod'
-import { GeoJSON, MapContainer, TileLayer, useMap } from 'react-leaflet'
+import { GeoJSON, MapContainer, TileLayer } from 'react-leaflet'
 import { ApiError } from '../api/client'
 import { createAssignment, createCampaignAssignment, getCampaign, getTeam, listCampaigns, listCampaignAreas, listCampaignTeams, listUserTeams } from '../api/endpoints'
 import { useAuth } from '../auth/AuthContext'
 import { AssignmentBuildingSelector } from '../components/AssignmentBuildingSelector'
+import { getAreaMaskGeometry, getAreaPositions, MAP_PANES, MapLayerPanes, MapMask, MapViewportController } from '../components/MapViewport'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import { ASSIGNMENT_STATUSES, ASSIGNMENT_TYPES, MAP_ATTRIBUTION, MAP_TILE_URL } from '../utils/constants'
 import { assignmentTypeLabel, uniqueCampaigns } from '../utils/assignment'
@@ -63,17 +64,11 @@ const formSchema = z.object({
 
 type FormValues = z.infer<typeof formSchema>
 
-function FitTargetAreaBounds({ bounds }: { bounds: [number, number][] | null }) {
-  const map = useMap()
-  useEffect(() => {
-    if (bounds?.length) map.fitBounds(bounds, { padding: [24, 24], maxZoom: 16 })
-  }, [bounds, map])
-  return null
-}
-
 function TargetAreaPreviewMap({ area }: { area: Area }) {
   const geometry = getGeometryFromAreaGeoJson(area.geojson)
   const bounds = getAreaGeometryBoundsSafely(area.geojson)
+  const areaPositions = useMemo(() => getAreaPositions(area), [area])
+  const maskGeometry = useMemo(() => getAreaMaskGeometry([area]), [area])
   const validGeometry = isValidPolygonOrMultiPolygon(area.geojson)
 
   if (!validGeometry || !geometry || !bounds) {
@@ -83,11 +78,13 @@ function TargetAreaPreviewMap({ area }: { area: Area }) {
   return (
     <div className="space-y-2 rounded border bg-slate-50 p-3">
       <h2 className="font-medium">Zielgebiet-Vorschau</h2>
-      <div className="h-72 overflow-hidden rounded border bg-white">
-        <MapContainer center={DEFAULT_CENTER} zoom={6} className="h-full w-full">
+      <div className="aspect-square w-full overflow-hidden rounded border bg-white">
+        <MapContainer center={DEFAULT_CENTER} zoom={6} maxBoundsViscosity={0.85} className="h-full w-full">
           <TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} />
-          <GeoJSON key={area.id} data={geometry as GeoJSON.GeoJsonObject} style={{ color: '#0f766e', fillColor: '#14b8a6', fillOpacity: 0.22, weight: 3 }} />
-          <FitTargetAreaBounds bounds={bounds} />
+          <MapLayerPanes />
+          <MapMask geometry={maskGeometry} />
+          <GeoJSON key={area.id} pane={MAP_PANES.target} data={geometry as GeoJSON.GeoJsonObject} style={{ color: '#0f766e', fillColor: '#14b8a6', fillOpacity: 0.22, weight: 3 }} />
+          {areaPositions.length > 0 && <MapViewportController fitPositions={areaPositions} constrainPositions={areaPositions} maxZoom={16} />}
         </MapContainer>
       </div>
     </div>
