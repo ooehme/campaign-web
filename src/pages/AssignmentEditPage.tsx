@@ -5,14 +5,19 @@ import { useForm } from 'react-hook-form'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { z } from 'zod'
 import { ApiError } from '../api/client'
-import { deleteAssignment, getAssignment, listAssignmentBuildings, listCampaignAreas, listCampaignTeams, updateAssignment } from '../api/endpoints'
+import { GeoJSON, MapContainer, Marker, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet'
+import { createPosterLocation, deleteAssignment, deletePosterLocation, getAssignment, listAssignmentBuildings, listCampaignAreas, listCampaignTeams, listPosterLocations, updateAssignment, updatePosterLocation } from '../api/endpoints'
+import { useAuth } from '../auth/AuthContext'
 import { AssignmentBuildingSelector } from '../components/AssignmentBuildingSelector'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
-import { ASSIGNMENT_STATUSES } from '../utils/constants'
+import { ASSIGNMENT_STATUSES, MAP_ATTRIBUTION, MAP_TILE_URL, POSTER_LOCATION_STATUSES } from '../utils/constants'
 import { assignmentStatusLabel, assignmentTypeLabel } from '../utils/assignment'
-import { getAreaUsageOptions } from '../utils/campaignAreaMap'
-import { can, NO_PERMISSION_MESSAGE, permissionErrorMessage } from '../utils/permissions'
-import type { Area, Assignment, AssignmentBuilding, AssignmentHouseholdTargeting, LetterboxDistributionConfig } from '../types/models'
+import { getAreaGeometryBoundsSafely, getAreaUsageOptions, getGeometryFromAreaGeoJson } from '../utils/campaignAreaMap'
+import { can, canPermission, NO_PERMISSION_MESSAGE, permissionErrorMessage } from '../utils/permissions'
+import { PERMISSIONS } from '../utils/permissionKeys'
+import type { Area, Assignment, AssignmentBuilding, AssignmentHouseholdTargeting, LetterboxDistributionConfig, PosterLocation, PosterLocationStatus } from '../types/models'
+
+const DEFAULT_CENTER: [number, number] = [51.1657, 10.4515]
 
 const assignmentEditSchema = z.object({
   title: z.string().min(1, 'Titel ist erforderlich.'),
@@ -28,12 +33,21 @@ const assignmentEditSchema = z.object({
 
 type AssignmentEditValues = z.infer<typeof assignmentEditSchema>
 
+const firstValidationMessage = (details: unknown) => {
+  if (!details || typeof details !== 'object') return null
+  const errors = (details as { errors?: unknown }).errors
+  if (!errors || typeof errors !== 'object') return null
+  const firstMessages = Object.values(errors as Record<string, unknown>).flatMap((value) => Array.isArray(value) ? value : [value])
+  const message = firstMessages.find((value): value is string => typeof value === 'string' && value.length > 0)
+  return message ?? null
+}
+
 const requestErrorMessage = (error: unknown) => {
   if (!(error instanceof ApiError)) return permissionErrorMessage(error)
   if (error.status === 401) return 'Bitte erneut anmelden.'
   if (error.status === 403) return 'Keine Berechtigung für diese Aktion.'
   if (error.status === 404) return 'Auftrag nicht gefunden.'
-  if (error.status === 422) return 'Bitte prüfen Sie die Formularfelder.'
+  if (error.status === 422) return firstValidationMessage(error.details) ?? 'Bitte prüfen Sie die Formularfelder.'
   if (error.status >= 500) return 'Serverfehler beim Speichern des Auftrags.'
   return permissionErrorMessage(error)
 }
@@ -67,11 +81,146 @@ const assignmentAreaBuildingIds = (assignment: Assignment) => {
   return []
 }
 
+function FitPosterLocationMap({ targetArea, posterLocations }: { targetArea?: Area; posterLocations: PosterLocation[] }) {
+  const map = useMap()
+  const areaBounds = useMemo(() => targetArea ? getAreaGeometryBoundsSafely(targetArea.geojson) : null, [targetArea])
+
+  useEffect(() => {
+    if (areaBounds?.length) {
+      map.fitBounds(areaBounds, { padding: [24, 24], maxZoom: 17 })
+      return
+    }
+    const points = posterLocations.map((posterLocation): [number, number] => [posterLocation.lat, posterLocation.lng])
+    if (points.length) map.fitBounds(points, { padding: [24, 24], maxZoom: 17 })
+  }, [areaBounds, map, posterLocations])
+
+  return null
+}
+
+function PosterLocationMapClicks({ enabled, onAdd }: { enabled: boolean; onAdd: (lat: number, lng: number) => void }) {
+  useMapEvents({
+    click: (event) => {
+      if (enabled) onAdd(Number(event.latlng.lat.toFixed(6)), Number(event.latlng.lng.toFixed(6)))
+    },
+  })
+  return null
+}
+
+function GuidedPosterLocationEditor({
+  assignmentId,
+  targetArea,
+  posterLocations,
+  disabled,
+  pending,
+  error,
+  onCreate,
+  onUpdate,
+  onDelete,
+}: {
+  assignmentId: number
+  targetArea?: Area
+  posterLocations: PosterLocation[]
+  disabled: boolean
+  pending: boolean
+  error: unknown
+  onCreate: (lat: number, lng: number) => void
+  onUpdate: (posterLocationId: number, payload: Partial<PosterLocation>) => void
+  onDelete: (posterLocationId: number) => void
+}) {
+  const targetGeometry = getGeometryFromAreaGeoJson(targetArea?.geojson)
+
+  return (
+    <div className="space-y-3 rounded border p-3">
+      <div>
+        <h2 className="font-medium">Plakatstandorte</h2>
+        <p className="text-sm text-slate-600">
+          {disabled ? 'Keine Berechtigung zum Bearbeiten der Standorte.' : 'Klick in die Karte legt einen geplanten Standort an. Marker können verschoben werden.'}
+        </p>
+      </div>
+
+      <div className="aspect-[4/3] w-full overflow-hidden rounded border bg-white">
+        <MapContainer center={DEFAULT_CENTER} zoom={6} className="h-full w-full">
+          <TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} />
+          {targetGeometry && <GeoJSON data={targetGeometry as GeoJSON.GeoJsonObject} style={{ color: '#0f766e', fillColor: '#14b8a6', fillOpacity: 0.16, weight: 2 }} />}
+          <PosterLocationMapClicks enabled={!disabled && !pending} onAdd={onCreate} />
+          {posterLocations.map((posterLocation) => (
+            <Marker
+              key={posterLocation.id}
+              position={[posterLocation.lat, posterLocation.lng]}
+              draggable={!disabled && can(posterLocation.can?.update ?? true)}
+              eventHandlers={{
+                dragend: (event) => {
+                  const latLng = event.target.getLatLng()
+                  onUpdate(posterLocation.id, { lat: Number(latLng.lat.toFixed(6)), lng: Number(latLng.lng.toFixed(6)) })
+                },
+              }}
+            >
+              <Popup>
+                <p className="font-medium">{posterLocation.label ?? `Standort #${posterLocation.id}`}</p>
+                <p>Status: {posterLocation.status}</p>
+                <p>{posterLocation.notes ?? '-'}</p>
+              </Popup>
+            </Marker>
+          ))}
+          <FitPosterLocationMap targetArea={targetArea} posterLocations={posterLocations} />
+        </MapContainer>
+      </div>
+
+      {error && <ErrorState message={requestErrorMessage(error)} />}
+      {posterLocations.length === 0 && <EmptyState message="Noch keine Plakatstandorte markiert." />}
+      {posterLocations.length > 0 && (
+        <div className="space-y-2">
+          {posterLocations.map((posterLocation) => (
+            <article key={posterLocation.id} className="rounded border bg-white p-3 text-sm">
+              <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_160px]">
+                <input
+                  defaultValue={posterLocation.label ?? ''}
+                  placeholder={`Standort #${posterLocation.id}`}
+                  disabled={disabled || !can(posterLocation.can?.update ?? true)}
+                  onBlur={(event) => onUpdate(posterLocation.id, { label: event.target.value.trim() || null })}
+                />
+                <select
+                  defaultValue={posterLocation.status}
+                  disabled={disabled || !can(posterLocation.can?.update ?? true)}
+                  onChange={(event) => onUpdate(posterLocation.id, { status: event.target.value as PosterLocationStatus })}
+                >
+                  {POSTER_LOCATION_STATUSES.map((status) => <option key={status}>{status}</option>)}
+                </select>
+              </div>
+              <textarea
+                className="mt-2"
+                rows={2}
+                defaultValue={posterLocation.notes ?? ''}
+                placeholder="Notizen"
+                disabled={disabled || !can(posterLocation.can?.update ?? true)}
+                onBlur={(event) => onUpdate(posterLocation.id, { notes: event.target.value.trim() || null })}
+              />
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs text-slate-600">Koordinaten: {posterLocation.lat}, {posterLocation.lng}</p>
+                <button
+                  type="button"
+                  className="border border-red-300 px-2 py-1 text-red-700 disabled:opacity-50"
+                  disabled={disabled || !can(posterLocation.can?.delete ?? true)}
+                  onClick={() => onDelete(posterLocation.id)}
+                >
+                  Standort entfernen
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+      <p className="text-xs text-slate-500">Auftrag #{assignmentId}</p>
+    </div>
+  )
+}
+
 export function AssignmentEditPage() {
   const { assignmentId } = useParams()
   const id = Number(assignmentId)
   const navigate = useNavigate()
   const qc = useQueryClient()
+  const { user } = useAuth()
   const [areaBuildingIds, setAreaBuildingIds] = useState<number[]>([])
 
   const form = useForm<AssignmentEditValues>({
@@ -100,6 +249,12 @@ export function AssignmentEditPage() {
     queryKey: ['assignment-buildings', id],
     queryFn: () => listAssignmentBuildings(id),
     enabled: Boolean(Number.isFinite(id) && assignment?.type === 'letterbox_distribution' && assignmentHouseholdTargeting === 'selected_buildings'),
+    retry: false,
+  })
+  const posterLocationsQuery = useQuery({
+    queryKey: ['poster-locations', id],
+    queryFn: () => listPosterLocations(id),
+    enabled: Boolean(Number.isFinite(id) && assignment?.type === 'poster_guided'),
     retry: false,
   })
   const areas = useMemo(() => areasQuery.data?.data ?? [], [areasQuery.data?.data])
@@ -146,6 +301,7 @@ export function AssignmentEditPage() {
   const invalidateAssignment = () => {
     qc.invalidateQueries({ queryKey: ['assignment', id] })
     qc.invalidateQueries({ queryKey: ['assignment-buildings', id] })
+    qc.invalidateQueries({ queryKey: ['poster-locations', id] })
     qc.invalidateQueries({ queryKey: ['assignments'] })
     qc.invalidateQueries({ queryKey: ['dashboard-campaign-assignments'] })
     if (campaignId) qc.invalidateQueries({ queryKey: ['campaign', campaignId] })
@@ -176,6 +332,24 @@ export function AssignmentEditPage() {
     },
   })
 
+  const createPosterLocationMutation = useMutation({
+    mutationFn: ({ lat, lng }: { lat: number; lng: number }) => createPosterLocation(id, {
+      lat,
+      lng,
+      status: 'planned',
+      label: `Standort ${(posterLocationsQuery.data?.length ?? 0) + 1}`,
+    }),
+    onSuccess: invalidateAssignment,
+  })
+  const updatePosterLocationMutation = useMutation({
+    mutationFn: ({ posterLocationId, payload }: { posterLocationId: number; payload: Partial<PosterLocation> }) => updatePosterLocation(posterLocationId, payload),
+    onSuccess: invalidateAssignment,
+  })
+  const deletePosterLocationMutation = useMutation({
+    mutationFn: (posterLocationId: number) => deletePosterLocation(posterLocationId),
+    onSuccess: invalidateAssignment,
+  })
+
   const targetAreaRegister = form.register('targetAreaId')
   const setTargetArea = (targetAreaId: string) => {
     const boundaryAreaId = boundaryAreaIdForTarget(targetAreaOptions, targetAreaId)
@@ -200,7 +374,10 @@ export function AssignmentEditPage() {
 
   const canUpdate = can(assignment.can?.update)
   const canDelete = can(assignment.can?.delete)
+  const canManagePosterLocations = canPermission(user?.can, PERMISSIONS.POSTER_LOCATIONS_MANAGE) && can(assignment.can?.manage_poster_locations ?? true)
   const teams = teamsQuery.data?.data ?? []
+  const posterLocations = (posterLocationsQuery.data ?? assignment.posterLocations ?? []).slice().sort((a, b) => a.id - b.id)
+  const posterLocationMutationError = createPosterLocationMutation.error ?? updatePosterLocationMutation.error ?? deletePosterLocationMutation.error
 
   return (
     <section className="space-y-4">
@@ -250,6 +427,20 @@ export function AssignmentEditPage() {
             {form.formState.errors.householdTargeting?.message && <ErrorState message={form.formState.errors.householdTargeting.message} />}
             {selectedTarget && <AssignmentBuildingSelector targetArea={selectedTarget} householdTargeting={householdTargeting} selectedIds={areaBuildingIds} onSelectedIdsChange={setAreaBuildingIds} disabled={!canUpdate} />}
           </div>
+        )}
+
+        {assignment.type === 'poster_guided' && (
+          <GuidedPosterLocationEditor
+            assignmentId={assignment.id}
+            targetArea={selectedTarget}
+            posterLocations={posterLocations}
+            disabled={!canUpdate || !canManagePosterLocations}
+            pending={createPosterLocationMutation.isPending || updatePosterLocationMutation.isPending || deletePosterLocationMutation.isPending}
+            error={posterLocationMutationError}
+            onCreate={(lat, lng) => createPosterLocationMutation.mutate({ lat, lng })}
+            onUpdate={(posterLocationId, payload) => updatePosterLocationMutation.mutate({ posterLocationId, payload })}
+            onDelete={(posterLocationId) => deletePosterLocationMutation.mutate(posterLocationId)}
+          />
         )}
 
         <div className="grid gap-3 md:grid-cols-3">
