@@ -78,7 +78,7 @@ const assignmentAreaBuildings = (assignment: Assignment): AreaBuilding[] => {
   if (Array.isArray(assignment.assignment_buildings)) {
     const buildings: AreaBuilding[] = []
     for (const entry of assignment.assignment_buildings) {
-      if ('area_building' in entry && entry.area_building) {
+      if ('area_building' in entry && isAreaBuilding(entry.area_building)) {
         buildings.push(entry.area_building)
       } else if (isAreaBuilding(entry)) {
         buildings.push(entry)
@@ -265,7 +265,7 @@ export function AssignmentDetailPage() {
           <h2 className="mb-2 font-medium">Karte</h2>
           <p className="mb-3 text-xs text-slate-600">Begrenzungsgebiet und Zielgebiet des Auftrags</p>
           {areasQuery.isError && <p className="mb-2 text-sm text-amber-700">Kampagnenflächen konnten nicht geladen werden. Verfügbare Auftragsflächen werden angezeigt.</p>}
-          <div className="h-80 overflow-hidden rounded border md:h-96">
+          <div className="aspect-square w-full overflow-hidden rounded border">
             {!boundaryGeometry && !targetGeometry && posterLocations.length === 0 ? <div className="p-3 text-sm text-slate-600">Keine Kartenobjekte für diesen Auftrag vorhanden.</div> : (
               <MapContainer center={DEFAULT_CENTER} zoom={6} className="h-full w-full">
                 <TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} />

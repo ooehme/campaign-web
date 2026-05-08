@@ -207,7 +207,7 @@ export function AssignmentBuildingSelector({
       <p className="rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-800">Für dieses Zielgebiet wurden noch keine Gebäude erfasst. Erfasse zuerst Gebäude aus OSM.</p>
     )}
 
-    <div className="h-80 overflow-hidden rounded border bg-white">
+    <div className="aspect-square w-full overflow-hidden rounded border bg-white">
       <MapContainer center={DEFAULT_CENTER} zoom={6} className="h-full w-full">
         <TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} />
         {targetGeometry && <GeoJSON data={targetGeometry as GeoJSON.GeoJsonObject} style={{ color: '#0f766e', fillColor: '#14b8a6', fillOpacity: 0.12, weight: 2 }} />}
