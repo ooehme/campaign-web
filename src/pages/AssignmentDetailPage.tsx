@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { Link, useParams } from 'react-router-dom'
 import { z } from 'zod'
-import { GeoJSON, MapContainer, Marker, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet'
+import { GeoJSON, MapContainer, Marker, Pane, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet'
 import { ApiError } from '../api/client'
 import { createPosterLocation, deletePosterLocation, getAssignment, listAreaBuildings, listAssignmentBuildings, listCampaignAreas, listPosterLocations, updatePosterLocation } from '../api/endpoints'
 import { useAuth } from '../auth/AuthContext'
@@ -18,6 +18,12 @@ import { PERMISSIONS } from '../utils/permissionKeys'
 import type { Area, AreaBuilding, Assignment, AssignmentBuilding, AssignmentHouseholdTargeting, AssignmentTypeConfig, LetterboxDistributionConfig, PosterLocation } from '../types/models'
 
 const DEFAULT_CENTER: [number, number] = [51.1657, 10.4515]
+const MAP_PANES = {
+  boundary: 'assignment-boundary',
+  target: 'assignment-target',
+  buildings: 'assignment-buildings',
+  markers: 'assignment-markers',
+} as const
 
 const posterLocationSchema = z.object({
   id: z.number().optional(),
@@ -310,12 +316,16 @@ export function AssignmentDetailPage() {
             {!boundaryGeometry && !targetGeometry && posterLocations.length === 0 && visibleAssignmentBuildings.length === 0 ? <div className="p-3 text-sm text-slate-600">Keine Kartenobjekte für diesen Auftrag vorhanden.</div> : (
               <MapContainer center={DEFAULT_CENTER} zoom={6} className="h-full w-full">
                 <TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} />
+                <Pane name={MAP_PANES.boundary} style={{ zIndex: 410 }} />
+                <Pane name={MAP_PANES.target} style={{ zIndex: 420 }} />
+                <Pane name={MAP_PANES.buildings} style={{ zIndex: 430 }} />
+                <Pane name={MAP_PANES.markers} style={{ zIndex: 440 }} />
                 {posterLocationToolsVisible && <MapClickPicker enabled={canCreatePosterLocations} onPick={(lat, lng) => { posterLocationForm.setValue('lat', Number(lat.toFixed(6))); posterLocationForm.setValue('lng', Number(lng.toFixed(6))); setPosterLocationEditorOpen(true) }} />}
-                {boundaryArea && boundaryGeometry && <GeoJSON data={boundaryGeometry as GeoJSON.GeoJsonObject} style={{ color: '#1d4ed8', weight: 5, fillOpacity: 0, opacity: 0.95 }}><Popup><p className="font-medium">{boundaryArea.name}</p><p>Begrenzungsgebiet</p></Popup></GeoJSON>}
-                {targetArea && targetGeometry && <GeoJSON data={targetGeometry as GeoJSON.GeoJsonObject} style={{ color: '#0f766e', weight: 2, fillColor: '#14b8a6', fillOpacity: 0.2, opacity: 0.9 }}><Popup><p className="font-medium">{targetArea.name}</p><p>Zielgebiet</p></Popup></GeoJSON>}
-                {assignment.type === 'letterbox_distribution' && householdTargeting && <AssignmentBuildingsLayer buildings={assignmentBuildings} householdTargeting={householdTargeting} selectedIds={selectedAreaBuildingIds} disabled selectedOnly={householdTargeting === 'selected_buildings'} />}
+                {boundaryArea && boundaryGeometry && <GeoJSON pane={MAP_PANES.boundary} data={boundaryGeometry as GeoJSON.GeoJsonObject} style={{ color: '#1d4ed8', weight: 5, fillOpacity: 0, opacity: 0.95 }}><Popup><p className="font-medium">{boundaryArea.name}</p><p>Begrenzungsgebiet</p></Popup></GeoJSON>}
+                {targetArea && targetGeometry && <GeoJSON pane={MAP_PANES.target} data={targetGeometry as GeoJSON.GeoJsonObject} style={{ color: '#0f766e', weight: 2, fillColor: '#14b8a6', fillOpacity: 0.2, opacity: 0.9 }}><Popup><p className="font-medium">{targetArea.name}</p><p>Zielgebiet</p></Popup></GeoJSON>}
+                {assignment.type === 'letterbox_distribution' && householdTargeting && <AssignmentBuildingsLayer pane={MAP_PANES.buildings} buildings={assignmentBuildings} householdTargeting={householdTargeting} selectedIds={selectedAreaBuildingIds} disabled selectedOnly={householdTargeting === 'selected_buildings'} />}
                 {posterLocations.map((posterLocation) => (
-                  <Marker key={posterLocation.id} position={[posterLocation.lat, posterLocation.lng]} draggable={posterLocationToolsVisible && canManagePosterLocations && can(posterLocation.can?.update)} eventHandlers={{ dragend: (event) => { const latLng = event.target.getLatLng(); updatePosterLocationMutation.mutate({ id: posterLocation.id, data: { lat: latLng.lat, lng: latLng.lng } }) } }}>
+                  <Marker key={posterLocation.id} pane={MAP_PANES.markers} position={[posterLocation.lat, posterLocation.lng]} draggable={posterLocationToolsVisible && canManagePosterLocations && can(posterLocation.can?.update)} eventHandlers={{ dragend: (event) => { const latLng = event.target.getLatLng(); updatePosterLocationMutation.mutate({ id: posterLocation.id, data: { lat: latLng.lat, lng: latLng.lng } }) } }}>
                     <Popup><p className="font-medium">{posterLocation.label ?? `Standort #${posterLocation.id}`}</p><p>{posterLocation.notes ?? '-'}</p><p>Status: {posterLocation.status}</p></Popup>
                   </Marker>
                 ))}

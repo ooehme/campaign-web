@@ -117,6 +117,7 @@ export function AssignmentBuildingsLayer({
   onSelectedIdsChange,
   disabled = false,
   selectedOnly = false,
+  pane,
 }: {
   buildings: AreaBuilding[]
   householdTargeting: AssignmentHouseholdTargeting | undefined
@@ -124,6 +125,7 @@ export function AssignmentBuildingsLayer({
   onSelectedIdsChange?: (ids: number[]) => void
   disabled?: boolean
   selectedOnly?: boolean
+  pane?: string
 }) {
   const interactive = householdTargeting === 'selected_buildings' && !disabled && Boolean(onSelectedIdsChange)
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds])
@@ -156,6 +158,7 @@ export function AssignmentBuildingsLayer({
         return <GeoJSON
           key={`${id ?? index}-${selected}`}
           data={geometry as GeoJSON.GeoJsonObject}
+          pane={pane}
           style={() => buildingStyle(selected, interactive)}
           eventHandlers={{
             click: () => toggleBuilding(building),
@@ -175,6 +178,7 @@ export function AssignmentBuildingsLayer({
         key={`${id ?? index}-${selected}`}
         center={point}
         radius={selected ? 6 : 4}
+        pane={pane}
         pathOptions={buildingStyle(selected, interactive)}
         eventHandlers={{ click: () => toggleBuilding(building) }}
       >{popup}</CircleMarker> : null
