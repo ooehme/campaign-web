@@ -14,6 +14,7 @@ import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import { MAP_ATTRIBUTION, MAP_TILE_URL, POSTER_LOCATION_STATUSES } from '../utils/constants'
 import { assignmentStatusLabel, assignmentTypeLabel } from '../utils/assignment'
 import { assignmentBoundaryAreaId, getGeometryFromAreaGeoJson } from '../utils/campaignAreaMap'
+import { posterLocationIcon } from '../utils/mapIcons'
 import { can, canPermission, NO_PERMISSION_MESSAGE, permissionErrorMessage } from '../utils/permissions'
 import { PERMISSIONS } from '../utils/permissionKeys'
 import type { Area, AreaBuilding, Assignment, AssignmentBuilding, AssignmentHouseholdTargeting, AssignmentTypeConfig, LetterboxDistributionConfig, PosterLocation } from '../types/models'
@@ -368,7 +369,7 @@ export function AssignmentDetailPage() {
                 {targetArea && targetGeometry && <GeoJSON pane={MAP_PANES.target} data={targetGeometry as GeoJSON.GeoJsonObject} style={{ color: '#0f766e', weight: 2, fillColor: '#14b8a6', fillOpacity: 0.2, opacity: 0.9 }}><Popup><p className="font-medium">{targetArea.name}</p><p>Zielgebiet</p></Popup></GeoJSON>}
                 {assignment.type === 'letterbox_distribution' && householdTargeting && <AssignmentBuildingsLayer pane={MAP_PANES.buildings} buildings={assignmentBuildings} householdTargeting={householdTargeting} selectedIds={selectedAreaBuildingIds} disabled selectedOnly={householdTargeting === 'selected_buildings'} />}
                 {posterLocations.map((posterLocation) => (
-                  <Marker key={posterLocation.id} pane={MAP_PANES.markers} position={[posterLocation.lat, posterLocation.lng]} draggable={posterLocationToolsVisible && canManagePosterLocations && can(posterLocation.can?.update)} eventHandlers={{ dragend: (event) => { const latLng = event.target.getLatLng(); updatePosterLocationMutation.mutate({ id: posterLocation.id, data: { lat: latLng.lat, lng: latLng.lng } }) } }}>
+                  <Marker key={posterLocation.id} pane={MAP_PANES.markers} position={[posterLocation.lat, posterLocation.lng]} icon={posterLocationIcon} draggable={posterLocationToolsVisible && canManagePosterLocations && can(posterLocation.can?.update)} eventHandlers={{ dragend: (event) => { const latLng = event.target.getLatLng(); updatePosterLocationMutation.mutate({ id: posterLocation.id, data: { lat: latLng.lat, lng: latLng.lng } }) } }}>
                     <Popup><p className="font-medium">{posterLocation.label ?? `Standort #${posterLocation.id}`}</p><p>{posterLocation.notes ?? '-'}</p><p>Status: {posterLocation.status}</p></Popup>
                   </Marker>
                 ))}

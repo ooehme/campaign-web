@@ -13,6 +13,7 @@ import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import { ASSIGNMENT_STATUSES, MAP_ATTRIBUTION, MAP_TILE_URL, POSTER_LOCATION_STATUSES } from '../utils/constants'
 import { assignmentStatusLabel, assignmentTypeLabel } from '../utils/assignment'
 import { getAreaGeometryBoundsSafely, getAreaUsageOptions, getGeometryFromAreaGeoJson } from '../utils/campaignAreaMap'
+import { posterLocationIcon } from '../utils/mapIcons'
 import { can, canPermission, NO_PERMISSION_MESSAGE, permissionErrorMessage } from '../utils/permissions'
 import { PERMISSIONS } from '../utils/permissionKeys'
 import type { Area, Assignment, AssignmentBuilding, AssignmentHouseholdTargeting, LetterboxDistributionConfig, PosterLocation, PosterLocationStatus } from '../types/models'
@@ -147,6 +148,7 @@ function GuidedPosterLocationEditor({
             <Marker
               key={posterLocation.id}
               position={[posterLocation.lat, posterLocation.lng]}
+              icon={posterLocationIcon}
               draggable={!disabled && can(posterLocation.can?.update ?? true)}
               eventHandlers={{
                 dragend: (event) => {

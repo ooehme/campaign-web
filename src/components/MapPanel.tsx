@@ -2,6 +2,7 @@ import { GeoJSON, MapContainer, Marker, Popup, TileLayer } from 'react-leaflet'
 import type { Area, Assignment } from '../types/models'
 import { MAP_ATTRIBUTION, MAP_TILE_URL } from '../utils/constants'
 import { getGeometryFromAreaGeoJson } from '../utils/campaignAreaMap'
+import { posterLocationIcon } from '../utils/mapIcons'
 
 const DEFAULT_CENTER: [number, number] = [51.1657, 10.4515]
 
@@ -14,7 +15,7 @@ export function MapPanel({ assignments, areas }: { assignments: Assignment[]; ar
       <MapContainer center={center} zoom={6} className="h-full w-full">
         <TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} />
         {posterLocations.map((posterLocation) => (
-          <Marker key={posterLocation.id} position={[posterLocation.lat, posterLocation.lng]}>
+          <Marker key={posterLocation.id} position={[posterLocation.lat, posterLocation.lng]} icon={posterLocationIcon}>
             <Popup>
               <strong>{posterLocation.label ?? posterLocation.assignmentTitle}</strong>
               <br />
