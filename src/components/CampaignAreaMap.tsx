@@ -69,7 +69,7 @@ export function CampaignAreaMap({ areas, assignments = [], mapGeoJson, isLoading
     area: target,
     center: areaCenter(target),
     assignments: assignmentsByTargetAreaId.get(target.id) ?? [],
-  })).filter((entry): entry is { area: Area; center: [number, number]; assignments: Assignment[] } => entry.center != null), [targets, assignmentsByTargetAreaId])
+  })).filter((entry): entry is { area: Area; center: [number, number]; assignments: Assignment[] } => entry.center != null && entry.assignments.length > 0), [targets, assignmentsByTargetAreaId])
 
   if (isLoading) {
     return <div className="rounded border bg-white p-4 space-y-2"><h2 className="font-medium">Karte</h2><p className="text-sm text-slate-600">Kartenflächen werden geladen...</p></div>
@@ -105,16 +105,14 @@ export function CampaignAreaMap({ areas, assignments = [], mapGeoJson, isLoading
                   <p className="font-medium">{area.name}</p>
                   <p className="text-slate-600">{areaAssignments.length} Aufträge</p>
                 </div>
-                {areaAssignments.length === 0
-                  ? <p className="text-slate-600">Keine Aufträge für dieses Zielgebiet.</p>
-                  : <div className="space-y-1">
-                    {areaAssignments.map((assignment) => (
-                      <div key={assignment.id} className="border-t pt-1">
-                        <Link className="font-medium text-blue-600" to={`/assignments/${assignment.id}`}>{assignment.title}</Link>
-                        <p className="text-xs text-slate-600">{assignmentTypeLabel[assignment.type]} · {assignmentStatusLabel[assignment.status]}</p>
-                      </div>
-                    ))}
-                  </div>}
+                <div className="space-y-1">
+                  {areaAssignments.map((assignment) => (
+                    <div key={assignment.id} className="border-t pt-1">
+                      <Link className="font-medium text-blue-600" to={`/assignments/${assignment.id}`}>{assignment.title}</Link>
+                      <p className="text-xs text-slate-600">{assignmentTypeLabel[assignment.type]} · {assignmentStatusLabel[assignment.status]}</p>
+                    </div>
+                  ))}
+                </div>
                 <Link className="text-blue-600" to={`/areas/${area.id}`}>Zur Flächendetailseite</Link>
               </div>
             </Popup>

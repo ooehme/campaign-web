@@ -117,7 +117,7 @@ export function CampaignDetailPage() {
     </div>
 
     <div className="rounded border bg-white p-4">
-      <details>
+      <details open>
         <summary className="cursor-pointer font-medium">Karte</summary>
         <div className="mt-3">
           <CampaignAreaMap areas={assignedAreas} assignments={assignments} mapGeoJson={campaignAreasMapQuery.data} isLoading={assignedAreasQuery.isLoading} errorMessage={assignedAreasQuery.isError || campaignAreasMapQuery.isError ? `Karten-/Flächendaten konnten nicht geladen werden: ${message(assignedAreasQuery.error ?? campaignAreasMapQuery.error)}` : null} />
