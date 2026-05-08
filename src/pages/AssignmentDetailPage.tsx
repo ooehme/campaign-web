@@ -76,11 +76,15 @@ const assignmentAreaBuildingIds = (assignment: Assignment) => {
 const assignmentAreaBuildings = (assignment: Assignment): AreaBuilding[] => {
   if (Array.isArray(assignment.area_buildings)) return assignment.area_buildings
   if (Array.isArray(assignment.assignment_buildings)) {
-    return assignment.assignment_buildings.flatMap((entry) => {
-      if ('area_building' in entry && entry.area_building) return [entry.area_building]
-      if (isAreaBuilding(entry)) return [entry]
-      return []
-    })
+    const buildings: AreaBuilding[] = []
+    for (const entry of assignment.assignment_buildings) {
+      if ('area_building' in entry && entry.area_building) {
+        buildings.push(entry.area_building)
+      } else if (isAreaBuilding(entry)) {
+        buildings.push(entry)
+      }
+    }
+    return buildings
   }
   return []
 }
