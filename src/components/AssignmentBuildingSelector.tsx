@@ -36,8 +36,10 @@ const getBuildingType = (building: AreaBuilding) =>
   ?? stringValue(building.properties?.building)
   ?? stringValue(building.properties?.['building:use'])
   ?? '-'
-const getAddress = (building: AreaBuilding) =>
-  stringValue(building.label) ?? [getStreet(building), getHouseNumber(building)].filter((value) => value && value !== '-').join(' ') || '-'
+const getAddress = (building: AreaBuilding) => {
+  const address = [getStreet(building), getHouseNumber(building)].filter((value) => value && value !== '-').join(' ')
+  return stringValue(building.label) ?? (address || '-')
+}
 
 const getBuildingGeometry = (building: AreaBuilding): GeoJsonInput | null => {
   const geometry = building.geojson ?? building.geometry
