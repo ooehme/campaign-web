@@ -1,11 +1,12 @@
 import { useMemo } from 'react'
-import { GeoJSON, MapContainer, Popup, TileLayer } from 'react-leaflet'
+import { CircleMarker, GeoJSON, MapContainer, Popup, TileLayer, Tooltip } from 'react-leaflet'
 import { Link } from 'react-router-dom'
 import type { PathOptions } from 'leaflet'
-import type { Area, GeoJsonFeatureCollection } from '../types/models'
+import type { Area, Assignment, GeoJsonFeatureCollection } from '../types/models'
 import { getAreaMaskGeometry, getAreaPositions, MAP_PANES, MapLayerPanes, MapMask, MapViewportController } from './MapViewport'
 import { MAP_ATTRIBUTION, MAP_TILE_URL } from '../utils/constants'
 import { getAreaGeometryBoundsSafely, getAreaUsageLabel, isValidPolygonOrMultiPolygon, sanitizeFeatureCollection, splitCampaignAreasByUsage } from '../utils/campaignAreaMap'
+import { assignmentStatusLabel, assignmentTypeLabel } from '../utils/assignment'
 
 const DEFAULT_CENTER: [number, number] = [51.1657, 10.4515]
 
@@ -15,9 +16,33 @@ const areaMapStyles: Record<'boundary' | 'target' | 'unknown', PathOptions> = {
   unknown: { color: '#475569', weight: 2, fillColor: '#94a3b8', fillOpacity: 0.08, opacity: 0.8 },
 }
 
-export function CampaignAreaMap({ areas, mapGeoJson, isLoading, errorMessage }: { areas: Area[]; mapGeoJson?: GeoJsonFeatureCollection | null; isLoading?: boolean; errorMessage?: string | null }) {
+const targetAreaIdFromAssignment = (assignment: Assignment): number | null => {
+  const rawValue = assignment.targetAreaId ?? assignment.target_area_id ?? assignment.target_area?.id ?? (assignment as { area_id?: number | null }).area_id
+  const value = rawValue == null ? null : Number(rawValue)
+  return value != null && Number.isFinite(value) ? value : null
+}
+
+const areaCenter = (area: Area): [number, number] | null => {
+  const positions = getAreaPositions(area)
+  if (positions.length === 0) return null
+
+  const totals = positions.reduce((sum, [lat, lng]) => ({ lat: sum.lat + lat, lng: sum.lng + lng }), { lat: 0, lng: 0 })
+  return [totals.lat / positions.length, totals.lng / positions.length]
+}
+
+export function CampaignAreaMap({ areas, assignments = [], mapGeoJson, isLoading, errorMessage }: { areas: Area[]; assignments?: Assignment[]; mapGeoJson?: GeoJsonFeatureCollection | null; isLoading?: boolean; errorMessage?: string | null }) {
   const { boundaries, targets, unknown } = useMemo(() => splitCampaignAreasByUsage(areas), [areas])
   const boundariesById = useMemo(() => new Map(boundaries.map((boundary) => [boundary.id, boundary.name])), [boundaries])
+  const assignmentsByTargetAreaId = useMemo(() => {
+    const groups = new Map<number, Assignment[]>()
+    assignments.forEach((assignment) => {
+      const targetAreaId = targetAreaIdFromAssignment(assignment)
+      if (targetAreaId == null) return
+      if (!groups.has(targetAreaId)) groups.set(targetAreaId, [])
+      groups.get(targetAreaId)?.push(assignment)
+    })
+    return groups
+  }, [assignments])
 
   const mapFeatures = useMemo(() => {
     const allAreas: Array<{ area: Area; usage: 'boundary' | 'target' | 'unknown' }> = [
@@ -40,20 +65,11 @@ export function CampaignAreaMap({ areas, mapGeoJson, isLoading, errorMessage }: 
   const maskGeometry = useMemo(() => getAreaMaskGeometry(boundaries), [boundaries])
   const sanitizedMapGeoJson = useMemo(() => (mapGeoJson?.type === 'FeatureCollection' ? sanitizeFeatureCollection(mapGeoJson) : null), [mapGeoJson])
 
-  const groupedTargets = useMemo(() => {
-    const groups = new Map<number, Area[]>()
-    const unassigned: Area[] = []
-    targets.forEach((target) => {
-      const boundaryId = target.pivot?.boundary_area_id
-      if (!boundaryId || !boundariesById.has(boundaryId)) {
-        unassigned.push(target)
-        return
-      }
-      if (!groups.has(boundaryId)) groups.set(boundaryId, [])
-      groups.get(boundaryId)?.push(target)
-    })
-    return { groups, unassigned }
-  }, [targets, boundariesById])
+  const targetAssignmentMarkers = useMemo(() => targets.map((target) => ({
+    area: target,
+    center: areaCenter(target),
+    assignments: assignmentsByTargetAreaId.get(target.id) ?? [],
+  })).filter((entry): entry is { area: Area; center: [number, number]; assignments: Assignment[] } => entry.center != null), [targets, assignmentsByTargetAreaId])
 
   if (isLoading) {
     return <div className="rounded border bg-white p-4 space-y-2"><h2 className="font-medium">Karte</h2><p className="text-sm text-slate-600">Kartenflächen werden geladen...</p></div>
@@ -80,20 +96,33 @@ export function CampaignAreaMap({ areas, mapGeoJson, isLoading, errorMessage }: 
             return areaMapStyles[usage]
           }} />
           : mapFeatures.filter((feature) => feature.validGeometry).map((feature) => <GeoJSON key={`${feature.usage}-${feature.area.id}`} pane={feature.usage === 'boundary' ? MAP_PANES.boundary : feature.usage === 'target' ? MAP_PANES.target : MAP_PANES.areas} data={feature.area.geojson as GeoJSON.GeoJsonObject} style={areaMapStyles[feature.usage]}><Popup><div className="space-y-1 text-sm"><p className="font-medium">{feature.area.name}</p><p>{getAreaUsageLabel(feature.usage)}</p>{feature.usage === 'target' && <p>Zugeordnete Begrenzung: {feature.area.pivot?.boundary_area_id ? (boundariesById.get(feature.area.pivot.boundary_area_id) ?? `ID ${feature.area.pivot.boundary_area_id}`) : 'Keine'}</p>}{feature.usage === 'target' && feature.area.pivot?.notes && <p>Notizen: {feature.area.pivot.notes}</p>}<Link className="text-blue-600" to={`/areas/${feature.area.id}`}>Zur Flächendetailseite</Link></div></Popup></GeoJSON>)}
+        {targetAssignmentMarkers.map(({ area, center, assignments: areaAssignments }) => (
+          <CircleMarker key={`assignment-count-${area.id}`} pane={MAP_PANES.markers} center={center} radius={16} pathOptions={{ color: '#0f172a', fillColor: areaAssignments.length > 0 ? '#f97316' : '#64748b', fillOpacity: 0.95, weight: 2 }}>
+            <Tooltip permanent direction="center" className="!border-0 !bg-transparent !p-0 !font-semibold !text-white !shadow-none" opacity={1}>{areaAssignments.length}</Tooltip>
+            <Popup>
+              <div className="min-w-48 space-y-2 text-sm">
+                <div>
+                  <p className="font-medium">{area.name}</p>
+                  <p className="text-slate-600">{areaAssignments.length} Aufträge</p>
+                </div>
+                {areaAssignments.length === 0
+                  ? <p className="text-slate-600">Keine Aufträge für dieses Zielgebiet.</p>
+                  : <div className="space-y-1">
+                    {areaAssignments.map((assignment) => (
+                      <div key={assignment.id} className="border-t pt-1">
+                        <Link className="font-medium text-blue-600" to={`/assignments/${assignment.id}`}>{assignment.title}</Link>
+                        <p className="text-xs text-slate-600">{assignmentTypeLabel[assignment.type]} · {assignmentStatusLabel[assignment.status]}</p>
+                      </div>
+                    ))}
+                  </div>}
+                <Link className="text-blue-600" to={`/areas/${area.id}`}>Zur Flächendetailseite</Link>
+              </div>
+            </Popup>
+          </CircleMarker>
+        ))}
         {hasAnyGeometry && <MapViewportController fitPositions={allBounds} constrainPositions={boundaryBounds.length > 0 ? boundaryBounds : allBounds} maxZoom={15} />}
       </MapContainer>
       {!hasAnyGeometry && <div className="p-3 text-sm text-slate-600">Keine Kartenflächen für diese Kampagne vorhanden.</div>}
-    </div>
-
-    <div className="grid gap-3 md:grid-cols-2 text-sm">
-      <div>
-        <h3 className="font-medium">Begrenzungen</h3>
-        {boundaries.map((boundary) => <div key={boundary.id} className="mt-2 rounded border p-2"><p className="font-medium">{boundary.name}</p>{(groupedTargets.groups.get(boundary.id) ?? []).map((target) => <p key={target.id}>- Zielgebiet: {target.name}</p>)}</div>)}
-      </div>
-      <div>
-        <h3 className="font-medium">Zielgebiete ohne zugeordnete Begrenzung</h3>
-        {groupedTargets.unassigned.length === 0 ? <p className="text-slate-500">Keine</p> : groupedTargets.unassigned.map((target) => <p key={target.id}>- {target.name}</p>)}
-      </div>
     </div>
   </div>
 }

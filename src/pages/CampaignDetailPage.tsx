@@ -5,7 +5,6 @@ import { ApiError } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import { CampaignAreaMap } from '../components/CampaignAreaMap'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
-import { splitCampaignAreasByUsage } from '../utils/campaignAreaMap'
 import { can } from '../utils/permissions'
 import { assignedTeamId, assignmentStatusLabel, assignmentTypeLabel, isAssignedToLeadTeam, isClosedAssignment, leadTeamsByAssignedCampaign, leadTeamsFromCampaignTeams, uniqueTeams } from '../utils/assignment'
 import type { Assignment, UserTeam } from '../types/models'
@@ -61,7 +60,6 @@ export function CampaignDetailPage() {
 
   const campaign = campaignQuery.data
   const assignedAreas = assignedAreasQuery.data?.data ?? []
-  const { boundaries: boundaryAreas, targets: targetAreas, unknown: unknownAreas } = splitCampaignAreasByUsage(assignedAreas)
   const assignedTeams = assignedTeamsQuery.data?.data ?? []
   const teamDetails = teamDetailsQuery.data ?? []
   const assignments = assignmentsQuery.data?.data ?? []
@@ -122,25 +120,9 @@ export function CampaignDetailPage() {
       <details>
         <summary className="cursor-pointer font-medium">Karte</summary>
         <div className="mt-3">
-          <CampaignAreaMap areas={assignedAreas} mapGeoJson={campaignAreasMapQuery.data} isLoading={assignedAreasQuery.isLoading} errorMessage={assignedAreasQuery.isError || campaignAreasMapQuery.isError ? `Karten-/Flächendaten konnten nicht geladen werden: ${message(assignedAreasQuery.error ?? campaignAreasMapQuery.error)}` : null} />
+          <CampaignAreaMap areas={assignedAreas} assignments={assignments} mapGeoJson={campaignAreasMapQuery.data} isLoading={assignedAreasQuery.isLoading} errorMessage={assignedAreasQuery.isError || campaignAreasMapQuery.isError ? `Karten-/Flächendaten konnten nicht geladen werden: ${message(assignedAreasQuery.error ?? campaignAreasMapQuery.error)}` : null} />
         </div>
       </details>
-    </div>
-
-    <div className="grid gap-4 md:grid-cols-2">
-      <div className="rounded border bg-white p-4 space-y-3">
-        <h2 className="font-medium">Zugewiesene Fläche</h2>
-        {assignedAreasQuery.isLoading && <LoadingState />}
-        {assignedAreasQuery.isError && <ErrorState message={message(assignedAreasQuery.error)} />}
-        {boundaryAreas.length === 0 && <EmptyState message="Noch keine Kampagnenfläche zugewiesen." />}
-        {boundaryAreas.map((area) => <div key={area.id} className="rounded border p-2 text-sm"><Link className="font-medium text-blue-600" to={`/areas/${area.id}`}>{area.name}</Link><p className="text-slate-500">Flächen-ID: {area.id}</p></div>)}
-      </div>
-      <div className="rounded border bg-white p-4 space-y-3">
-        <h2 className="font-medium">Zielgebiete</h2>
-        {targetAreas.length === 0 && <EmptyState message="Noch keine Zielgebiete zugewiesen." />}
-        {targetAreas.map((area) => <div key={area.id} className="rounded border p-2 text-sm"><Link className="font-medium text-blue-600" to={`/areas/${area.id}`}>{area.name}</Link>{area.pivot?.notes && <p className="text-slate-500">Notizen: {area.pivot.notes}</p>}</div>)}
-        {unknownAreas.length > 0 && <p className="text-sm text-amber-700">Einige Flächen haben keine Nutzungsart.</p>}
-      </div>
     </div>
 
     <div className="rounded border bg-white p-4 space-y-3">
