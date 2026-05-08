@@ -134,6 +134,8 @@ export interface AreaBuilding {
   area_id?: number
   osm_type?: string | null
   osm_id?: number | string | null
+  label?: string | null
+  building_type?: string | null
   geometry?: GeoJsonInput | null
   geojson?: GeoJsonInput | null
   centroid?: GeoJsonInput | null
@@ -148,6 +150,19 @@ export interface AreaBuilding {
   addr_street?: string | null
   city?: string | null
   addr_city?: string | null
+  address?: {
+    city?: string | null
+    street?: string | null
+    country?: string | null
+    postcode?: string | null
+    housenumber?: string | null
+    [key: string]: unknown
+  } | null
+  metadata?: {
+    source?: string | null
+    osm_tags?: Record<string, unknown> | null
+    [key: string]: unknown
+  } | null
   properties?: Record<string, unknown> | null
   [key: string]: unknown
 }

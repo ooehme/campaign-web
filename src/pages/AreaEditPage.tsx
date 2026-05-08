@@ -78,6 +78,8 @@ export function AreaEditPage() {
   const [fitTrigger, setFitTrigger] = useState(0)
   const [editActive, setEditActive] = useState(false)
   const [drawMode, setDrawMode] = useState(false)
+  const [focusedBuildingId, setFocusedBuildingId] = useState<number | null>(null)
+  const [buildingFocusKey, setBuildingFocusKey] = useState(0)
 
   const parsedResult = useMemo(() => normalizeGeoJsonInput(geojsonText), [geojsonText])
   const editableGeometry = useMemo<GeoJsonGeometry | null>(() => {
@@ -256,7 +258,7 @@ export function AreaEditPage() {
             fillOpacity: 0.2,
           })}
         />}
-        <AreaBuildingsLayer buildings={buildings} />
+        <AreaBuildingsLayer buildings={buildings} focusedBuildingId={focusedBuildingId} focusKey={buildingFocusKey} />
         <EditMapClicks enabled={false} onAdd={() => {}} />
         {shouldRenderEditHandles && vertices.map((vertex) => <CircleMarker
             key={`${vertex.geometryType}-${vertex.polygonIndex}-${vertex.ringIndex}-${vertex.vertexIndex}-${vertex.coordinate[0]}-${vertex.coordinate[1]}`}
@@ -330,6 +332,11 @@ export function AreaEditPage() {
       area={area}
       hasValidPolygon={hasValidImportPolygon}
       disabledReason={hasUnsavedChanges ? 'Fläche zuerst speichern, damit der Import das aktuelle Zielgebiet verwendet.' : undefined}
+      focusedBuildingId={focusedBuildingId}
+      onBuildingFocus={(building) => {
+        setFocusedBuildingId(building.id ?? null)
+        setBuildingFocusKey((value) => value + 1)
+      }}
     />
 
     <div className="flex gap-2">

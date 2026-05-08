@@ -13,13 +13,31 @@ import { NO_PERMISSION_MESSAGE } from '../utils/permissions'
 const DEFAULT_CENTER: [number, number] = [51.1657, 10.4515]
 
 const getBuildingId = (building: AreaBuilding) => typeof building.id === 'number' ? building.id : null
+const stringValue = (value: unknown) => typeof value === 'string' || typeof value === 'number' ? String(value) : undefined
 const getHouseNumber = (building: AreaBuilding) =>
-  building.housenumber ?? building.house_number ?? building.addr_housenumber ?? building.properties?.['addr:housenumber'] ?? '-'
+  stringValue(building.address?.housenumber)
+  ?? stringValue(building.housenumber)
+  ?? stringValue(building.house_number)
+  ?? stringValue(building.addr_housenumber)
+  ?? stringValue(building.metadata?.osm_tags?.['addr:housenumber'])
+  ?? stringValue(building.properties?.['addr:housenumber'])
+  ?? '-'
 const getStreet = (building: AreaBuilding) =>
-  building.street ?? building.addr_street ?? building.properties?.['addr:street'] ?? ''
+  stringValue(building.address?.street)
+  ?? stringValue(building.street)
+  ?? stringValue(building.addr_street)
+  ?? stringValue(building.metadata?.osm_tags?.['addr:street'])
+  ?? stringValue(building.properties?.['addr:street'])
+  ?? ''
 const getBuildingType = (building: AreaBuilding) =>
-  building.building_type ?? building.type ?? building.properties?.building ?? building.properties?.['building:use'] ?? '-'
-const getAddress = (building: AreaBuilding) => [getStreet(building), getHouseNumber(building)].filter((value) => value && value !== '-').join(' ') || '-'
+  stringValue(building.building_type)
+  ?? stringValue(building.type)
+  ?? stringValue(building.metadata?.osm_tags?.building)
+  ?? stringValue(building.properties?.building)
+  ?? stringValue(building.properties?.['building:use'])
+  ?? '-'
+const getAddress = (building: AreaBuilding) =>
+  stringValue(building.label) ?? [getStreet(building), getHouseNumber(building)].filter((value) => value && value !== '-').join(' ') || '-'
 
 const getBuildingGeometry = (building: AreaBuilding): GeoJsonInput | null => {
   const geometry = building.geojson ?? building.geometry

@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { GeoJSON, MapContainer, TileLayer, useMap } from 'react-leaflet'
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
@@ -29,6 +29,8 @@ export function AreaDetailPage() {
   const id = Number(areaId)
   const qc = useQueryClient()
   const navigate = useNavigate()
+  const [focusedBuildingId, setFocusedBuildingId] = useState<number | null>(null)
+  const [buildingFocusKey, setBuildingFocusKey] = useState(0)
   const areaQuery = useQuery({ queryKey: ['area', id], queryFn: () => getArea(id), enabled: Number.isFinite(id) })
 
   const remove = useMutation({
@@ -85,11 +87,19 @@ export function AreaDetailPage() {
     <div className="rounded border bg-white p-4 space-y-2">
       <details>
         <summary className="cursor-pointer font-medium">Kartenvorschau</summary>
-        <div className="mt-3">{summary.valid && bounds && geometry ? <div className="h-80 overflow-hidden rounded border"><MapContainer center={DEFAULT_CENTER} zoom={6} className="h-full w-full"><TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} /><FitBounds bounds={bounds} /><GeoJSON data={geometry as GeoJSON.GeoJsonObject} /><AreaBuildingsLayer buildings={buildings} /></MapContainer></div> : <p className="text-sm text-slate-700">Keine darstellbare GeoJSON-Geometrie vorhanden (Polygon/MultiPolygon erwartet).</p>}</div>
+        <div className="mt-3">{summary.valid && bounds && geometry ? <div className="h-80 overflow-hidden rounded border"><MapContainer center={DEFAULT_CENTER} zoom={6} className="h-full w-full"><TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} /><FitBounds bounds={bounds} /><GeoJSON data={geometry as GeoJSON.GeoJsonObject} /><AreaBuildingsLayer buildings={buildings} focusedBuildingId={focusedBuildingId} focusKey={buildingFocusKey} /></MapContainer></div> : <p className="text-sm text-slate-700">Keine darstellbare GeoJSON-Geometrie vorhanden (Polygon/MultiPolygon erwartet).</p>}</div>
       </details>
     </div>
 
-    <AreaBuildingsImport area={area} hasValidPolygon={summary.valid && Boolean(bounds)} />
+    <AreaBuildingsImport
+      area={area}
+      hasValidPolygon={summary.valid && Boolean(bounds)}
+      focusedBuildingId={focusedBuildingId}
+      onBuildingFocus={(building) => {
+        setFocusedBuildingId(building.id ?? null)
+        setBuildingFocusKey((value) => value + 1)
+      }}
+    />
 
     <div className="rounded border bg-white p-4"><details><summary className="cursor-pointer font-medium">GeoJSON</summary><pre className="mt-2 max-h-80 overflow-auto rounded border bg-slate-50 p-3 text-xs">{prettyGeoJson}</pre></details></div>
 

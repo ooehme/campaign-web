@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CircleMarker, GeoJSON } from 'react-leaflet'
+import L from 'leaflet'
+import { CircleMarker, GeoJSON, useMap } from 'react-leaflet'
 import { ApiError } from '../api/client'
 import { importAreaBuildingsFromOsm, listAreaBuildings } from '../api/endpoints'
 import type { Area, AreaBuilding, GeoJsonInput } from '../types/models'
@@ -13,6 +14,8 @@ const buildingKey = (building: AreaBuilding, index = 0) =>
 
 const normalizeBuildings = (area?: Area | null): AreaBuilding[] =>
   (area?.area_buildings ?? area?.buildings ?? []) as AreaBuilding[]
+
+const stringValue = (value: unknown) => typeof value === 'string' || typeof value === 'number' ? String(value) : undefined
 
 export const useAreaBuildings = (areaId?: number) => useQuery({
   queryKey: ['area-buildings', areaId],
@@ -30,6 +33,17 @@ const getBuildingGeometry = (building: AreaBuilding): GeoJsonInput | null => {
     : null
 }
 
+const getBuildingBounds = (building?: AreaBuilding | null) => {
+  const geometry = building ? getBuildingGeometry(building) : null
+  if (!geometry) return null
+  try {
+    const bounds = L.geoJSON(geometry as GeoJSON.GeoJsonObject).getBounds()
+    return bounds.isValid() ? bounds : null
+  } catch {
+    return null
+  }
+}
+
 const getBuildingPoint = (building: AreaBuilding): [number, number] | null => {
   const latValue = building.lat ?? building.latitude
   const lngValue = building.lng ?? building.longitude
@@ -39,10 +53,35 @@ const getBuildingPoint = (building: AreaBuilding): [number, number] | null => {
 }
 
 const getHouseNumber = (building: AreaBuilding) =>
-  building.housenumber ?? building.house_number ?? building.addr_housenumber ?? building.properties?.['addr:housenumber'] ?? 'ohne Nr.'
+  stringValue(building.address?.housenumber)
+  ?? stringValue(building.housenumber)
+  ?? stringValue(building.house_number)
+  ?? stringValue(building.addr_housenumber)
+  ?? stringValue(building.metadata?.osm_tags?.['addr:housenumber'])
+  ?? stringValue(building.properties?.['addr:housenumber'])
+  ?? 'ohne Nr.'
 
 const getStreet = (building: AreaBuilding) =>
-  building.street ?? building.addr_street ?? building.properties?.['addr:street'] ?? ''
+  stringValue(building.address?.street)
+  ?? stringValue(building.street)
+  ?? stringValue(building.addr_street)
+  ?? stringValue(building.metadata?.osm_tags?.['addr:street'])
+  ?? stringValue(building.properties?.['addr:street'])
+  ?? ''
+
+const getPostcode = (building: AreaBuilding) =>
+  stringValue(building.address?.postcode)
+  ?? stringValue(building.metadata?.osm_tags?.['addr:postcode'])
+  ?? stringValue(building.properties?.['addr:postcode'])
+  ?? ''
+
+const getCity = (building: AreaBuilding) =>
+  stringValue(building.address?.city)
+  ?? stringValue(building.city)
+  ?? stringValue(building.addr_city)
+  ?? stringValue(building.metadata?.osm_tags?.['addr:city'])
+  ?? stringValue(building.properties?.['addr:city'])
+  ?? ''
 
 const formatImportError = (error: unknown) => {
   if (!(error instanceof ApiError)) return 'Gebäude konnten nicht aus OSM importiert werden.'
@@ -65,8 +104,31 @@ const mergeBuildings = (existing: AreaBuilding[], imported: AreaBuilding[]) => {
   return Array.from(byKey.values())
 }
 
-export function AreaBuildingsLayer({ buildings }: { buildings: AreaBuilding[] }) {
+function FocusBuilding({ building, focusKey }: { building?: AreaBuilding | null; focusKey?: number }) {
+  const map = useMap()
+
+  useEffect(() => {
+    if (!building) return
+    const bounds = getBuildingBounds(building)
+    if (bounds) {
+      map.fitBounds(bounds, { padding: [32, 32], maxZoom: 19 })
+      return
+    }
+    const point = getBuildingPoint(building)
+    if (point) map.setView(point, Math.max(map.getZoom(), 18))
+  }, [building, focusKey, map])
+
+  return null
+}
+
+export function AreaBuildingsLayer({ buildings, focusedBuildingId, focusKey }: { buildings: AreaBuilding[]; focusedBuildingId?: number | null; focusKey?: number }) {
+  const focusedBuilding = useMemo(
+    () => buildings.find((building) => building.id === focusedBuildingId) ?? null,
+    [buildings, focusedBuildingId],
+  )
+
   return <>
+    <FocusBuilding building={focusedBuilding} focusKey={focusKey} />
     {buildings.map((building, index) => {
       const geometry = getBuildingGeometry(building)
       if (geometry) {
@@ -92,10 +154,14 @@ export function AreaBuildingsImport({
   area,
   hasValidPolygon,
   disabledReason,
+  focusedBuildingId,
+  onBuildingFocus,
 }: {
   area: Area
   hasValidPolygon: boolean
   disabledReason?: string
+  focusedBuildingId?: number | null
+  onBuildingFocus?: (building: AreaBuilding) => void
 }) {
   const qc = useQueryClient()
   const [successMessage, setSuccessMessage] = useState('')
@@ -154,13 +220,19 @@ export function AreaBuildingsImport({
       <div className="max-h-64 overflow-auto rounded border">
         <table className="w-full text-left text-sm">
           <thead className="bg-slate-50 text-slate-600">
-            <tr><th className="p-2">Hausnummer</th><th className="p-2">Straße</th><th className="p-2">OSM</th></tr>
+            <tr><th className="p-2">Straße</th><th className="p-2">Hausnummer</th><th className="p-2">PLZ</th><th className="p-2">Ort</th><th className="p-2">OSM</th></tr>
           </thead>
           <tbody>
             {buildings.map((building, index) => (
-              <tr key={buildingKey(building, index)} className="border-t">
-                <td className="p-2">{String(getHouseNumber(building))}</td>
-                <td className="p-2">{String(getStreet(building) || '—')}</td>
+              <tr
+                key={buildingKey(building, index)}
+                className={`border-t ${building.id === focusedBuildingId ? 'bg-blue-50' : 'hover:bg-slate-50'} ${onBuildingFocus ? 'cursor-pointer' : ''}`}
+                onClick={() => onBuildingFocus?.(building)}
+              >
+                <td className="p-2">{getStreet(building) || '—'}</td>
+                <td className="p-2">{getHouseNumber(building)}</td>
+                <td className="p-2">{getPostcode(building) || '—'}</td>
+                <td className="p-2">{getCity(building) || '—'}</td>
                 <td className="p-2">{building.osm_type && building.osm_id ? `${building.osm_type}/${building.osm_id}` : '—'}</td>
               </tr>
             ))}
