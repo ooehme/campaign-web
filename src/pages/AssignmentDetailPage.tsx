@@ -179,7 +179,12 @@ function ConstrainMapBounds({ area }: { area?: Area | null }) {
     const positions = areaPositions(area)
     if (positions.length === 0) return
     const bounds = latLngBounds(positions).pad(0.18)
+    const previousMinZoom = map.getMinZoom()
     map.setMaxBounds(bounds)
+    map.setMinZoom(map.getBoundsZoom(bounds, false))
+    return () => {
+      map.setMinZoom(previousMinZoom)
+    }
   }, [area, map])
   return null
 }
