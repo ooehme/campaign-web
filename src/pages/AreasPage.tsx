@@ -46,6 +46,16 @@ const getAssignmentCampaignLabel = (assignment?: AreaAssignmentRef) => {
   return null
 }
 
+const getAreaBuildingCount = (area: Area) => {
+  const embeddedCount = area.area_buildings?.length ?? area.buildings?.length
+  return embeddedCount ?? area.building_count ?? 0
+}
+
+const getAreaBuildingStatus = (area: Area) => {
+  const count = getAreaBuildingCount(area)
+  return count > 0 ? `Gebäude erfasst: ${count}` : 'Gebäude noch nicht erfasst'
+}
+
 function AreaCard({ area, assignment, onDelete }: { area: Area; assignment?: AreaAssignmentRef; onDelete: (area: Area) => void }) {
   const assignments = getEffectiveAssignments(area)
   const usageLabels = assignments
@@ -71,7 +81,7 @@ function AreaCard({ area, assignment, onDelete }: { area: Area; assignment?: Are
         </div>
         <p className="text-xs text-slate-600">{usageLabel}</p>
         {campaignLabel && <p className="text-xs text-slate-500">Kampagne: {campaignLabel}</p>}
-        <p className="line-clamp-2 text-xs text-slate-500">GeoJSON: {area.geojson ? JSON.stringify(area.geojson).slice(0, 120) : 'Keine Geometrie'}</p>
+        <p className="text-xs text-slate-500">{getAreaBuildingStatus(area)}</p>
       </div>
       <div className="mt-3 flex flex-wrap gap-2">
         <Link
