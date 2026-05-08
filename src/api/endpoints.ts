@@ -1,5 +1,5 @@
 import { ApiError, apiRequest } from './client'
-import type { Area, AreaBuilding, Assignment, GeoJsonFeatureCollection, RolePermissionMatrixResponse, RolePermissionUpdatePayload, PaginatedResponse, PosterLocation, Team, TeamInvitation, TeamMembershipPayload, User, UserTeam, Campaign } from '../types/models'
+import type { Area, AreaBuilding, Assignment, AssignmentBuilding, GeoJsonFeatureCollection, RolePermissionMatrixResponse, RolePermissionUpdatePayload, PaginatedResponse, PosterLocation, Team, TeamInvitation, TeamMembershipPayload, User, UserTeam, Campaign } from '../types/models'
 
 export type PaginationParams = { page?: number; per_page?: number }
 export type LoginPayload = { email: string; password: string; device_name?: string }
@@ -102,6 +102,13 @@ export const listCampaignAssignments = (campaignId: number | string, params?: Pa
 export const createCampaignAssignment = (campaignId: number | string, payload: Partial<Assignment>) => apiRequest<Assignment>(`/api/campaigns/${campaignId}/assignments`, { method: 'POST', body: JSON.stringify(payload) })
 export const listTeamAssignments = (teamId: number | string, params?: PaginationParams) => requestPaginated<Assignment>(`/api/teams/${teamId}/assignments${buildQuery(params)}`)
 export const listUserAssignments = (userId: number | string) => requestResource<Assignment[]>(`/api/users/${userId}/assignments`)
+export const listAssignmentBuildings = async (assignmentId: number | string) => {
+  const response = await apiRequest<AssignmentBuilding[] | { data?: AssignmentBuilding[]; assignment_buildings?: AssignmentBuilding[]; buildings?: AssignmentBuilding[] }>(`/api/assignments/${assignmentId}/buildings`)
+  if (response && typeof response === 'object' && 'data' in response) return response.data ?? []
+  if (response && typeof response === 'object' && 'assignment_buildings' in response) return response.assignment_buildings ?? []
+  if (response && typeof response === 'object' && 'buildings' in response) return response.buildings ?? []
+  return Array.isArray(response) ? response : []
+}
 
 export const listPosterLocations = (assignmentId: number | string) => requestResource<PosterLocation[]>(`/api/assignments/${assignmentId}/poster-locations`)
 export const createPosterLocation = (assignmentId: number | string, payload: Partial<PosterLocation>) => apiRequest<PosterLocation>(`/api/assignments/${assignmentId}/poster-locations`, { method: 'POST', body: JSON.stringify(payload) })

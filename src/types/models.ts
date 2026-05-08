@@ -167,6 +167,19 @@ export interface AreaBuilding {
   [key: string]: unknown
 }
 
+export interface AssignmentBuilding {
+  id?: number
+  assignment_id?: number
+  assignmentId?: number
+  area_building_id?: number
+  areaBuildingId?: number
+  area_building?: AreaBuilding
+  areaBuilding?: AreaBuilding
+  status?: string | null
+  notes?: string | null
+  [key: string]: unknown
+}
+
 export interface Assignment {
   id: number
   type: AssignmentType
@@ -203,7 +216,7 @@ export interface Assignment {
   posterLocationCount?: number
   area_building_ids?: number[]
   area_buildings?: AreaBuilding[]
-  assignment_buildings?: Array<AreaBuilding | { area_building?: AreaBuilding; area_building_id?: number; areaBuildingId?: number; id?: number }>
+  assignment_buildings?: Array<AreaBuilding | AssignmentBuilding>
   can?: AssignmentCan
   [key: string]: unknown
 }

@@ -6,16 +6,16 @@ import { Link, useParams } from 'react-router-dom'
 import { z } from 'zod'
 import { GeoJSON, MapContainer, Marker, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet'
 import { ApiError } from '../api/client'
-import { createPosterLocation, deletePosterLocation, getAssignment, listCampaignAreas, listPosterLocations, updatePosterLocation } from '../api/endpoints'
+import { createPosterLocation, deletePosterLocation, getAssignment, listAreaBuildings, listAssignmentBuildings, listCampaignAreas, listPosterLocations, updatePosterLocation } from '../api/endpoints'
 import { useAuth } from '../auth/AuthContext'
-import { AssignmentBuildingSelector } from '../components/AssignmentBuildingSelector'
+import { AssignmentBuildingsLayer } from '../components/AssignmentBuildingSelector'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import { MAP_ATTRIBUTION, MAP_TILE_URL, POSTER_LOCATION_STATUSES } from '../utils/constants'
 import { assignmentStatusLabel, assignmentTypeLabel } from '../utils/assignment'
 import { assignmentBoundaryAreaId, getGeometryFromAreaGeoJson } from '../utils/campaignAreaMap'
 import { can, canPermission, NO_PERMISSION_MESSAGE, permissionErrorMessage } from '../utils/permissions'
 import { PERMISSIONS } from '../utils/permissionKeys'
-import type { Area, AreaBuilding, Assignment, AssignmentHouseholdTargeting, AssignmentTypeConfig, LetterboxDistributionConfig, PosterLocation } from '../types/models'
+import type { Area, AreaBuilding, Assignment, AssignmentBuilding, AssignmentHouseholdTargeting, AssignmentTypeConfig, LetterboxDistributionConfig, PosterLocation } from '../types/models'
 
 const DEFAULT_CENTER: [number, number] = [51.1657, 10.4515]
 
@@ -88,6 +88,20 @@ const assignmentAreaBuildings = (assignment: Assignment): AreaBuilding[] => {
   }
   return []
 }
+const mergeAreaBuildings = (assignmentBuildings: AreaBuilding[], areaBuildings: AreaBuilding[] | undefined) => {
+  const byId = new Map<number, AreaBuilding>()
+  const anonymous: AreaBuilding[] = []
+  for (const building of [...assignmentBuildings, ...(areaBuildings ?? [])]) {
+    const id = areaBuildingId(building)
+    if (id) byId.set(id, building)
+    else anonymous.push(building)
+  }
+  return [...byId.values(), ...anonymous]
+}
+const assignmentBuildingAreaBuildingId = (assignmentBuilding: AssignmentBuilding) =>
+  assignmentBuilding.area_building_id ?? assignmentBuilding.areaBuildingId ?? areaBuildingId(assignmentBuilding.area_building) ?? areaBuildingId(assignmentBuilding.areaBuilding)
+const assignmentBuildingAreaBuilding = (assignmentBuilding: AssignmentBuilding) =>
+  assignmentBuilding.area_building ?? assignmentBuilding.areaBuilding
 
 const dateTimeFormatter = new Intl.DateTimeFormat('de-DE', {
   dateStyle: 'medium',
@@ -159,9 +173,24 @@ export function AssignmentDetailPage() {
   const assignmentQuery = useQuery({ queryKey: ['assignment', id], queryFn: () => getAssignment(id), enabled: Number.isFinite(id) })
   const assignment = assignmentQuery.data
   const assignmentCampaignId = assignment?.campaignId ?? assignment?.campaign_id
+  const assignmentTargetAreaId = assignment?.targetAreaId ?? assignment?.target_area_id
+  const assignmentTypeConfig = assignment?.typeConfig ?? assignment?.type_config
+  const assignmentHouseholdTargeting = isLetterboxConfig(assignmentTypeConfig) ? normalizeHouseholdTargeting(assignmentTypeConfig.householdTargeting) : undefined
   const posterLocationToolsVisible = assignment?.type === 'poster_free' || assignment?.type === 'poster_guided'
   const posterLocationsQuery = useQuery({ queryKey: ['poster-locations', id], queryFn: () => listPosterLocations(id), enabled: Number.isFinite(id) && posterLocationToolsVisible })
   const areasQuery = useQuery({ queryKey: ['campaign-areas', assignmentCampaignId], queryFn: () => listCampaignAreas(assignmentCampaignId!, { per_page: 100 }), enabled: Boolean(assignmentCampaignId) })
+  const areaBuildingsQuery = useQuery({
+    queryKey: ['area-buildings', assignmentTargetAreaId],
+    queryFn: () => listAreaBuildings(assignmentTargetAreaId as number),
+    enabled: Boolean(assignmentTargetAreaId && assignment?.type === 'letterbox_distribution' && assignmentHouseholdTargeting === 'all_households'),
+    retry: false,
+  })
+  const assignmentBuildingsQuery = useQuery({
+    queryKey: ['assignment-buildings', id],
+    queryFn: () => listAssignmentBuildings(id),
+    enabled: Boolean(Number.isFinite(id) && assignment?.type === 'letterbox_distribution' && assignmentHouseholdTargeting === 'selected_buildings'),
+    retry: false,
+  })
 
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: ['assignment', id] })
@@ -190,7 +219,7 @@ export function AssignmentDetailPage() {
 
   const posterLocations = (posterLocationsQuery.data ?? assignment.posterLocations ?? []).slice().sort((a, b) => a.id - b.id)
   const campaignAreas = areasQuery.data?.data ?? []
-  const targetAreaId = assignment.targetAreaId ?? assignment.target_area_id
+  const targetAreaId = assignmentTargetAreaId
   const targetArea = campaignAreas.find((area) => area.id === targetAreaId) ?? assignment.target_area
   const boundaryAreaId = assignment.boundaryAreaId ?? assignment.boundary_area_id ?? assignmentBoundaryAreaId(targetArea?.pivot)
   const boundaryArea = campaignAreas.find((area) => area.id === boundaryAreaId) ?? assignment.boundary_area
@@ -206,10 +235,22 @@ export function AssignmentDetailPage() {
   const updatedAt = assignment.updatedAt ?? assignment.updated_at
   const createdByUserId = assignment.createdByUserId ?? assignment.created_by_user_id
   const targetAreaLabel = areaName(targetArea, targetAreaId) !== '-' ? areaName(targetArea, targetAreaId) : (assignment.targetArea ?? '-')
-  const typeConfig = assignment.typeConfig ?? assignment.type_config
-  const householdTargeting = isLetterboxConfig(typeConfig) ? normalizeHouseholdTargeting(typeConfig.householdTargeting) : undefined
-  const selectedAreaBuildingIds = assignmentAreaBuildingIds(assignment)
+  const householdTargeting = assignmentHouseholdTargeting
+  const linkedAssignmentBuildings = assignmentBuildingsQuery.data ?? []
+  const linkedAreaBuildingIds = linkedAssignmentBuildings.flatMap((assignmentBuilding) => {
+    const id = assignmentBuildingAreaBuildingId(assignmentBuilding)
+    return id ? [id] : []
+  })
+  const selectedAreaBuildingIds = [...new Set([...assignmentAreaBuildingIds(assignment), ...linkedAreaBuildingIds])]
   const selectedAreaBuildings = assignmentAreaBuildings(assignment)
+  const linkedAreaBuildings = linkedAssignmentBuildings.flatMap((assignmentBuilding) => {
+    const building = assignmentBuildingAreaBuilding(assignmentBuilding)
+    return building ? [building] : []
+  })
+  const assignmentBuildings = householdTargeting === 'selected_buildings'
+    ? mergeAreaBuildings(linkedAreaBuildings, selectedAreaBuildings)
+    : mergeAreaBuildings(selectedAreaBuildings, areaBuildingsQuery.data)
+  const visibleAssignmentBuildings = assignmentBuildings
 
   const savePosterLocation = (values: PosterLocationFormValues) => {
     if (photoRequired && values.status === 'installed' && !values.photoUrl?.trim()) {
@@ -266,12 +307,13 @@ export function AssignmentDetailPage() {
           <p className="mb-3 text-xs text-slate-600">Begrenzungsgebiet und Zielgebiet des Auftrags</p>
           {areasQuery.isError && <p className="mb-2 text-sm text-amber-700">Kampagnenflächen konnten nicht geladen werden. Verfügbare Auftragsflächen werden angezeigt.</p>}
           <div className="aspect-square w-full overflow-hidden rounded border">
-            {!boundaryGeometry && !targetGeometry && posterLocations.length === 0 ? <div className="p-3 text-sm text-slate-600">Keine Kartenobjekte für diesen Auftrag vorhanden.</div> : (
+            {!boundaryGeometry && !targetGeometry && posterLocations.length === 0 && visibleAssignmentBuildings.length === 0 ? <div className="p-3 text-sm text-slate-600">Keine Kartenobjekte für diesen Auftrag vorhanden.</div> : (
               <MapContainer center={DEFAULT_CENTER} zoom={6} className="h-full w-full">
                 <TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} />
                 {posterLocationToolsVisible && <MapClickPicker enabled={canCreatePosterLocations} onPick={(lat, lng) => { posterLocationForm.setValue('lat', Number(lat.toFixed(6))); posterLocationForm.setValue('lng', Number(lng.toFixed(6))); setPosterLocationEditorOpen(true) }} />}
                 {boundaryArea && boundaryGeometry && <GeoJSON data={boundaryGeometry as GeoJSON.GeoJsonObject} style={{ color: '#1d4ed8', weight: 5, fillOpacity: 0, opacity: 0.95 }}><Popup><p className="font-medium">{boundaryArea.name}</p><p>Begrenzungsgebiet</p></Popup></GeoJSON>}
                 {targetArea && targetGeometry && <GeoJSON data={targetGeometry as GeoJSON.GeoJsonObject} style={{ color: '#0f766e', weight: 2, fillColor: '#14b8a6', fillOpacity: 0.2, opacity: 0.9 }}><Popup><p className="font-medium">{targetArea.name}</p><p>Zielgebiet</p></Popup></GeoJSON>}
+                {assignment.type === 'letterbox_distribution' && householdTargeting && <AssignmentBuildingsLayer buildings={assignmentBuildings} householdTargeting={householdTargeting} selectedIds={selectedAreaBuildingIds} disabled selectedOnly={householdTargeting === 'selected_buildings'} />}
                 {posterLocations.map((posterLocation) => (
                   <Marker key={posterLocation.id} position={[posterLocation.lat, posterLocation.lng]} draggable={posterLocationToolsVisible && canManagePosterLocations && can(posterLocation.can?.update)} eventHandlers={{ dragend: (event) => { const latLng = event.target.getLatLng(); updatePosterLocationMutation.mutate({ id: posterLocation.id, data: { lat: latLng.lat, lng: latLng.lng } }) } }}>
                     <Popup><p className="font-medium">{posterLocation.label ?? `Standort #${posterLocation.id}`}</p><p>{posterLocation.notes ?? '-'}</p><p>Status: {posterLocation.status}</p></Popup>
@@ -283,19 +325,6 @@ export function AssignmentDetailPage() {
           </div>
         </div>
       </div>
-
-      {assignment.type === 'letterbox_distribution' && targetArea && householdTargeting && (
-        <AssignmentBuildingSelector
-          targetArea={targetArea}
-          householdTargeting={householdTargeting}
-          selectedIds={selectedAreaBuildingIds}
-          onSelectedIdsChange={() => undefined}
-          disabled
-          showImportButton={false}
-          selectedOnly={householdTargeting === 'selected_buildings'}
-          fallbackBuildings={selectedAreaBuildings}
-        />
-      )}
 
       <div className="rounded border bg-white p-4"><h2 className="mb-2 font-medium">Anweisungen</h2>{configInstructions(assignment.typeConfig ?? assignment.type_config).length === 0 ? <p>Keine Anweisungen hinterlegt.</p> : <ul className="list-disc pl-5">{configInstructions(assignment.typeConfig ?? assignment.type_config).map((instruction) => <li key={instruction}>{instruction}</li>)}</ul>}</div>
 

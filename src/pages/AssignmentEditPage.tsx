@@ -5,14 +5,14 @@ import { useForm } from 'react-hook-form'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { z } from 'zod'
 import { ApiError } from '../api/client'
-import { deleteAssignment, getAssignment, listCampaignAreas, listCampaignTeams, updateAssignment } from '../api/endpoints'
+import { deleteAssignment, getAssignment, listAssignmentBuildings, listCampaignAreas, listCampaignTeams, updateAssignment } from '../api/endpoints'
 import { AssignmentBuildingSelector } from '../components/AssignmentBuildingSelector'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import { ASSIGNMENT_STATUSES } from '../utils/constants'
 import { assignmentStatusLabel, assignmentTypeLabel } from '../utils/assignment'
 import { getAreaUsageOptions } from '../utils/campaignAreaMap'
 import { can, NO_PERMISSION_MESSAGE, permissionErrorMessage } from '../utils/permissions'
-import type { Area, Assignment, AssignmentHouseholdTargeting, LetterboxDistributionConfig } from '../types/models'
+import type { Area, Assignment, AssignmentBuilding, AssignmentHouseholdTargeting, LetterboxDistributionConfig } from '../types/models'
 
 const assignmentEditSchema = z.object({
   title: z.string().min(1, 'Titel ist erforderlich.'),
@@ -48,6 +48,8 @@ const normalizeHouseholdTargeting = (value: unknown): AssignmentHouseholdTargeti
   value === 'selected_buildings' ? 'selected_buildings' : 'all_households'
 const areaBuildingId = (value: unknown) =>
   value && typeof value === 'object' && 'id' in value && typeof value.id === 'number' ? value.id : null
+const assignmentBuildingAreaBuildingId = (assignmentBuilding: AssignmentBuilding) =>
+  assignmentBuilding.area_building_id ?? assignmentBuilding.areaBuildingId ?? areaBuildingId(assignmentBuilding.area_building) ?? areaBuildingId(assignmentBuilding.areaBuilding)
 const assignmentAreaBuildingIds = (assignment: Assignment) => {
   if (Array.isArray(assignment.area_building_ids)) return assignment.area_building_ids.filter((id): id is number => Number.isFinite(id))
   if (Array.isArray(assignment.area_buildings)) return assignment.area_buildings.flatMap((building) => typeof building.id === 'number' ? [building.id] : [])
@@ -89,9 +91,17 @@ export function AssignmentEditPage() {
 
   const assignmentQuery = useQuery({ queryKey: ['assignment', id], queryFn: () => getAssignment(id), enabled: Number.isFinite(id), retry: false })
   const assignment = assignmentQuery.data
+  const assignmentTypeConfig = assignment?.typeConfig ?? assignment?.type_config
+  const assignmentHouseholdTargeting = isLetterboxConfig(assignmentTypeConfig) ? normalizeHouseholdTargeting(assignmentTypeConfig.householdTargeting) : undefined
   const campaignId = assignment?.campaignId ?? assignment?.campaign_id
   const areasQuery = useQuery({ queryKey: ['campaign-areas', campaignId], queryFn: () => listCampaignAreas(campaignId!, { per_page: 100 }), enabled: Boolean(campaignId), retry: false })
   const teamsQuery = useQuery({ queryKey: ['campaign-teams', campaignId], queryFn: () => listCampaignTeams(campaignId!, { per_page: 100 }), enabled: Boolean(campaignId), retry: false })
+  const assignmentBuildingsQuery = useQuery({
+    queryKey: ['assignment-buildings', id],
+    queryFn: () => listAssignmentBuildings(id),
+    enabled: Boolean(Number.isFinite(id) && assignment?.type === 'letterbox_distribution' && assignmentHouseholdTargeting === 'selected_buildings'),
+    retry: false,
+  })
   const areas = useMemo(() => areasQuery.data?.data ?? [], [areasQuery.data?.data])
   const boundaryAreaOptions = useMemo(() => getAreaUsageOptions(areas, 'boundary'), [areas])
   const targetAreaOptions = useMemo(() => getAreaUsageOptions(areas, 'target'), [areas])
@@ -104,6 +114,10 @@ export function AssignmentEditPage() {
     const targetAreaId = String(assignment.targetAreaId ?? assignment.target_area_id ?? '')
     const boundaryAreaId = assignment.boundaryAreaId ?? assignment.boundary_area_id ?? boundaryAreaIdForTarget(targetAreaOptions, targetAreaId)
     const typeConfig = assignment.typeConfig ?? assignment.type_config
+    const linkedAreaBuildingIds = (assignmentBuildingsQuery.data ?? []).flatMap((assignmentBuilding) => {
+      const id = assignmentBuildingAreaBuildingId(assignmentBuilding)
+      return id ? [id] : []
+    })
     form.reset({
       title: assignment.title,
       description: String(assignment.description ?? ''),
@@ -115,8 +129,8 @@ export function AssignmentEditPage() {
       dueAt: toDateTimeLocal(assignment.dueAt ?? assignment.due_at),
       householdTargeting: isLetterboxConfig(typeConfig) ? normalizeHouseholdTargeting(typeConfig.householdTargeting) : 'all_households',
     })
-    setAreaBuildingIds(assignmentAreaBuildingIds(assignment))
-  }, [assignment, form, targetAreaOptions])
+    setAreaBuildingIds([...new Set([...assignmentAreaBuildingIds(assignment), ...linkedAreaBuildingIds])])
+  }, [assignment, assignmentBuildingsQuery.data, form, targetAreaOptions])
 
   useEffect(() => {
     const targetAreaId = form.getValues('targetAreaId')
@@ -131,6 +145,7 @@ export function AssignmentEditPage() {
 
   const invalidateAssignment = () => {
     qc.invalidateQueries({ queryKey: ['assignment', id] })
+    qc.invalidateQueries({ queryKey: ['assignment-buildings', id] })
     qc.invalidateQueries({ queryKey: ['assignments'] })
     qc.invalidateQueries({ queryKey: ['dashboard-campaign-assignments'] })
     if (campaignId) qc.invalidateQueries({ queryKey: ['campaign', campaignId] })

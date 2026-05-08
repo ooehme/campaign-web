@@ -110,6 +110,78 @@ function FitBuildingsMap({ targetArea, buildings }: { targetArea: Area; building
   return null
 }
 
+export function AssignmentBuildingsLayer({
+  buildings,
+  householdTargeting,
+  selectedIds,
+  onSelectedIdsChange,
+  disabled = false,
+  selectedOnly = false,
+}: {
+  buildings: AreaBuilding[]
+  householdTargeting: AssignmentHouseholdTargeting | undefined
+  selectedIds: number[]
+  onSelectedIdsChange?: (ids: number[]) => void
+  disabled?: boolean
+  selectedOnly?: boolean
+}) {
+  const interactive = householdTargeting === 'selected_buildings' && !disabled && Boolean(onSelectedIdsChange)
+  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds])
+  const visibleBuildings = selectedOnly ? buildings.filter((building) => {
+    const id = getBuildingId(building)
+    return Boolean(id && selectedSet.has(id))
+  }) : buildings
+  const toggleBuilding = (building: AreaBuilding) => {
+    const id = getBuildingId(building)
+    if (!id || !interactive || !onSelectedIdsChange) return
+    onSelectedIdsChange(selectedSet.has(id) ? selectedIds.filter((entry) => entry !== id) : [...selectedIds, id])
+  }
+
+  return <>
+    {visibleBuildings.map((building, index) => {
+      const id = getBuildingId(building)
+      const selected = Boolean(id && selectedSet.has(id))
+      const geometry = getBuildingGeometry(building)
+      const popup = <Popup>
+        <div className="space-y-1 text-sm">
+          <p className="font-medium">{getAddress(building)}</p>
+          <p>Gebäudetyp: {String(getBuildingType(building))}</p>
+          <p>OSM-ID: {building.osm_type && building.osm_id ? `${building.osm_type}/${building.osm_id}` : '-'}</p>
+          <p>Status: {selected ? 'ausgewählt' : 'nicht ausgewählt'}</p>
+          {householdTargeting === 'selected_buildings' && onSelectedIdsChange && <button type="button" className="mt-1 border px-2 py-1 disabled:opacity-50" disabled={disabled || !id} onClick={() => toggleBuilding(building)}>{selected ? 'Auswahl entfernen' : 'Auswählen'}</button>}
+        </div>
+      </Popup>
+
+      if (geometry) {
+        return <GeoJSON
+          key={`${id ?? index}-${selected}`}
+          data={geometry as GeoJSON.GeoJsonObject}
+          style={() => buildingStyle(selected, interactive)}
+          eventHandlers={{
+            click: () => toggleBuilding(building),
+            mouseover: (event) => {
+              if (interactive) (event.target as Path).setStyle(hoverStyle(selected))
+            },
+            mouseout: (event) => {
+              const layer = event.target as Path
+              layer.setStyle(buildingStyle(selected, interactive))
+            },
+          }}
+        >{popup}</GeoJSON>
+      }
+
+      const point = getBuildingPoint(building)
+      return point ? <CircleMarker
+        key={`${id ?? index}-${selected}`}
+        center={point}
+        radius={selected ? 6 : 4}
+        pathOptions={buildingStyle(selected, interactive)}
+        eventHandlers={{ click: () => toggleBuilding(building) }}
+      >{popup}</CircleMarker> : null
+    })}
+  </>
+}
+
 export function AssignmentBuildingSelector({
   targetArea,
   householdTargeting,
@@ -131,7 +203,6 @@ export function AssignmentBuildingSelector({
 }) {
   const queryClient = useQueryClient()
   const targetAreaId = targetArea?.id
-  const interactive = householdTargeting === 'selected_buildings' && !disabled
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds])
 
   const buildingsQuery = useQuery({
@@ -172,11 +243,6 @@ export function AssignmentBuildingSelector({
     return Boolean(id && selectedSet.has(id))
   }) : buildings
   const targetGeometry = getGeometryFromAreaGeoJson(targetArea.geojson)
-  const toggleBuilding = (building: AreaBuilding) => {
-    const id = getBuildingId(building)
-    if (!id || !interactive) return
-    onSelectedIdsChange(selectedSet.has(id) ? selectedIds.filter((entry) => entry !== id) : [...selectedIds, id])
-  }
 
   return <div className="space-y-3 rounded border bg-slate-50 p-3">
     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -211,47 +277,7 @@ export function AssignmentBuildingSelector({
       <MapContainer center={DEFAULT_CENTER} zoom={6} className="h-full w-full">
         <TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} />
         {targetGeometry && <GeoJSON data={targetGeometry as GeoJSON.GeoJsonObject} style={{ color: '#0f766e', fillColor: '#14b8a6', fillOpacity: 0.12, weight: 2 }} />}
-        {visibleBuildings.map((building, index) => {
-          const id = getBuildingId(building)
-          const selected = Boolean(id && selectedSet.has(id))
-          const geometry = getBuildingGeometry(building)
-          const popup = <Popup>
-            <div className="space-y-1 text-sm">
-              <p className="font-medium">{getAddress(building)}</p>
-              <p>Gebäudetyp: {String(getBuildingType(building))}</p>
-              <p>OSM-ID: {building.osm_type && building.osm_id ? `${building.osm_type}/${building.osm_id}` : '-'}</p>
-              <p>Status: {selected ? 'ausgewählt' : 'nicht ausgewählt'}</p>
-              {householdTargeting === 'selected_buildings' && <button type="button" className="mt-1 border px-2 py-1 disabled:opacity-50" disabled={disabled || !id} onClick={() => toggleBuilding(building)}>{selected ? 'Auswahl entfernen' : 'Auswählen'}</button>}
-            </div>
-          </Popup>
-
-          if (geometry) {
-            return <GeoJSON
-              key={`${id ?? index}-${selected}`}
-              data={geometry as GeoJSON.GeoJsonObject}
-              style={() => buildingStyle(selected, interactive)}
-              eventHandlers={{
-                click: () => toggleBuilding(building),
-                mouseover: (event) => {
-                  if (interactive) (event.target as Path).setStyle(hoverStyle(selected))
-                },
-                mouseout: (event) => {
-                  const layer = event.target as Path
-                  layer.setStyle(buildingStyle(selected, interactive))
-                },
-              }}
-            >{popup}</GeoJSON>
-          }
-
-          const point = getBuildingPoint(building)
-          return point ? <CircleMarker
-            key={`${id ?? index}-${selected}`}
-            center={point}
-            radius={selected ? 6 : 4}
-            pathOptions={buildingStyle(selected, interactive)}
-            eventHandlers={{ click: () => toggleBuilding(building) }}
-          >{popup}</CircleMarker> : null
-        })}
+        <AssignmentBuildingsLayer buildings={buildings} householdTargeting={householdTargeting} selectedIds={selectedIds} onSelectedIdsChange={onSelectedIdsChange} disabled={disabled} selectedOnly={selectedOnly} />
         <FitBuildingsMap targetArea={targetArea} buildings={visibleBuildings} />
       </MapContainer>
     </div>
