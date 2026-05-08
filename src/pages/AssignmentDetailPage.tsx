@@ -8,13 +8,14 @@ import { GeoJSON, MapContainer, Marker, Popup, TileLayer, useMap, useMapEvents }
 import { ApiError } from '../api/client'
 import { createPosterLocation, deletePosterLocation, getAssignment, listCampaignAreas, listPosterLocations, updatePosterLocation } from '../api/endpoints'
 import { useAuth } from '../auth/AuthContext'
+import { AssignmentBuildingSelector } from '../components/AssignmentBuildingSelector'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import { MAP_ATTRIBUTION, MAP_TILE_URL, POSTER_LOCATION_STATUSES } from '../utils/constants'
 import { assignmentStatusLabel, assignmentTypeLabel } from '../utils/assignment'
 import { assignmentBoundaryAreaId, getGeometryFromAreaGeoJson } from '../utils/campaignAreaMap'
 import { can, canPermission, NO_PERMISSION_MESSAGE, permissionErrorMessage } from '../utils/permissions'
 import { PERMISSIONS } from '../utils/permissionKeys'
-import type { Area, Assignment, AssignmentTypeConfig, PosterLocation } from '../types/models'
+import type { Area, AreaBuilding, Assignment, AssignmentHouseholdTargeting, AssignmentTypeConfig, LetterboxDistributionConfig, PosterLocation } from '../types/models'
 
 const DEFAULT_CENTER: [number, number] = [51.1657, 10.4515]
 
@@ -47,6 +48,42 @@ const configInstructions = (config: AssignmentTypeConfig | null | undefined) => 
 const requiresPhotoProof = (assignment: Assignment) => {
   const config = assignment.typeConfig ?? assignment.type_config
   return Boolean(config && 'requirePhotoProof' in config && config.requirePhotoProof)
+}
+
+const isLetterboxConfig = (config: Assignment['typeConfig'] | Assignment['type_config']): config is LetterboxDistributionConfig =>
+  Boolean(config && 'householdTargeting' in config)
+const normalizeHouseholdTargeting = (value: unknown): AssignmentHouseholdTargeting =>
+  value === 'selected_buildings' ? 'selected_buildings' : 'all_households'
+const areaBuildingId = (value: unknown) =>
+  value && typeof value === 'object' && 'id' in value && typeof value.id === 'number' ? value.id : null
+const isAreaBuilding = (value: unknown): value is AreaBuilding =>
+  Boolean(value && typeof value === 'object' && ('area_id' in value || 'geojson' in value || 'geometry' in value))
+const assignmentAreaBuildingIds = (assignment: Assignment) => {
+  if (Array.isArray(assignment.area_building_ids)) return assignment.area_building_ids.filter((buildingId): buildingId is number => Number.isFinite(buildingId))
+  if (Array.isArray(assignment.area_buildings)) return assignment.area_buildings.flatMap((building) => typeof building.id === 'number' ? [building.id] : [])
+  if (Array.isArray(assignment.assignment_buildings)) {
+    return assignment.assignment_buildings.flatMap((entry) => {
+      if ('area_building_id' in entry && Number.isFinite(entry.area_building_id)) return [entry.area_building_id as number]
+      if ('areaBuildingId' in entry && Number.isFinite(entry.areaBuildingId)) return [entry.areaBuildingId as number]
+      const nestedId = areaBuildingId('area_building' in entry ? entry.area_building : undefined)
+      if (nestedId) return [nestedId]
+      const directId = areaBuildingId(entry)
+      return directId ? [directId] : []
+    })
+  }
+  return []
+}
+const assignmentAreaBuildings = (assignment: Assignment): AreaBuilding[] => {
+  if (Array.isArray(assignment.area_buildings)) return assignment.area_buildings
+  if (Array.isArray(assignment.assignment_buildings)) {
+    return assignment.assignment_buildings.flatMap((entry) => {
+      if ('area_building' in entry && entry.area_building) return [entry.area_building]
+      if (areaBuildingId(entry)) return [entry as AreaBuilding]
+      if (isAreaBuilding(entry)) return [entry]
+      return []
+    })
+  }
+  return []
 }
 
 const dateTimeFormatter = new Intl.DateTimeFormat('de-DE', {
@@ -166,6 +203,10 @@ export function AssignmentDetailPage() {
   const updatedAt = assignment.updatedAt ?? assignment.updated_at
   const createdByUserId = assignment.createdByUserId ?? assignment.created_by_user_id
   const targetAreaLabel = areaName(targetArea, targetAreaId) !== '-' ? areaName(targetArea, targetAreaId) : (assignment.targetArea ?? '-')
+  const typeConfig = assignment.typeConfig ?? assignment.type_config
+  const householdTargeting = isLetterboxConfig(typeConfig) ? normalizeHouseholdTargeting(typeConfig.householdTargeting) : undefined
+  const selectedAreaBuildingIds = assignmentAreaBuildingIds(assignment)
+  const selectedAreaBuildings = assignmentAreaBuildings(assignment)
 
   const savePosterLocation = (values: PosterLocationFormValues) => {
     if (photoRequired && values.status === 'installed' && !values.photoUrl?.trim()) {
@@ -239,6 +280,19 @@ export function AssignmentDetailPage() {
           </div>
         </div>
       </div>
+
+      {assignment.type === 'letterbox_distribution' && targetArea && householdTargeting && (
+        <AssignmentBuildingSelector
+          targetArea={targetArea}
+          householdTargeting={householdTargeting}
+          selectedIds={selectedAreaBuildingIds}
+          onSelectedIdsChange={() => undefined}
+          disabled
+          showImportButton={false}
+          selectedOnly={householdTargeting === 'selected_buildings'}
+          fallbackBuildings={selectedAreaBuildings}
+        />
+      )}
 
       <div className="rounded border bg-white p-4"><h2 className="mb-2 font-medium">Anweisungen</h2>{configInstructions(assignment.typeConfig ?? assignment.type_config).length === 0 ? <p>Keine Anweisungen hinterlegt.</p> : <ul className="list-disc pl-5">{configInstructions(assignment.typeConfig ?? assignment.type_config).map((instruction) => <li key={instruction}>{instruction}</li>)}</ul>}</div>
 

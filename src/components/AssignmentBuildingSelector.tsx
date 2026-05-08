@@ -11,6 +11,7 @@ import { getAreaGeometryBoundsSafely, getGeometryFromAreaGeoJson } from '../util
 import { NO_PERMISSION_MESSAGE } from '../utils/permissions'
 
 const DEFAULT_CENTER: [number, number] = [51.1657, 10.4515]
+const EMPTY_FALLBACK_BUILDINGS: AreaBuilding[] = []
 
 const getBuildingId = (building: AreaBuilding) => typeof building.id === 'number' ? building.id : null
 const stringValue = (value: unknown) => typeof value === 'string' || typeof value === 'number' ? String(value) : undefined
@@ -115,12 +116,18 @@ export function AssignmentBuildingSelector({
   selectedIds,
   onSelectedIdsChange,
   disabled = false,
+  showImportButton = true,
+  selectedOnly = false,
+  fallbackBuildings = EMPTY_FALLBACK_BUILDINGS,
 }: {
   targetArea: Area | null | undefined
   householdTargeting: AssignmentHouseholdTargeting | undefined
   selectedIds: number[]
   onSelectedIdsChange: (ids: number[]) => void
   disabled?: boolean
+  showImportButton?: boolean
+  selectedOnly?: boolean
+  fallbackBuildings?: AreaBuilding[]
 }) {
   const queryClient = useQueryClient()
   const targetAreaId = targetArea?.id
@@ -147,9 +154,23 @@ export function AssignmentBuildingSelector({
     if (householdTargeting !== 'selected_buildings' && selectedIds.length > 0) onSelectedIdsChange([])
   }, [householdTargeting, onSelectedIdsChange, selectedIds.length])
 
+  const buildings = useMemo(() => {
+    const byId = new Map<number, AreaBuilding>()
+    const anonymous: AreaBuilding[] = []
+    for (const building of [...fallbackBuildings, ...(buildingsQuery.data ?? [])]) {
+      const id = getBuildingId(building)
+      if (id) byId.set(id, building)
+      else anonymous.push(building)
+    }
+    return [...byId.values(), ...anonymous]
+  }, [buildingsQuery.data, fallbackBuildings])
+
   if (!targetArea) return null
 
-  const buildings = buildingsQuery.data ?? []
+  const visibleBuildings = selectedOnly ? buildings.filter((building) => {
+    const id = getBuildingId(building)
+    return Boolean(id && selectedSet.has(id))
+  }) : buildings
   const targetGeometry = getGeometryFromAreaGeoJson(targetArea.geojson)
   const toggleBuilding = (building: AreaBuilding) => {
     const id = getBuildingId(building)
@@ -164,17 +185,19 @@ export function AssignmentBuildingSelector({
         <p className="text-sm text-slate-600">
           {householdTargeting === 'selected_buildings'
             ? `${selectedIds.length} von ${buildings.length} Gebäude(n) ausgewählt`
-            : `${buildings.length} Gebäude als Vorschau`}
+            : `${buildings.length} Gebäude verfügbar`}
         </p>
       </div>
-      <button
-        type="button"
-        className="border bg-white px-3 py-2 disabled:opacity-50"
-        disabled={!targetAreaId || importMutation.isPending}
-        onClick={() => importMutation.mutate()}
-      >
-        {importMutation.isPending ? 'Gebäude werden aus OSM geladen ...' : 'Gebäude aus OSM erfassen'}
-      </button>
+      {showImportButton && (
+        <button
+          type="button"
+          className="border bg-white px-3 py-2 disabled:opacity-50"
+          disabled={!targetAreaId || importMutation.isPending}
+          onClick={() => importMutation.mutate()}
+        >
+          {importMutation.isPending ? 'Gebäude werden aus OSM geladen ...' : 'Gebäude aus OSM erfassen'}
+        </button>
+      )}
     </div>
 
     {buildingsQuery.isLoading && <p className="text-sm text-slate-600">Gebäude werden geladen ...</p>}
@@ -188,7 +211,7 @@ export function AssignmentBuildingSelector({
       <MapContainer center={DEFAULT_CENTER} zoom={6} className="h-full w-full">
         <TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} />
         {targetGeometry && <GeoJSON data={targetGeometry as GeoJSON.GeoJsonObject} style={{ color: '#0f766e', fillColor: '#14b8a6', fillOpacity: 0.12, weight: 2 }} />}
-        {buildings.map((building, index) => {
+        {visibleBuildings.map((building, index) => {
           const id = getBuildingId(building)
           const selected = Boolean(id && selectedSet.has(id))
           const geometry = getBuildingGeometry(building)
@@ -229,7 +252,7 @@ export function AssignmentBuildingSelector({
             eventHandlers={{ click: () => toggleBuilding(building) }}
           >{popup}</CircleMarker> : null
         })}
-        <FitBuildingsMap targetArea={targetArea} buildings={buildings} />
+        <FitBuildingsMap targetArea={targetArea} buildings={visibleBuildings} />
       </MapContainer>
     </div>
   </div>

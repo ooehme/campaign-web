@@ -213,7 +213,7 @@ export type AssignmentStatus = 'draft' | 'active' | 'paused' | 'completed' | 'ca
 
 export type AssignmentProofType = 'photo' | 'gps_track' | 'completion_checklist'
 export type AssignmentDeliveryMode = 'letterbox' | 'doorstep' | 'both'
-export type AssignmentHouseholdTargeting = 'all_households' | 'selected_buildings' | 'commercial_only' | 'residential_only'
+export type AssignmentHouseholdTargeting = 'all_households' | 'selected_buildings'
 
 export type StandardAssignmentConfig = Record<string, never>
 

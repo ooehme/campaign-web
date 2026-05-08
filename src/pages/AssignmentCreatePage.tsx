@@ -17,7 +17,7 @@ import { can, NO_PERMISSION_MESSAGE } from '../utils/permissions'
 import type { Area, Assignment, Campaign, Team, UserTeam } from '../types/models'
 
 const deliveryModes = ['letterbox', 'doorstep', 'both'] as const
-const householdTargets = ['all_households', 'selected_buildings', 'commercial_only', 'residential_only'] as const
+const householdTargets = ['all_households', 'selected_buildings'] as const
 const proofTypes = ['photo', 'gps_track', 'completion_checklist'] as const
 const DEFAULT_CENTER: [number, number] = [51.1657, 10.4515]
 const CAMPAIGN_POOL_ACCESS_ROLES = new Set(['admin', 'manager', 'app-admin', 'campaign-manager'])
@@ -220,6 +220,10 @@ export function AssignmentCreatePage() {
     setAreaBuildingIds([])
   }, [form, selectedCampaignId])
 
+  useEffect(() => {
+    if (householdTargeting !== 'selected_buildings' || areaBuildingIds.length > 0) form.clearErrors('householdTargeting')
+  }, [areaBuildingIds.length, form, householdTargeting])
+
   const requestPayload = (values: FormValues): Partial<Assignment> & Record<string, unknown> => {
     const payload: Partial<Assignment> & Record<string, unknown> = {
       type: values.type,
@@ -234,8 +238,8 @@ export function AssignmentCreatePage() {
       status: values.status,
       type_config: buildTypeConfig(values),
     }
-    if (values.type === 'letterbox_distribution' && values.householdTargeting === 'selected_buildings') {
-      payload.area_building_ids = areaBuildingIds
+    if (values.type === 'letterbox_distribution') {
+      payload.area_building_ids = values.householdTargeting === 'selected_buildings' ? areaBuildingIds : []
     }
     return payload
   }
@@ -285,7 +289,13 @@ export function AssignmentCreatePage() {
       {selectedCampaign && !areasLoading && boundaryAreaOptions.length === 0 && <EmptyState message="Keine Begrenzungsgebiete für diese Kampagne verfügbar." />}
       {selectedCampaign && !areasLoading && targetAreaOptions.length === 0 && <EmptyState message="Keine Zielgebiete für diese Kampagne verfügbar." />}
       {selectedCampaign && !teamsQuery.isLoading && (teamsQuery.data?.data ?? []).length === 0 && <EmptyState message="Keine Teams für diese Kampagne zugewiesen." />}
-      <form className="space-y-3 rounded border bg-white p-4" onSubmit={form.handleSubmit((values) => createMutation.mutate(values))}>
+      <form className="space-y-3 rounded border bg-white p-4" onSubmit={form.handleSubmit((values) => {
+        if (values.type === 'letterbox_distribution' && values.householdTargeting === 'selected_buildings' && areaBuildingIds.length === 0) {
+          form.setError('householdTargeting', { type: 'custom', message: 'Bitte mindestens ein Gebäude auswählen.' })
+          return
+        }
+        createMutation.mutate(values)
+      })}>
         <label className="block text-sm">Kampagne *<select className="mt-1" value={selectedCampaignId} onChange={(event) => setSelectedCampaignId(event.target.value)} disabled={campaignSelectionLoading}><option value="">Kampagne auswählen</option>{availableCampaigns.map((availableCampaign) => <option key={availableCampaign.id} value={availableCampaign.id}>{availableCampaign.name}</option>)}</select></label>
         <div className="grid gap-2 md:grid-cols-2">
           <label className="block text-sm">Typ *<select className="mt-1" {...form.register('type')} disabled={!canCreate}>{ASSIGNMENT_TYPES.map((entry) => <option key={entry} value={entry}>{assignmentTypeLabel[entry]}</option>)}</select></label>
@@ -323,6 +333,7 @@ export function AssignmentCreatePage() {
                   <select {...form.register('deliveryMode')} disabled={!canCreate}>{deliveryModes.map((entry) => <option key={entry}>{entry}</option>)}</select>
                   <select {...form.register('householdTargeting')} disabled={!canCreate}>{householdTargets.map((entry) => <option key={entry}>{entry}</option>)}</select>
                 </div>
+                {form.formState.errors.householdTargeting?.message && <ErrorState message={form.formState.errors.householdTargeting.message} />}
                 {selectedTarget && <AssignmentBuildingSelector targetArea={selectedTarget} householdTargeting={householdTargeting} selectedIds={areaBuildingIds} onSelectedIdsChange={setAreaBuildingIds} disabled={!canCreate} />}
                 <label className="flex gap-2 text-sm"><input type="checkbox" {...form.register('avoidDuplicateDelivery')} disabled={!canCreate} /> Doppelte Zustellung vermeiden</label>
                 <label className="flex gap-2 text-sm"><input type="checkbox" {...form.register('requireNoAdsStickerRespect')} disabled={!canCreate} /> Keine-Werbung-Aufkleber beachten</label>

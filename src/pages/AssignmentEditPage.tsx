@@ -23,7 +23,7 @@ const assignmentEditSchema = z.object({
   status: z.enum(ASSIGNMENT_STATUSES),
   startsAt: z.string().optional(),
   dueAt: z.string().optional(),
-  householdTargeting: z.enum(['all_households', 'selected_buildings', 'commercial_only', 'residential_only']).optional(),
+  householdTargeting: z.enum(['all_households', 'selected_buildings']).optional(),
 })
 
 type AssignmentEditValues = z.infer<typeof assignmentEditSchema>
@@ -44,6 +44,8 @@ const boundaryAreaIdForTarget = (targetAreaOptions: ReturnType<typeof getAreaUsa
   targetAreaOptions.find((option) => String(option.area.id) === targetAreaId)?.boundaryAreaId ?? null
 const isLetterboxConfig = (config: Assignment['typeConfig'] | Assignment['type_config']): config is LetterboxDistributionConfig =>
   Boolean(config && 'householdTargeting' in config)
+const normalizeHouseholdTargeting = (value: unknown): AssignmentHouseholdTargeting =>
+  value === 'selected_buildings' ? 'selected_buildings' : 'all_households'
 const areaBuildingId = (value: unknown) =>
   value && typeof value === 'object' && 'id' in value && typeof value.id === 'number' ? value.id : null
 const assignmentAreaBuildingIds = (assignment: Assignment) => {
@@ -55,6 +57,8 @@ const assignmentAreaBuildingIds = (assignment: Assignment) => {
       if ('areaBuildingId' in entry && Number.isFinite(entry.areaBuildingId)) return [entry.areaBuildingId as number]
       const nestedId = areaBuildingId('area_building' in entry ? entry.area_building : undefined)
       if (nestedId) return [nestedId]
+      const directId = areaBuildingId(entry)
+      if (directId) return [directId]
       return []
     })
   }
@@ -109,7 +113,7 @@ export function AssignmentEditPage() {
       status: assignment.status,
       startsAt: toDateTimeLocal(assignment.startsAt ?? assignment.starts_at),
       dueAt: toDateTimeLocal(assignment.dueAt ?? assignment.due_at),
-      householdTargeting: isLetterboxConfig(typeConfig) ? typeConfig.householdTargeting : 'all_households',
+      householdTargeting: isLetterboxConfig(typeConfig) ? normalizeHouseholdTargeting(typeConfig.householdTargeting) : 'all_households',
     })
     setAreaBuildingIds(assignmentAreaBuildingIds(assignment))
   }, [assignment, form, targetAreaOptions])
@@ -120,6 +124,10 @@ export function AssignmentEditPage() {
     const boundaryAreaId = boundaryAreaIdForTarget(targetAreaOptions, targetAreaId)
     if (boundaryAreaId) form.setValue('boundaryAreaId', String(boundaryAreaId))
   }, [form, targetAreaOptions])
+
+  useEffect(() => {
+    if (householdTargeting !== 'selected_buildings' || areaBuildingIds.length > 0) form.clearErrors('householdTargeting')
+  }, [areaBuildingIds.length, form, householdTargeting])
 
   const invalidateAssignment = () => {
     qc.invalidateQueries({ queryKey: ['assignment', id] })
@@ -142,8 +150,8 @@ export function AssignmentEditPage() {
       }
       const typeConfig = assignment?.typeConfig ?? assignment?.type_config
       if (assignment?.type === 'letterbox_distribution' && isLetterboxConfig(typeConfig)) {
-        payload.type_config = { ...typeConfig, householdTargeting: values.householdTargeting ?? typeConfig.householdTargeting }
-        if (values.householdTargeting === 'selected_buildings') payload.area_building_ids = areaBuildingIds
+        payload.type_config = { ...typeConfig, householdTargeting: values.householdTargeting ?? normalizeHouseholdTargeting(typeConfig.householdTargeting) }
+        payload.area_building_ids = values.householdTargeting === 'selected_buildings' ? areaBuildingIds : []
       }
       return updateAssignment(id, payload)
     },
@@ -196,7 +204,13 @@ export function AssignmentEditPage() {
       {areasQuery.isError && <ErrorState message="Gebiete konnten nicht geladen werden." />}
       {teamsQuery.isError && <ErrorState message="Teams konnten nicht geladen werden." />}
 
-      <form className="space-y-4 rounded border bg-white p-4" onSubmit={form.handleSubmit((values) => updateMutation.mutate(values))}>
+      <form className="space-y-4 rounded border bg-white p-4" onSubmit={form.handleSubmit((values) => {
+        if (assignment.type === 'letterbox_distribution' && values.householdTargeting === 'selected_buildings' && areaBuildingIds.length === 0) {
+          form.setError('householdTargeting', { type: 'custom', message: 'Bitte mindestens ein Gebäude auswählen.' })
+          return
+        }
+        updateMutation.mutate(values)
+      })}>
         <div className="grid gap-3 md:grid-cols-2">
           <label className="block text-sm">Typ<input className="mt-1 bg-slate-100" value={assignmentTypeLabel[assignment.type]} disabled readOnly /></label>
           <label className="block text-sm">Status<select className="mt-1" {...form.register('status')} disabled={!can(assignment.can?.change_status)}>{ASSIGNMENT_STATUSES.map((status) => <option key={status} value={status}>{assignmentStatusLabel[status]}</option>)}</select></label>
@@ -217,9 +231,8 @@ export function AssignmentEditPage() {
             <label className="block text-sm">Haushaltsauswahl<select className="mt-1" {...form.register('householdTargeting')} disabled={!canUpdate}>
               <option value="all_households">all_households</option>
               <option value="selected_buildings">selected_buildings</option>
-              <option value="commercial_only">commercial_only</option>
-              <option value="residential_only">residential_only</option>
             </select></label>
+            {form.formState.errors.householdTargeting?.message && <ErrorState message={form.formState.errors.householdTargeting.message} />}
             {selectedTarget && <AssignmentBuildingSelector targetArea={selectedTarget} householdTargeting={householdTargeting} selectedIds={areaBuildingIds} onSelectedIdsChange={setAreaBuildingIds} disabled={!canUpdate} />}
           </div>
         )}
