@@ -166,7 +166,7 @@ function GuidedPosterLocationEditor({
         </MapContainer>
       </div>
 
-      {error && <ErrorState message={requestErrorMessage(error)} />}
+      {error ? <ErrorState message={requestErrorMessage(error)} /> : null}
       {posterLocations.length === 0 && <EmptyState message="Noch keine Plakatstandorte markiert." />}
       {posterLocations.length > 0 && (
         <div className="space-y-2">
