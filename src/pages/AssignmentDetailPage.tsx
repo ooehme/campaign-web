@@ -57,7 +57,7 @@ const normalizeHouseholdTargeting = (value: unknown): AssignmentHouseholdTargeti
 const areaBuildingId = (value: unknown) =>
   value && typeof value === 'object' && 'id' in value && typeof value.id === 'number' ? value.id : null
 const isAreaBuilding = (value: unknown): value is AreaBuilding =>
-  Boolean(value && typeof value === 'object' && ('area_id' in value || 'geojson' in value || 'geometry' in value))
+  Boolean(value && typeof value === 'object' && (areaBuildingId(value) || 'area_id' in value || 'geojson' in value || 'geometry' in value))
 const assignmentAreaBuildingIds = (assignment: Assignment) => {
   if (Array.isArray(assignment.area_building_ids)) return assignment.area_building_ids.filter((buildingId): buildingId is number => Number.isFinite(buildingId))
   if (Array.isArray(assignment.area_buildings)) return assignment.area_buildings.flatMap((building) => typeof building.id === 'number' ? [building.id] : [])
@@ -78,7 +78,6 @@ const assignmentAreaBuildings = (assignment: Assignment): AreaBuilding[] => {
   if (Array.isArray(assignment.assignment_buildings)) {
     return assignment.assignment_buildings.flatMap((entry) => {
       if ('area_building' in entry && entry.area_building) return [entry.area_building]
-      if (areaBuildingId(entry)) return [entry as AreaBuilding]
       if (isAreaBuilding(entry)) return [entry]
       return []
     })
