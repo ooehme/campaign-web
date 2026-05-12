@@ -20,11 +20,21 @@ const stringValue = (value: unknown) => typeof value === 'string' || typeof valu
 
 const formatImportProgress = (progress: ImportAreaBuildingsProgress | null) => {
   if (!progress?.chunks_total) return null
-  if (progress.event === 'waiting_for_overpass_slot') return 'Warte auf freien Overpass-Slot ...'
   const processed = progress.chunks_processed ?? Math.max((progress.chunk ?? 1) - 1, 0)
   const current = progress.event === 'chunk_started' && progress.chunk ? progress.chunk : processed
   const percent = Math.round((processed / progress.chunks_total) * 100)
-  return `Chunk ${current} / ${progress.chunks_total}${Number.isFinite(percent) ? ` (${percent} %)` : ''}`
+  const chunkLabel = `Chunk ${current} / ${progress.chunks_total}${Number.isFinite(percent) ? ` (${percent} %)` : ''}`
+  const importedLabel = typeof progress.buildings_imported === 'number'
+    ? `, ${progress.buildings_imported} Gebäude erfasst`
+    : ''
+
+  if (progress.event === 'waiting_for_overpass_slot') {
+    const waitLabel = typeof progress.wait_seconds === 'number' ? ` (${progress.wait_seconds} s)` : ''
+    return `Warte auf freien Overpass-Slot${waitLabel} - ${chunkLabel}${importedLabel}`
+  }
+  if (progress.event === 'chunk_started') return `Verarbeite ${chunkLabel}${importedLabel}`
+  if (progress.event === 'chunk_finished') return `${chunkLabel} abgeschlossen${importedLabel}`
+  return `${chunkLabel}${importedLabel}`
 }
 
 export const useAreaBuildings = (areaId?: number) => useQuery({
