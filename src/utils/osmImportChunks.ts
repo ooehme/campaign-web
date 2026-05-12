@@ -8,7 +8,9 @@ export const DEFAULT_OSM_IMPORT_CHUNK_SIZE_METERS = 500
 type Point = [number, number]
 type Ring = Point[]
 type Polygon = Ring[]
-type ProjectedBounds = { minX: number; minY: number; maxX: number; maxY: number }
+type Bounds = { minX: number; minY: number; maxX: number; maxY: number }
+type Boundary = 'left' | 'right' | 'bottom' | 'top'
+type DraftChunk = { ring: Ring; bounds: Bounds }
 
 export type OsmImportChunkFeature = {
   type: 'Feature'
@@ -42,6 +44,18 @@ const unprojectPoint = ([x, y]: Point): Point => [
   (2 * Math.atan(Math.exp(y / EARTH_RADIUS_METERS)) - Math.PI / 2) * 180 / Math.PI,
 ]
 
+const samePoint = (a: Point, b: Point) => Math.abs(a[0] - b[0]) < 1e-9 && Math.abs(a[1] - b[1]) < 1e-9
+
+const closeRing = (ring: Ring): Ring => {
+  if (ring.length === 0) return ring
+  return samePoint(ring[0], ring[ring.length - 1]) ? ring : [...ring, ring[0]]
+}
+
+const openRing = (ring: Ring): Ring => {
+  if (ring.length < 2) return ring
+  return samePoint(ring[0], ring[ring.length - 1]) ? ring.slice(0, -1) : ring
+}
+
 const ringsFromGeometry = (geometry?: GeoJsonShape | GeoJsonFeatureCollection | null): Polygon[] => {
   if (!geometry) return []
   if (geometry.type === 'FeatureCollection') return geometry.features.flatMap((feature) => ringsFromGeometry(feature.geometry))
@@ -50,10 +64,10 @@ const ringsFromGeometry = (geometry?: GeoJsonShape | GeoJsonFeatureCollection | 
   return []
 }
 
-const getProjectedBounds = (polygons: Polygon[]): ProjectedBounds | null => {
-  const points = polygons.flat(2).map(projectPoint)
+const getBounds = (rings: Ring[]): Bounds | null => {
+  const points = rings.flat()
   if (points.length === 0) return null
-  return points.reduce<ProjectedBounds>((bounds, [x, y]) => ({
+  return points.reduce<Bounds>((bounds, [x, y]) => ({
     minX: Math.min(bounds.minX, x),
     minY: Math.min(bounds.minY, y),
     maxX: Math.max(bounds.maxX, x),
@@ -61,116 +75,119 @@ const getProjectedBounds = (polygons: Polygon[]): ProjectedBounds | null => {
   }), { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity })
 }
 
-const pointInRing = ([x, y]: Point, ring: Ring) => {
-  let inside = false
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const [xi, yi] = ring[i]
-    const [xj, yj] = ring[j]
-    const intersects = (yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi
-    if (intersects) inside = !inside
+const polygonArea = (ring: Ring) => {
+  let area = 0
+  for (let index = 0; index < ring.length - 1; index += 1) {
+    const [x1, y1] = ring[index]
+    const [x2, y2] = ring[index + 1]
+    area += x1 * y2 - x2 * y1
   }
-  return inside
+  return Math.abs(area) / 2
 }
 
-const pointInPolygon = (point: Point, polygon: Polygon) => {
-  const [outer, ...holes] = polygon
-  if (!outer || !pointInRing(point, outer)) return false
-  return !holes.some((hole) => pointInRing(point, hole))
+const insideBoundary = ([x, y]: Point, bounds: Bounds, boundary: Boundary) => {
+  if (boundary === 'left') return x >= bounds.minX - 1e-9
+  if (boundary === 'right') return x <= bounds.maxX + 1e-9
+  if (boundary === 'bottom') return y >= bounds.minY - 1e-9
+  return y <= bounds.maxY + 1e-9
 }
 
-const orientation = (a: Point, b: Point, c: Point) => {
-  const value = (b[1] - a[1]) * (c[0] - b[0]) - (b[0] - a[0]) * (c[1] - b[1])
-  if (Math.abs(value) < 1e-9) return 0
-  return value > 0 ? 1 : 2
+const intersectBoundary = ([x1, y1]: Point, [x2, y2]: Point, bounds: Bounds, boundary: Boundary): Point => {
+  if (boundary === 'left' || boundary === 'right') {
+    const x = boundary === 'left' ? bounds.minX : bounds.maxX
+    const ratio = x2 === x1 ? 0 : (x - x1) / (x2 - x1)
+    return [x, y1 + (y2 - y1) * ratio]
+  }
+
+  const y = boundary === 'bottom' ? bounds.minY : bounds.maxY
+  const ratio = y2 === y1 ? 0 : (y - y1) / (y2 - y1)
+  return [x1 + (x2 - x1) * ratio, y]
 }
 
-const pointOnSegment = (point: Point, a: Point, b: Point) =>
-  point[0] <= Math.max(a[0], b[0]) + 1e-9
-  && point[0] + 1e-9 >= Math.min(a[0], b[0])
-  && point[1] <= Math.max(a[1], b[1]) + 1e-9
-  && point[1] + 1e-9 >= Math.min(a[1], b[1])
+const clipBoundary = (ring: Ring, bounds: Bounds, boundary: Boundary): Ring => {
+  if (ring.length === 0) return []
+  const output: Ring = []
 
-const segmentsIntersect = (a1: Point, a2: Point, b1: Point, b2: Point) => {
-  const o1 = orientation(a1, a2, b1)
-  const o2 = orientation(a1, a2, b2)
-  const o3 = orientation(b1, b2, a1)
-  const o4 = orientation(b1, b2, a2)
+  for (let index = 0; index < ring.length; index += 1) {
+    const current = ring[index]
+    const previous = ring[(index + ring.length - 1) % ring.length]
+    const currentInside = insideBoundary(current, bounds, boundary)
+    const previousInside = insideBoundary(previous, bounds, boundary)
 
-  if (o1 !== o2 && o3 !== o4) return true
-  if (o1 === 0 && pointOnSegment(b1, a1, a2)) return true
-  if (o2 === 0 && pointOnSegment(b2, a1, a2)) return true
-  if (o3 === 0 && pointOnSegment(a1, b1, b2)) return true
-  if (o4 === 0 && pointOnSegment(a2, b1, b2)) return true
-  return false
-}
-
-const ringIntersectsRing = (a: Ring, b: Ring) => {
-  for (let i = 0; i < a.length - 1; i += 1) {
-    for (let j = 0; j < b.length - 1; j += 1) {
-      if (segmentsIntersect(a[i], a[i + 1], b[j], b[j + 1])) return true
+    if (currentInside) {
+      if (!previousInside) output.push(intersectBoundary(previous, current, bounds, boundary))
+      output.push(current)
+    } else if (previousInside) {
+      output.push(intersectBoundary(previous, current, bounds, boundary))
     }
   }
-  return false
+
+  return output
 }
 
-const polygonsIntersect = (a: Polygon, b: Polygon) => {
-  const outerA = a[0]
-  const outerB = b[0]
-  if (!outerA || !outerB) return false
-  if (outerA.some((point) => pointInPolygon(point, b))) return true
-  if (outerB.some((point) => pointInPolygon(point, a))) return true
-  return a.some((ringA) => b.some((ringB) => ringIntersectsRing(ringA, ringB)))
+const clipRingToBounds = (ring: Ring, bounds: Bounds): Ring | null => {
+  let clipped = openRing(ring)
+  for (const boundary of ['left', 'right', 'bottom', 'top'] as Boundary[]) {
+    clipped = clipBoundary(clipped, bounds, boundary)
+    if (clipped.length < 3) return null
+  }
+
+  const closed = closeRing(clipped)
+  return polygonArea(closed) > 1 ? closed : null
 }
 
-const rectanglePolygon = (minX: number, minY: number, maxX: number, maxY: number): Polygon => [[
-  [minX, minY],
-  [maxX, minY],
-  [maxX, maxY],
-  [minX, maxY],
-  [minX, minY],
-]]
-
-const rectangleFeature = (chunk: number, minX: number, minY: number, maxX: number, maxY: number): OsmImportChunkFeature => ({
-  type: 'Feature',
-  geometry: {
-    type: 'Polygon',
-    coordinates: [rectanglePolygon(minX, minY, maxX, maxY)[0].map(unprojectPoint)],
-  },
-  properties: { chunk, cursor: chunk + 1 },
-})
+const featureFromDraft = (draft: DraftChunk, index: number): OsmImportChunkFeature => {
+  const chunk = index + 1
+  return {
+    type: 'Feature',
+    geometry: {
+      type: 'Polygon',
+      coordinates: [draft.ring.map(unprojectPoint)],
+    },
+    properties: { chunk, cursor: chunk },
+  }
+}
 
 export const buildOsmImportChunks = (
   geojson: GeoJsonInput | null | undefined,
   chunkSizeMeters = DEFAULT_OSM_IMPORT_CHUNK_SIZE_METERS,
 ): OsmImportChunkFeatureCollection => {
   const geometry = getGeometryFromAreaGeoJson(geojson)
-  const sourcePolygons = ringsFromGeometry(geometry)
-  const polygons = sourcePolygons.map((polygon) => polygon.map((ring) => ring.map(projectPoint)))
-  const bounds = getProjectedBounds(sourcePolygons)
+  const outerRings = ringsFromGeometry(geometry)
+    .map((polygon) => polygon[0])
+    .filter((ring): ring is Ring => Array.isArray(ring) && ring.length >= 4)
+    .map((ring) => closeRing(ring.map(projectPoint)))
+  const bounds = getBounds(outerRings)
   if (!bounds || chunkSizeMeters <= 0) return { type: 'FeatureCollection', features: [] }
 
-  const features: OsmImportChunkFeature[] = []
   const minX = Math.floor(bounds.minX / chunkSizeMeters) * chunkSizeMeters
   const minY = Math.floor(bounds.minY / chunkSizeMeters) * chunkSizeMeters
   const maxX = Math.ceil(bounds.maxX / chunkSizeMeters) * chunkSizeMeters
   const maxY = Math.ceil(bounds.maxY / chunkSizeMeters) * chunkSizeMeters
   const cols = Math.max(1, Math.ceil((maxX - minX) / chunkSizeMeters))
   const rows = Math.max(1, Math.ceil((maxY - minY) / chunkSizeMeters))
-  let chunk = 0
+  const drafts: DraftChunk[] = []
 
   for (let row = 0; row < rows; row += 1) {
     for (let col = 0; col < cols; col += 1) {
-      const cellMinX = minX + col * chunkSizeMeters
-      const cellMinY = minY + row * chunkSizeMeters
-      const cellMaxX = cellMinX + chunkSizeMeters
-      const cellMaxY = cellMinY + chunkSizeMeters
-      const rectangle = rectanglePolygon(cellMinX, cellMinY, cellMaxX, cellMaxY)
-      if (polygons.some((polygon) => polygonsIntersect(rectangle, polygon))) {
-        features.push(rectangleFeature(chunk, cellMinX, cellMinY, cellMaxX, cellMaxY))
-        chunk += 1
+      const cellBounds: Bounds = {
+        minX: minX + col * chunkSizeMeters,
+        minY: minY + row * chunkSizeMeters,
+        maxX: minX + (col + 1) * chunkSizeMeters,
+        maxY: minY + (row + 1) * chunkSizeMeters,
       }
+
+      outerRings.forEach((ring) => {
+        const clipped = clipRingToBounds(ring, cellBounds)
+        const clippedBounds = clipped ? getBounds([clipped]) : null
+        if (clipped && clippedBounds) drafts.push({ ring: clipped, bounds: clippedBounds })
+      })
     }
   }
+
+  const features = drafts
+    .sort((a, b) => a.bounds.minY - b.bounds.minY || a.bounds.minX - b.bounds.minX)
+    .map(featureFromDraft)
 
   return { type: 'FeatureCollection', features }
 }
