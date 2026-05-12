@@ -270,6 +270,8 @@ export interface PosterGuidedConfig {
 export interface CampaignBoothConfig {
   boothName: string
   mandatoryInstructions: string[]
+  allowTeamToCreateLocations: false
+  requirePhotoProof: boolean
 }
 
 export type AssignmentTypeConfig = StandardAssignmentConfig | LetterboxDistributionConfig | PosterFreeConfig | PosterGuidedConfig | CampaignBoothConfig

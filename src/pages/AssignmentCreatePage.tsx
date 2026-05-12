@@ -4,9 +4,9 @@ import { useEffect, useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { z } from 'zod'
-import { GeoJSON, MapContainer, TileLayer } from 'react-leaflet'
+import { GeoJSON, MapContainer, Marker, Popup, TileLayer, useMapEvents } from 'react-leaflet'
 import { ApiError } from '../api/client'
-import { createAssignment, createCampaignAssignment, getCampaign, getTeam, listCampaigns, listCampaignAreas, listCampaignTeams, listUserTeams } from '../api/endpoints'
+import { createAssignment, createCampaignAssignment, createCampaignBoothLocation, getCampaign, getTeam, listCampaigns, listCampaignAreas, listCampaignTeams, listUserTeams } from '../api/endpoints'
 import { useAuth } from '../auth/AuthContext'
 import { AssignmentBuildingSelector } from '../components/AssignmentBuildingSelector'
 import { getAreaMaskGeometry, getAreaPositions, MAP_PANES, MapLayerPanes, MapMask, MapViewportController } from '../components/MapViewport'
@@ -14,6 +14,7 @@ import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import { ASSIGNMENT_STATUSES, ASSIGNMENT_TYPES, MAP_ATTRIBUTION, MAP_TILE_URL } from '../utils/constants'
 import { assignmentTypeLabel, uniqueCampaigns } from '../utils/assignment'
 import { getAreaGeometryBoundsSafely, getAreaUsageOptions, getGeometryFromAreaGeoJson, isValidPolygonOrMultiPolygon } from '../utils/campaignAreaMap'
+import { campaignBoothLocationIcon } from '../utils/mapIcons'
 import { can, NO_PERMISSION_MESSAGE } from '../utils/permissions'
 import type { Area, Assignment, Campaign, Team, UserTeam } from '../types/models'
 
@@ -69,12 +70,37 @@ const formSchema = z.object({
 
 type FormValues = z.infer<typeof formSchema>
 
-function TargetAreaPreviewMap({ area }: { area: Area }) {
+type BoothLocationDraft = {
+  lat: number
+  lng: number
+}
+
+function MapClickPicker({ enabled, onPick }: { enabled: boolean; onPick: (lat: number, lng: number) => void }) {
+  useMapEvents({
+    click: (event) => {
+      if (enabled) onPick(Number(event.latlng.lat.toFixed(6)), Number(event.latlng.lng.toFixed(6)))
+    },
+  })
+  return null
+}
+
+function TargetAreaPreviewMap({
+  area,
+  boothLocation,
+  onBoothLocationPick,
+}: {
+  area: Area
+  boothLocation?: BoothLocationDraft | null
+  onBoothLocationPick?: (location: BoothLocationDraft) => void
+}) {
   const geometry = getGeometryFromAreaGeoJson(area.geojson)
   const bounds = getAreaGeometryBoundsSafely(area.geojson)
   const areaPositions = useMemo(() => getAreaPositions(area), [area])
   const maskGeometry = useMemo(() => getAreaMaskGeometry([area]), [area])
   const validGeometry = isValidPolygonOrMultiPolygon(area.geojson)
+  const boothPositions: [number, number][] = boothLocation ? [[boothLocation.lat, boothLocation.lng]] : []
+  const fitPositions = areaPositions.length > 0 ? areaPositions : boothPositions
+  const locationPickerEnabled = Boolean(onBoothLocationPick)
 
   if (!validGeometry || !geometry || !bounds) {
     return <p className="rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">Für dieses Zielgebiet ist keine gültige Kartengeometrie verfügbar.</p>
@@ -88,8 +114,28 @@ function TargetAreaPreviewMap({ area }: { area: Area }) {
           <TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} />
           <MapLayerPanes />
           <MapMask geometry={maskGeometry} />
+          <MapClickPicker enabled={locationPickerEnabled} onPick={(lat, lng) => onBoothLocationPick?.({ lat, lng })} />
           <GeoJSON key={area.id} pane={MAP_PANES.target} data={geometry as GeoJSON.GeoJsonObject} style={{ color: '#0f766e', fillColor: '#14b8a6', fillOpacity: 0.22, weight: 3 }} />
-          {areaPositions.length > 0 && <MapViewportController fitPositions={areaPositions} constrainPositions={areaPositions} maxZoom={16} />}
+          {boothLocation && (
+            <Marker
+              pane={MAP_PANES.markers}
+              position={[boothLocation.lat, boothLocation.lng]}
+              icon={campaignBoothLocationIcon}
+              draggable={locationPickerEnabled}
+              eventHandlers={{
+                dragend: (event) => {
+                  const latLng = event.target.getLatLng()
+                  onBoothLocationPick?.({ lat: Number(latLng.lat.toFixed(6)), lng: Number(latLng.lng.toFixed(6)) })
+                },
+              }}
+            >
+              <Popup>
+                <p className="font-medium">Aktionsstand</p>
+                <p>{boothLocation.lat}, {boothLocation.lng}</p>
+              </Popup>
+            </Marker>
+          )}
+          {fitPositions.length > 0 && <MapViewportController fitPositions={fitPositions} constrainPositions={areaPositions} maxZoom={16} />}
         </MapContainer>
       </div>
     </div>
@@ -133,6 +179,8 @@ const buildTypeConfig = (values: FormValues): Assignment['typeConfig'] => {
     return {
       boothName: values.boothName?.trim() ?? '',
       mandatoryInstructions,
+      allowTeamToCreateLocations: false,
+      requirePhotoProof: false,
     }
   }
   return {}
@@ -147,6 +195,7 @@ export function AssignmentCreatePage() {
   const [topError, setTopError] = useState<string | null>(null)
   const [selectedCampaignId, setSelectedCampaignId] = useState(() => Number.isFinite(routeCampaign) ? String(routeCampaign) : '')
   const [areaBuildingIds, setAreaBuildingIds] = useState<number[]>([])
+  const [boothLocation, setBoothLocation] = useState<BoothLocationDraft | null>(null)
   const hasCampaignPoolAccess = CAMPAIGN_POOL_ACCESS_ROLES.has(String(user?.app_role ?? ''))
   const selectedCampaign = selectedCampaignId ? Number(selectedCampaignId) : null
 
@@ -227,7 +276,12 @@ export function AssignmentCreatePage() {
     form.setValue('targetAreaId', '')
     form.setValue('teamId', '')
     setAreaBuildingIds([])
+    setBoothLocation(null)
   }, [form, selectedCampaignId])
+
+  useEffect(() => {
+    setBoothLocation(null)
+  }, [selectedTargetAreaId])
 
   useEffect(() => {
     if (householdTargeting !== 'selected_buildings' || areaBuildingIds.length > 0) form.clearErrors('householdTargeting')
@@ -254,13 +308,22 @@ export function AssignmentCreatePage() {
   }
 
   const createMutation = useMutation({
-    mutationFn: (values: FormValues) => {
+    mutationFn: async (values: FormValues) => {
       const payload = requestPayload(values)
       if (!selectedCampaign) throw new Error('campaign-required')
-      return createCampaignAssignment(selectedCampaign, payload).catch((error) => {
+      const assignment = await createCampaignAssignment(selectedCampaign, payload).catch((error) => {
         if (error instanceof ApiError && error.status === 404) return createAssignment(payload)
         throw error
       })
+      if (values.type === 'campaign_booth' && assignment?.id && boothLocation) {
+        await createCampaignBoothLocation(assignment.id, {
+          lat: boothLocation.lat,
+          lng: boothLocation.lng,
+          status: 'planned',
+          label: values.boothName?.trim() || 'Aktionsstand',
+        })
+      }
+      return assignment
     },
     onSuccess: (assignment) => {
       qc.invalidateQueries({ queryKey: ['assignments'] })
@@ -320,7 +383,16 @@ export function AssignmentCreatePage() {
         {form.formState.errors.boundaryAreaId?.message && <ErrorState message={form.formState.errors.boundaryAreaId.message} />}
         {form.formState.errors.targetAreaId?.message && <ErrorState message={form.formState.errors.targetAreaId.message} />}
         {selectedTargetOption?.boundaryAreaId && String(selectedTargetOption.boundaryAreaId) !== form.watch('boundaryAreaId') && <p className="text-sm text-amber-700">Das Zielgebiet gehört nicht zum ausgewählten Begrenzungsgebiet.</p>}
-        {selectedTarget && <TargetAreaPreviewMap area={selectedTarget} />}
+        {selectedTarget && (
+          <>
+            <TargetAreaPreviewMap
+              area={selectedTarget}
+              boothLocation={type === 'campaign_booth' ? boothLocation : undefined}
+              onBoothLocationPick={type === 'campaign_booth' && canCreate ? setBoothLocation : undefined}
+            />
+            {type === 'campaign_booth' && <p className="text-sm text-slate-600">Klick in die Karte setzt den Standort des Aktionsstands. Der Marker kann verschoben werden.</p>}
+          </>
+        )}
         <div className="grid gap-2 md:grid-cols-3">
           <select {...form.register('teamId')} disabled={!canCreate}><option value="">Team</option>{(teamsQuery.data?.data ?? []).map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select>
           <input type="datetime-local" {...form.register('startsAt')} disabled={!canCreate} />
@@ -365,6 +437,7 @@ export function AssignmentCreatePage() {
               <>
                 <input placeholder="Name des Aktionsstands *" {...form.register('boothName')} disabled={!canCreate} />
                 {form.formState.errors.boothName?.message && <ErrorState message={form.formState.errors.boothName.message} />}
+                {boothLocation && <p className="text-sm text-slate-600">Standort: {boothLocation.lat}, {boothLocation.lng}</p>}
               </>
             )}
           </div>
