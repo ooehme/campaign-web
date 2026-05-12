@@ -16,8 +16,8 @@ const buildQuery = (params?: PaginationParams) => {
 
 const requestPaginated = <T>(path: string): Promise<PaginatedResponse<T>> =>
   apiRequest<PaginatedResponse<T>>(path)
-const requestResource = async <T>(path: string): Promise<T> => {
-  const response = await apiRequest<T | { data?: T }>(path)
+const requestResource = async <T>(path: string, init?: RequestInit): Promise<T> => {
+  const response = await apiRequest<T | { data?: T }>(path, init)
   if (response && typeof response === 'object' && 'data' in response) {
     return (response as { data?: T }).data as T
   }
@@ -94,12 +94,12 @@ export const updateTeamUser = (teamId: number, userId: number, payload: Omit<Tea
 export const removeUserFromTeam = (teamId: number, userId: number) => apiRequest(`/api/teams/${teamId}/users/${userId}`, { method: 'DELETE' })
 
 export const listAssignments = (params?: PaginationParams) => requestPaginated<Assignment>(`/api/assignments${buildQuery(params)}`)
-export const createAssignment = (payload: Partial<Assignment>) => apiRequest<Assignment>('/api/assignments', { method: 'POST', body: JSON.stringify(payload) })
+export const createAssignment = (payload: Partial<Assignment>) => requestResource<Assignment>('/api/assignments', { method: 'POST', body: JSON.stringify(payload) })
 export const getAssignment = (assignmentId: number | string) => requestResource<Assignment>(`/api/assignments/${assignmentId}`)
 export const updateAssignment = (assignmentId: number | string, payload: Partial<Assignment>) => apiRequest<Assignment>(`/api/assignments/${assignmentId}`, { method: 'PATCH', body: JSON.stringify(payload) })
 export const deleteAssignment = (assignmentId: number | string) => apiRequest<void>(`/api/assignments/${assignmentId}`, { method: 'DELETE' })
 export const listCampaignAssignments = (campaignId: number | string, params?: PaginationParams) => requestPaginated<Assignment>(`/api/campaigns/${campaignId}/assignments${buildQuery(params)}`)
-export const createCampaignAssignment = (campaignId: number | string, payload: Partial<Assignment>) => apiRequest<Assignment>(`/api/campaigns/${campaignId}/assignments`, { method: 'POST', body: JSON.stringify(payload) })
+export const createCampaignAssignment = (campaignId: number | string, payload: Partial<Assignment>) => requestResource<Assignment>(`/api/campaigns/${campaignId}/assignments`, { method: 'POST', body: JSON.stringify(payload) })
 export const listTeamAssignments = (teamId: number | string, params?: PaginationParams) => requestPaginated<Assignment>(`/api/teams/${teamId}/assignments${buildQuery(params)}`)
 export const listUserAssignments = (userId: number | string) => requestResource<Assignment[]>(`/api/users/${userId}/assignments`)
 export const listAssignmentBuildings = async (assignmentId: number | string) => {
@@ -123,7 +123,7 @@ export const getCampaignBoothLocation = async (assignmentId: number | string) =>
     throw error
   }
 }
-export const createCampaignBoothLocation = (assignmentId: number | string, payload: Partial<CampaignBoothLocation>) => apiRequest<CampaignBoothLocation>(`/api/assignments/${assignmentId}/campaign-booth-location`, { method: 'POST', body: JSON.stringify(payload) })
+export const createCampaignBoothLocation = (assignmentId: number | string, payload: Partial<CampaignBoothLocation>) => requestResource<CampaignBoothLocation>(`/api/assignments/${assignmentId}/campaign-booth-location`, { method: 'POST', body: JSON.stringify(payload) })
 export const updateCampaignBoothLocation = (campaignBoothLocationId: number | string, payload: Partial<CampaignBoothLocation>) => apiRequest<CampaignBoothLocation>(`/api/campaign-booth-locations/${campaignBoothLocationId}`, { method: 'PATCH', body: JSON.stringify(payload) })
 export const deleteCampaignBoothLocation = (campaignBoothLocationId: number | string) => apiRequest<void>(`/api/campaign-booth-locations/${campaignBoothLocationId}`, { method: 'DELETE' })
 // backward-compatible aliases

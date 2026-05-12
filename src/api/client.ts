@@ -11,7 +11,13 @@ export class ApiError extends Error {
   }
 }
 
-const baseUrl = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '')
+const normalizeBaseUrl = (value?: string) => {
+  const trimmed = value?.replace(/\/+$/, '')
+  if (!trimmed) return undefined
+  return trimmed.endsWith('/api') ? trimmed.slice(0, -4) : trimmed
+}
+
+const baseUrl = normalizeBaseUrl(import.meta.env.VITE_API_BASE_URL)
 
 if (!baseUrl) throw new Error('Missing VITE_API_BASE_URL')
 

@@ -316,12 +316,16 @@ export function AssignmentCreatePage() {
         throw error
       })
       if (values.type === 'campaign_booth' && assignment?.id && boothLocation) {
-        await createCampaignBoothLocation(assignment.id, {
-          lat: boothLocation.lat,
-          lng: boothLocation.lng,
-          status: 'planned',
-          label: values.boothName?.trim() || 'Aktionsstand',
-        })
+        try {
+          await createCampaignBoothLocation(assignment.id, {
+            lat: boothLocation.lat,
+            lng: boothLocation.lng,
+            status: 'planned',
+            label: values.boothName?.trim() || 'Aktionsstand',
+          })
+        } catch (error) {
+          if (!(error instanceof ApiError && error.status === 404)) throw error
+        }
       }
       return assignment
     },
