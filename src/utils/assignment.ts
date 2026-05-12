@@ -15,6 +15,7 @@ export const assignmentTypeLabel: Record<AssignmentType, string> = {
   letterbox_distribution: 'Briefkastenverteilung',
   poster_free: 'Freie Plakatierung',
   poster_guided: 'Geführte Plakatierung',
+  campaign_booth: 'Aktionsstand',
 }
 
 export const isClosedAssignment = (assignment: Assignment) => CLOSED_ASSIGNMENT_STATUSES.has(assignment.status)

@@ -6,18 +6,18 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { z } from 'zod'
 import { ApiError } from '../api/client'
 import { GeoJSON, MapContainer, Marker, Popup, TileLayer, useMapEvents } from 'react-leaflet'
-import { createPosterLocation, deleteAssignment, deletePosterLocation, getAssignment, listAssignmentBuildings, listCampaignAreas, listCampaignTeams, listPosterLocations, updateAssignment, updatePosterLocation } from '../api/endpoints'
+import { createCampaignBoothLocation, createPosterLocation, deleteAssignment, deleteCampaignBoothLocation, deletePosterLocation, getAssignment, getCampaignBoothLocation, listAssignmentBuildings, listCampaignAreas, listCampaignTeams, listPosterLocations, updateAssignment, updateCampaignBoothLocation, updatePosterLocation } from '../api/endpoints'
 import { useAuth } from '../auth/AuthContext'
 import { AssignmentBuildingSelector } from '../components/AssignmentBuildingSelector'
 import { getAreaMaskGeometry, getAreaPositions, MAP_PANES, MapLayerPanes, MapMask, MapViewportController } from '../components/MapViewport'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
-import { ASSIGNMENT_STATUSES, MAP_ATTRIBUTION, MAP_TILE_URL, POSTER_LOCATION_STATUSES } from '../utils/constants'
+import { ASSIGNMENT_STATUSES, CAMPAIGN_BOOTH_LOCATION_STATUSES, MAP_ATTRIBUTION, MAP_TILE_URL, POSTER_LOCATION_STATUSES } from '../utils/constants'
 import { assignmentStatusLabel, assignmentTypeLabel } from '../utils/assignment'
 import { getAreaUsageOptions, getGeometryFromAreaGeoJson } from '../utils/campaignAreaMap'
-import { posterLocationIcon } from '../utils/mapIcons'
+import { campaignBoothLocationIcon, posterLocationIcon } from '../utils/mapIcons'
 import { can, canPermission, NO_PERMISSION_MESSAGE, permissionErrorMessage } from '../utils/permissions'
 import { PERMISSIONS } from '../utils/permissionKeys'
-import type { Area, Assignment, AssignmentBuilding, AssignmentHouseholdTargeting, LetterboxDistributionConfig, PosterLocation, PosterLocationStatus } from '../types/models'
+import type { Area, Assignment, AssignmentBuilding, AssignmentHouseholdTargeting, CampaignBoothLocation, CampaignBoothLocationStatus, LetterboxDistributionConfig, PosterLocation, PosterLocationStatus } from '../types/models'
 
 const DEFAULT_CENTER: [number, number] = [51.1657, 10.4515]
 
@@ -209,6 +209,125 @@ function GuidedPosterLocationEditor({
   )
 }
 
+function CampaignBoothLocationEditor({
+  assignmentId,
+  targetArea,
+  boothLocation,
+  disabled,
+  pending,
+  error,
+  onCreate,
+  onUpdate,
+  onDelete,
+}: {
+  assignmentId: number
+  targetArea?: Area
+  boothLocation?: CampaignBoothLocation | null
+  disabled: boolean
+  pending: boolean
+  error: unknown
+  onCreate: (lat: number, lng: number) => void
+  onUpdate: (campaignBoothLocationId: number, payload: Partial<CampaignBoothLocation>) => void
+  onDelete: (campaignBoothLocationId: number) => void
+}) {
+  const targetGeometry = getGeometryFromAreaGeoJson(targetArea?.geojson)
+  const targetPositions = useMemo(() => getAreaPositions(targetArea), [targetArea])
+  const boothPositions = useMemo(() => boothLocation ? [[boothLocation.lat, boothLocation.lng] as [number, number]] : [], [boothLocation])
+  const fitPositions = targetPositions.length > 0 ? targetPositions : boothPositions
+  const maskGeometry = useMemo(() => getAreaMaskGeometry([targetArea]), [targetArea])
+  const canUpdateLocation = can(boothLocation?.can?.update ?? true)
+  const canDeleteLocation = can(boothLocation?.can?.delete ?? true)
+
+  const savePosition = (lat: number, lng: number) => {
+    if (!boothLocation) onCreate(lat, lng)
+    else onUpdate(boothLocation.id, { lat, lng })
+  }
+
+  return (
+    <div className="space-y-3 rounded border p-3">
+      <div>
+        <h2 className="font-medium">Aktionsstand-Standort</h2>
+        <p className="text-sm text-slate-600">
+          {disabled ? 'Keine Berechtigung zum Bearbeiten des Standorts.' : 'Klick in die Karte legt den Standort an oder verschiebt ihn. Es gibt genau einen Standort.'}
+        </p>
+      </div>
+
+      <div className="aspect-square w-full overflow-hidden rounded border bg-white">
+        <MapContainer center={DEFAULT_CENTER} zoom={6} maxBoundsViscosity={0.85} className="h-full w-full">
+          <TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} />
+          <MapLayerPanes />
+          <MapMask geometry={maskGeometry} />
+          {targetGeometry && <GeoJSON pane={MAP_PANES.target} data={targetGeometry as GeoJSON.GeoJsonObject} style={{ color: '#0f766e', fillColor: '#14b8a6', fillOpacity: 0.16, weight: 2 }} />}
+          <PosterLocationMapClicks enabled={!disabled && !pending} onAdd={savePosition} />
+          {boothLocation && (
+            <Marker
+              pane={MAP_PANES.markers}
+              position={[boothLocation.lat, boothLocation.lng]}
+              icon={campaignBoothLocationIcon}
+              draggable={!disabled && canUpdateLocation}
+              eventHandlers={{
+                dragend: (event) => {
+                  const latLng = event.target.getLatLng()
+                  onUpdate(boothLocation.id, { lat: Number(latLng.lat.toFixed(6)), lng: Number(latLng.lng.toFixed(6)) })
+                },
+              }}
+            >
+              <Popup>
+                <p className="font-medium">{boothLocation.label ?? `Aktionsstand #${boothLocation.id}`}</p>
+                <p>Status: {boothLocation.status}</p>
+                <p>{boothLocation.notes ?? '-'}</p>
+              </Popup>
+            </Marker>
+          )}
+          {fitPositions.length > 0 && <MapViewportController fitPositions={fitPositions} constrainPositions={targetPositions.length > 0 ? targetPositions : fitPositions} />}
+        </MapContainer>
+      </div>
+
+      {error ? <ErrorState message={requestErrorMessage(error)} /> : null}
+      {!boothLocation && <EmptyState message="Noch kein Aktionsstand-Standort markiert." />}
+      {boothLocation && (
+        <article className="rounded border bg-white p-3 text-sm">
+          <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_160px]">
+            <input
+              defaultValue={boothLocation.label ?? ''}
+              placeholder={`Aktionsstand #${boothLocation.id}`}
+              disabled={disabled || !canUpdateLocation}
+              onBlur={(event) => onUpdate(boothLocation.id, { label: event.target.value.trim() || null })}
+            />
+            <select
+              defaultValue={boothLocation.status}
+              disabled={disabled || !canUpdateLocation}
+              onChange={(event) => onUpdate(boothLocation.id, { status: event.target.value as CampaignBoothLocationStatus })}
+            >
+              {CAMPAIGN_BOOTH_LOCATION_STATUSES.map((status) => <option key={status}>{status}</option>)}
+            </select>
+          </div>
+          <textarea
+            className="mt-2"
+            rows={2}
+            defaultValue={boothLocation.notes ?? ''}
+            placeholder="Notizen"
+            disabled={disabled || !canUpdateLocation}
+            onBlur={(event) => onUpdate(boothLocation.id, { notes: event.target.value.trim() || null })}
+          />
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs text-slate-600">Koordinaten: {boothLocation.lat}, {boothLocation.lng}</p>
+            <button
+              type="button"
+              className="border border-red-300 px-2 py-1 text-red-700 disabled:opacity-50"
+              disabled={disabled || !canDeleteLocation}
+              onClick={() => onDelete(boothLocation.id)}
+            >
+              Standort entfernen
+            </button>
+          </div>
+        </article>
+      )}
+      <p className="text-xs text-slate-500">Auftrag #{assignmentId}</p>
+    </div>
+  )
+}
+
 export function AssignmentEditPage() {
   const { assignmentId } = useParams()
   const id = Number(assignmentId)
@@ -249,6 +368,12 @@ export function AssignmentEditPage() {
     queryKey: ['poster-locations', id],
     queryFn: () => listPosterLocations(id),
     enabled: Boolean(Number.isFinite(id) && assignment?.type === 'poster_guided'),
+    retry: false,
+  })
+  const campaignBoothLocationQuery = useQuery({
+    queryKey: ['campaign-booth-location', id],
+    queryFn: () => getCampaignBoothLocation(id),
+    enabled: Boolean(Number.isFinite(id) && assignment?.type === 'campaign_booth'),
     retry: false,
   })
   const areas = useMemo(() => areasQuery.data?.data ?? [], [areasQuery.data?.data])
@@ -296,6 +421,7 @@ export function AssignmentEditPage() {
     qc.invalidateQueries({ queryKey: ['assignment', id] })
     qc.invalidateQueries({ queryKey: ['assignment-buildings', id] })
     qc.invalidateQueries({ queryKey: ['poster-locations', id] })
+    qc.invalidateQueries({ queryKey: ['campaign-booth-location', id] })
     qc.invalidateQueries({ queryKey: ['assignments'] })
     qc.invalidateQueries({ queryKey: ['dashboard-campaign-assignments'] })
     if (campaignId) qc.invalidateQueries({ queryKey: ['campaign', campaignId] })
@@ -343,6 +469,26 @@ export function AssignmentEditPage() {
     mutationFn: (posterLocationId: number) => deletePosterLocation(posterLocationId),
     onSuccess: invalidateAssignment,
   })
+  const createCampaignBoothLocationMutation = useMutation({
+    mutationFn: ({ lat, lng }: { lat: number; lng: number }) => createCampaignBoothLocation(id, {
+      lat,
+      lng,
+      status: 'planned',
+      label: 'Aktionsstand',
+    }),
+    onSuccess: invalidateAssignment,
+  })
+  const updateCampaignBoothLocationMutation = useMutation({
+    mutationFn: ({ campaignBoothLocationId, payload }: { campaignBoothLocationId: number; payload: Partial<CampaignBoothLocation> }) => updateCampaignBoothLocation(campaignBoothLocationId, payload),
+    onSuccess: invalidateAssignment,
+  })
+  const deleteCampaignBoothLocationMutation = useMutation({
+    mutationFn: (campaignBoothLocationId: number) => deleteCampaignBoothLocation(campaignBoothLocationId),
+    onSuccess: () => {
+      createCampaignBoothLocationMutation.reset()
+      invalidateAssignment()
+    },
+  })
 
   const targetAreaRegister = form.register('targetAreaId')
   const setTargetArea = (targetAreaId: string) => {
@@ -369,9 +515,13 @@ export function AssignmentEditPage() {
   const canUpdate = can(assignment.can?.update)
   const canDelete = can(assignment.can?.delete)
   const canManagePosterLocations = canPermission(user?.can, PERMISSIONS.POSTER_LOCATIONS_MANAGE) && can(assignment.can?.manage_poster_locations ?? true)
+  const canManageCampaignBoothLocation = canUpdate && can(assignment.can?.manage_campaign_booth_location ?? true)
   const teams = teamsQuery.data?.data ?? []
   const posterLocations = (posterLocationsQuery.data ?? assignment.posterLocations ?? []).slice().sort((a, b) => a.id - b.id)
   const posterLocationMutationError = createPosterLocationMutation.error ?? updatePosterLocationMutation.error ?? deletePosterLocationMutation.error
+  const campaignBoothLocation = campaignBoothLocationQuery.data ?? assignment.campaignBoothLocation ?? assignment.campaign_booth_location ?? null
+  const campaignBoothLocationCreateSettling = createCampaignBoothLocationMutation.isPending || (createCampaignBoothLocationMutation.isSuccess && !campaignBoothLocation)
+  const campaignBoothLocationMutationError = campaignBoothLocationQuery.error ?? createCampaignBoothLocationMutation.error ?? updateCampaignBoothLocationMutation.error ?? deleteCampaignBoothLocationMutation.error
 
   return (
     <section className="space-y-4">
@@ -434,6 +584,23 @@ export function AssignmentEditPage() {
             onCreate={(lat, lng) => createPosterLocationMutation.mutate({ lat, lng })}
             onUpdate={(posterLocationId, payload) => updatePosterLocationMutation.mutate({ posterLocationId, payload })}
             onDelete={(posterLocationId) => deletePosterLocationMutation.mutate(posterLocationId)}
+          />
+        )}
+
+        {assignment.type === 'campaign_booth' && (
+          <CampaignBoothLocationEditor
+            assignmentId={assignment.id}
+            targetArea={selectedTarget}
+            boothLocation={campaignBoothLocation}
+            disabled={!canUpdate || !canManageCampaignBoothLocation}
+            pending={campaignBoothLocationQuery.isLoading || campaignBoothLocationQuery.isFetching || campaignBoothLocationCreateSettling || updateCampaignBoothLocationMutation.isPending || deleteCampaignBoothLocationMutation.isPending}
+            error={campaignBoothLocationMutationError}
+            onCreate={(lat, lng) => {
+              if (campaignBoothLocation || createCampaignBoothLocationMutation.isPending || createCampaignBoothLocationMutation.isSuccess) return
+              createCampaignBoothLocationMutation.mutate({ lat, lng })
+            }}
+            onUpdate={(campaignBoothLocationId, payload) => updateCampaignBoothLocationMutation.mutate({ campaignBoothLocationId, payload })}
+            onDelete={(campaignBoothLocationId) => deleteCampaignBoothLocationMutation.mutate(campaignBoothLocationId)}
           />
         )}
 

@@ -48,6 +48,7 @@ const formSchema = z.object({
   posterName: z.string().optional(),
   estimatedPosterCount: z.string().optional(),
   requirePhotoProof: z.boolean().optional(),
+  boothName: z.string().optional(),
 }).superRefine((value, ctx) => {
   const instructions = splitLines(value.mandatoryInstructions)
   if (value.type === 'letterbox_distribution') {
@@ -58,6 +59,10 @@ const formSchema = z.object({
   }
   if (value.type === 'poster_free' || value.type === 'poster_guided') {
     if (!value.posterName?.trim()) ctx.addIssue({ code: 'custom', path: ['posterName'], message: 'Plakatname ist erforderlich.' })
+    if (instructions.length === 0) ctx.addIssue({ code: 'custom', path: ['mandatoryInstructions'], message: 'Mindestens eine Anweisung ist erforderlich.' })
+  }
+  if (value.type === 'campaign_booth') {
+    if (!value.boothName?.trim()) ctx.addIssue({ code: 'custom', path: ['boothName'], message: 'Name des Aktionsstands ist erforderlich.' })
     if (instructions.length === 0) ctx.addIssue({ code: 'custom', path: ['mandatoryInstructions'], message: 'Mindestens eine Anweisung ist erforderlich.' })
   }
 })
@@ -124,6 +129,12 @@ const buildTypeConfig = (values: FormValues): Assignment['typeConfig'] => {
       requirePhotoProof: Boolean(values.requirePhotoProof),
     }
   }
+  if (values.type === 'campaign_booth') {
+    return {
+      boothName: values.boothName?.trim() ?? '',
+      mandatoryInstructions,
+    }
+  }
   return {}
 }
 
@@ -172,6 +183,7 @@ export function AssignmentCreatePage() {
       householdTargeting: 'all_households',
       proofTypes: [],
       posterName: '',
+      boothName: '',
     },
   })
   const type = form.watch('type')
@@ -347,6 +359,12 @@ export function AssignmentCreatePage() {
                 </div>
                 {form.formState.errors.posterName?.message && <ErrorState message={form.formState.errors.posterName.message} />}
                 <label className="flex gap-2 text-sm"><input type="checkbox" {...form.register('requirePhotoProof')} disabled={!canCreate} /> Foto-Nachweis erforderlich</label>
+              </>
+            )}
+            {type === 'campaign_booth' && (
+              <>
+                <input placeholder="Name des Aktionsstands *" {...form.register('boothName')} disabled={!canCreate} />
+                {form.formState.errors.boothName?.message && <ErrorState message={form.formState.errors.boothName.message} />}
               </>
             )}
           </div>

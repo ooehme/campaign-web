@@ -4,16 +4,21 @@ import type { Area, Assignment } from '../types/models'
 import { getAreaMaskGeometry, getAreaPositions, MAP_PANES, MapLayerPanes, MapMask, MapViewportController } from './MapViewport'
 import { MAP_ATTRIBUTION, MAP_TILE_URL } from '../utils/constants'
 import { getGeometryFromAreaGeoJson } from '../utils/campaignAreaMap'
-import { posterLocationIcon } from '../utils/mapIcons'
+import { campaignBoothLocationIcon, posterLocationIcon } from '../utils/mapIcons'
 
 const DEFAULT_CENTER: [number, number] = [51.1657, 10.4515]
 
 export function MapPanel({ assignments, areas }: { assignments: Assignment[]; areas: Area[] }) {
   const posterLocations = assignments.flatMap((assignment) => assignment.posterLocations?.map((posterLocation) => ({ ...posterLocation, assignmentTitle: assignment.title })) ?? [])
-  const center: [number, number] = posterLocations[0] ? [posterLocations[0].lat, posterLocations[0].lng] : DEFAULT_CENTER
+  const campaignBoothLocations = assignments.flatMap((assignment) => {
+    const boothLocation = assignment.campaignBoothLocation ?? assignment.campaign_booth_location
+    return boothLocation ? [{ ...boothLocation, assignmentTitle: assignment.title }] : []
+  })
+  const center: [number, number] = posterLocations[0] ? [posterLocations[0].lat, posterLocations[0].lng] : campaignBoothLocations[0] ? [campaignBoothLocations[0].lat, campaignBoothLocations[0].lng] : DEFAULT_CENTER
   const areaPositions = useMemo(() => areas.flatMap(getAreaPositions), [areas])
   const posterPositions = useMemo(() => posterLocations.map((posterLocation): [number, number] => [posterLocation.lat, posterLocation.lng]), [posterLocations])
-  const fitPositions = areaPositions.length > 0 ? areaPositions : posterPositions
+  const campaignBoothPositions = useMemo(() => campaignBoothLocations.map((boothLocation): [number, number] => [boothLocation.lat, boothLocation.lng]), [campaignBoothLocations])
+  const fitPositions = areaPositions.length > 0 ? areaPositions : posterPositions.length > 0 ? posterPositions : campaignBoothPositions
   const maskGeometry = useMemo(() => getAreaMaskGeometry(areas), [areas])
 
   return (
@@ -28,6 +33,15 @@ export function MapPanel({ assignments, areas }: { assignments: Assignment[]; ar
               <strong>{posterLocation.label ?? posterLocation.assignmentTitle}</strong>
               <br />
               Koordinaten: {posterLocation.lat}, {posterLocation.lng}
+            </Popup>
+          </Marker>
+        ))}
+        {campaignBoothLocations.map((boothLocation) => (
+          <Marker key={`campaign-booth-${boothLocation.id}`} pane={MAP_PANES.markers} position={[boothLocation.lat, boothLocation.lng]} icon={campaignBoothLocationIcon}>
+            <Popup>
+              <strong>{boothLocation.label ?? boothLocation.assignmentTitle}</strong>
+              <br />
+              Koordinaten: {boothLocation.lat}, {boothLocation.lng}
             </Popup>
           </Marker>
         ))}

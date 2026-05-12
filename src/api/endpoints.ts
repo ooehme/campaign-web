@@ -1,5 +1,5 @@
 import { ApiError, apiRequest } from './client'
-import type { Area, AreaBuilding, Assignment, AssignmentBuilding, GeoJsonFeatureCollection, RolePermissionMatrixResponse, RolePermissionUpdatePayload, PaginatedResponse, PosterLocation, Team, TeamInvitation, TeamMembershipPayload, User, UserTeam, Campaign } from '../types/models'
+import type { Area, AreaBuilding, Assignment, AssignmentBuilding, CampaignBoothLocation, GeoJsonFeatureCollection, RolePermissionMatrixResponse, RolePermissionUpdatePayload, PaginatedResponse, PosterLocation, Team, TeamInvitation, TeamMembershipPayload, User, UserTeam, Campaign } from '../types/models'
 
 export type PaginationParams = { page?: number; per_page?: number }
 export type LoginPayload = { email: string; password: string; device_name?: string }
@@ -115,6 +115,17 @@ export const createPosterLocation = (assignmentId: number | string, payload: Par
 export const bulkCreatePosterLocations = (assignmentId: number | string, payload: Partial<PosterLocation>[] | { posterLocations: Partial<PosterLocation>[] }) => apiRequest<PosterLocation[]>(`/api/assignments/${assignmentId}/poster-locations/bulk`, { method: 'POST', body: JSON.stringify(payload) })
 export const updatePosterLocation = (posterLocationId: number | string, payload: Partial<PosterLocation>) => apiRequest<PosterLocation>(`/api/poster-locations/${posterLocationId}`, { method: 'PATCH', body: JSON.stringify(payload) })
 export const deletePosterLocation = (posterLocationId: number | string) => apiRequest<void>(`/api/poster-locations/${posterLocationId}`, { method: 'DELETE' })
+export const getCampaignBoothLocation = async (assignmentId: number | string) => {
+  try {
+    return await requestResource<CampaignBoothLocation | null>(`/api/assignments/${assignmentId}/campaign-booth-location`)
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return null
+    throw error
+  }
+}
+export const createCampaignBoothLocation = (assignmentId: number | string, payload: Partial<CampaignBoothLocation>) => apiRequest<CampaignBoothLocation>(`/api/assignments/${assignmentId}/campaign-booth-location`, { method: 'POST', body: JSON.stringify(payload) })
+export const updateCampaignBoothLocation = (campaignBoothLocationId: number | string, payload: Partial<CampaignBoothLocation>) => apiRequest<CampaignBoothLocation>(`/api/campaign-booth-locations/${campaignBoothLocationId}`, { method: 'PATCH', body: JSON.stringify(payload) })
+export const deleteCampaignBoothLocation = (campaignBoothLocationId: number | string) => apiRequest<void>(`/api/campaign-booth-locations/${campaignBoothLocationId}`, { method: 'DELETE' })
 // backward-compatible aliases
 export const healthCheck = health
 export const getCampaignsPage = listCampaigns

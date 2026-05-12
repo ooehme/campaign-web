@@ -37,9 +37,16 @@ export interface AssignmentCan {
   assign_team?: boolean
   complete?: boolean
   manage_poster_locations?: boolean
+  manage_campaign_booth_location?: boolean
 }
 
 export interface PosterLocationCan {
+  view?: boolean
+  update?: boolean
+  delete?: boolean
+}
+
+export interface CampaignBoothLocationCan {
   view?: boolean
   update?: boolean
   delete?: boolean
@@ -213,6 +220,8 @@ export interface Assignment {
   target_area?: Area | null
   created_by_user?: User | null
   posterLocations?: PosterLocation[]
+  campaignBoothLocation?: CampaignBoothLocation | null
+  campaign_booth_location?: CampaignBoothLocation | null
   posterLocationCount?: number
   area_building_ids?: number[]
   area_buildings?: AreaBuilding[]
@@ -221,7 +230,7 @@ export interface Assignment {
   [key: string]: unknown
 }
 
-export type AssignmentType = 'standard' | 'letterbox_distribution' | 'poster_free' | 'poster_guided'
+export type AssignmentType = 'standard' | 'letterbox_distribution' | 'poster_free' | 'poster_guided' | 'campaign_booth'
 export type AssignmentStatus = 'draft' | 'active' | 'paused' | 'completed' | 'cancelled'
 
 export type AssignmentProofType = 'photo' | 'gps_track' | 'completion_checklist'
@@ -258,7 +267,12 @@ export interface PosterGuidedConfig {
   requirePhotoProof: boolean
 }
 
-export type AssignmentTypeConfig = StandardAssignmentConfig | LetterboxDistributionConfig | PosterFreeConfig | PosterGuidedConfig
+export interface CampaignBoothConfig {
+  boothName: string
+  mandatoryInstructions: string[]
+}
+
+export type AssignmentTypeConfig = StandardAssignmentConfig | LetterboxDistributionConfig | PosterFreeConfig | PosterGuidedConfig | CampaignBoothConfig
 
 export interface PosterLocation {
   id: number
@@ -277,6 +291,24 @@ export interface PosterLocation {
 }
 
 export type PosterLocationStatus = 'planned' | 'installed' | 'removed' | 'damaged' | 'missing'
+
+export interface CampaignBoothLocation {
+  id: number
+  assignmentId?: number
+  assignment_id?: number
+  lat: number
+  lng: number
+  status: CampaignBoothLocationStatus
+  label?: string | null
+  notes?: string | null
+  createdAt?: string | null
+  created_at?: string | null
+  updatedAt?: string | null
+  updated_at?: string | null
+  can?: CampaignBoothLocationCan
+}
+
+export type CampaignBoothLocationStatus = 'planned' | 'set_up' | 'closed' | 'cancelled' | 'issue'
 export type TeamRole = 'member' | 'lead'
 
 

@@ -6,18 +6,18 @@ import { Link, useParams } from 'react-router-dom'
 import { z } from 'zod'
 import { GeoJSON, MapContainer, Marker, Popup, TileLayer, useMapEvents } from 'react-leaflet'
 import { ApiError } from '../api/client'
-import { createPosterLocation, deletePosterLocation, getAssignment, listAreaBuildings, listAssignmentBuildings, listCampaignAreas, listPosterLocations, updatePosterLocation } from '../api/endpoints'
+import { createCampaignBoothLocation, createPosterLocation, deleteCampaignBoothLocation, deletePosterLocation, getAssignment, getCampaignBoothLocation, listAreaBuildings, listAssignmentBuildings, listCampaignAreas, listPosterLocations, updateCampaignBoothLocation, updatePosterLocation } from '../api/endpoints'
 import { useAuth } from '../auth/AuthContext'
 import { AssignmentBuildingsLayer } from '../components/AssignmentBuildingSelector'
 import { getAreaMaskGeometry, getAreaPositions, MAP_PANES, MapLayerPanes, MapMask, MapViewportController } from '../components/MapViewport'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
-import { MAP_ATTRIBUTION, MAP_TILE_URL, POSTER_LOCATION_STATUSES } from '../utils/constants'
+import { CAMPAIGN_BOOTH_LOCATION_STATUSES, MAP_ATTRIBUTION, MAP_TILE_URL, POSTER_LOCATION_STATUSES } from '../utils/constants'
 import { assignmentStatusLabel, assignmentTypeLabel } from '../utils/assignment'
 import { assignmentBoundaryAreaId, getGeometryFromAreaGeoJson } from '../utils/campaignAreaMap'
-import { posterLocationIcon } from '../utils/mapIcons'
+import { campaignBoothLocationIcon, posterLocationIcon } from '../utils/mapIcons'
 import { can, canPermission, NO_PERMISSION_MESSAGE, permissionErrorMessage } from '../utils/permissions'
 import { PERMISSIONS } from '../utils/permissionKeys'
-import type { Area, AreaBuilding, Assignment, AssignmentBuilding, AssignmentHouseholdTargeting, AssignmentTypeConfig, LetterboxDistributionConfig, PosterLocation } from '../types/models'
+import type { Area, AreaBuilding, Assignment, AssignmentBuilding, AssignmentHouseholdTargeting, AssignmentTypeConfig, CampaignBoothLocation, LetterboxDistributionConfig, PosterLocation } from '../types/models'
 
 const DEFAULT_CENTER: [number, number] = [51.1657, 10.4515]
 const posterLocationSchema = z.object({
@@ -31,6 +31,17 @@ const posterLocationSchema = z.object({
 })
 
 type PosterLocationFormValues = z.infer<typeof posterLocationSchema>
+
+const campaignBoothLocationSchema = z.object({
+  id: z.number().optional(),
+  label: z.string().max(255).optional().nullable(),
+  notes: z.string().optional().nullable(),
+  lat: z.coerce.number().min(-90, 'Breitengrad muss zwischen -90 und 90 liegen.').max(90, 'Breitengrad muss zwischen -90 und 90 liegen.'),
+  lng: z.coerce.number().min(-180, 'Längengrad muss zwischen -180 und 180 liegen.').max(180, 'Längengrad muss zwischen -180 und 180 liegen.'),
+  status: z.enum(CAMPAIGN_BOOTH_LOCATION_STATUSES),
+})
+
+type CampaignBoothLocationFormValues = z.infer<typeof campaignBoothLocationSchema>
 
 const requestErrorMessage = (error: unknown) => {
   if (!(error instanceof ApiError)) return permissionErrorMessage(error)
@@ -139,8 +150,10 @@ export function AssignmentDetailPage() {
   const { user } = useAuth()
   const [posterLocationFormError, setPosterLocationFormError] = useState<string | null>(null)
   const [posterLocationEditorOpen, setPosterLocationEditorOpen] = useState(false)
+  const [campaignBoothLocationEditorOpen, setCampaignBoothLocationEditorOpen] = useState(false)
 
   const posterLocationForm = useForm<PosterLocationFormValues>({ resolver: zodResolver(posterLocationSchema), defaultValues: { label: '', notes: '', lat: DEFAULT_CENTER[0], lng: DEFAULT_CENTER[1], status: 'planned', photoUrl: '' } })
+  const campaignBoothLocationForm = useForm<CampaignBoothLocationFormValues>({ resolver: zodResolver(campaignBoothLocationSchema), defaultValues: { label: 'Aktionsstand', notes: '', lat: DEFAULT_CENTER[0], lng: DEFAULT_CENTER[1], status: 'planned' } })
 
   const assignmentQuery = useQuery({ queryKey: ['assignment', id], queryFn: () => getAssignment(id), enabled: Number.isFinite(id) })
   const assignment = assignmentQuery.data
@@ -149,7 +162,9 @@ export function AssignmentDetailPage() {
   const assignmentTypeConfig = assignment?.typeConfig ?? assignment?.type_config
   const assignmentHouseholdTargeting = isLetterboxConfig(assignmentTypeConfig) ? normalizeHouseholdTargeting(assignmentTypeConfig.householdTargeting) : undefined
   const posterLocationToolsVisible = assignment?.type === 'poster_free' || assignment?.type === 'poster_guided'
+  const campaignBoothLocationToolsVisible = assignment?.type === 'campaign_booth'
   const posterLocationsQuery = useQuery({ queryKey: ['poster-locations', id], queryFn: () => listPosterLocations(id), enabled: Number.isFinite(id) && posterLocationToolsVisible })
+  const campaignBoothLocationQuery = useQuery({ queryKey: ['campaign-booth-location', id], queryFn: () => getCampaignBoothLocation(id), enabled: Number.isFinite(id) && campaignBoothLocationToolsVisible })
   const areasQuery = useQuery({ queryKey: ['campaign-areas', assignmentCampaignId], queryFn: () => listCampaignAreas(assignmentCampaignId!, { per_page: 100 }), enabled: Boolean(assignmentCampaignId) })
   const areaBuildingsQuery = useQuery({
     queryKey: ['area-buildings', assignmentTargetAreaId],
@@ -168,6 +183,7 @@ export function AssignmentDetailPage() {
     queryClient.invalidateQueries({ queryKey: ['assignment', id] })
     queryClient.invalidateQueries({ queryKey: ['assignments'] })
     queryClient.invalidateQueries({ queryKey: ['poster-locations', id] })
+    queryClient.invalidateQueries({ queryKey: ['campaign-booth-location', id] })
     queryClient.invalidateQueries({ queryKey: ['dashboard-campaign-assignments'] })
   }
 
@@ -181,6 +197,28 @@ export function AssignmentDetailPage() {
   })
   const updatePosterLocationMutation = useMutation({ mutationFn: (payload: { id: number; data: Partial<PosterLocation> }) => updatePosterLocation(payload.id, payload.data), onSuccess: invalidateAll })
   const deletePosterLocationMutation = useMutation({ mutationFn: (posterLocationId: number) => deletePosterLocation(posterLocationId), onSuccess: invalidateAll })
+  const createCampaignBoothLocationMutation = useMutation({
+    mutationFn: (payload: Partial<CampaignBoothLocation>) => createCampaignBoothLocation(id, payload),
+    onSuccess: () => {
+      invalidateAll()
+      setCampaignBoothLocationEditorOpen(false)
+    },
+  })
+  const updateCampaignBoothLocationMutation = useMutation({
+    mutationFn: (payload: { id: number; data: Partial<CampaignBoothLocation> }) => updateCampaignBoothLocation(payload.id, payload.data),
+    onSuccess: () => {
+      invalidateAll()
+      setCampaignBoothLocationEditorOpen(false)
+    },
+  })
+  const deleteCampaignBoothLocationMutation = useMutation({
+    mutationFn: (campaignBoothLocationId: number) => deleteCampaignBoothLocation(campaignBoothLocationId),
+    onSuccess: () => {
+      invalidateAll()
+      createCampaignBoothLocationMutation.reset()
+      campaignBoothLocationForm.reset({ label: 'Aktionsstand', notes: '', lat: DEFAULT_CENTER[0], lng: DEFAULT_CENTER[1], status: 'planned' })
+    },
+  })
 
   if (!Number.isFinite(id)) return <ErrorState message="Auftrag nicht gefunden." />
   if (assignmentQuery.isLoading) return <LoadingState />
@@ -188,8 +226,11 @@ export function AssignmentDetailPage() {
   if (!assignment) return <EmptyState message="Auftrag nicht gefunden." />
   if (posterLocationsQuery.isLoading) return <LoadingState />
   if (posterLocationsQuery.isError) return <ErrorState message={requestErrorMessage(posterLocationsQuery.error)} />
+  if (campaignBoothLocationQuery.isLoading) return <LoadingState />
+  if (campaignBoothLocationQuery.isError) return <ErrorState message={requestErrorMessage(campaignBoothLocationQuery.error)} />
 
   const posterLocations = (posterLocationsQuery.data ?? assignment.posterLocations ?? []).slice().sort((a, b) => a.id - b.id)
+  const campaignBoothLocation = campaignBoothLocationQuery.data ?? assignment.campaignBoothLocation ?? assignment.campaign_booth_location ?? null
   const campaignAreas = areasQuery.data?.data ?? []
   const targetAreaId = assignmentTargetAreaId
   const targetArea = campaignAreas.find((area) => area.id === targetAreaId) ?? assignment.target_area
@@ -201,11 +242,15 @@ export function AssignmentDetailPage() {
   const boundaryMaskGeometry = getAreaMaskGeometry([boundaryArea])
   const targetPositions = getAreaPositions(targetArea)
   const posterPositions = posterLocations.map((posterLocation): [number, number] => [posterLocation.lat, posterLocation.lng])
+  const campaignBoothPositions: [number, number][] = campaignBoothLocation ? [[campaignBoothLocation.lat, campaignBoothLocation.lng]] : []
   const fallbackPositions = mapAreas.flatMap(getAreaPositions)
-  const fitPositions = targetPositions.length > 0 ? targetPositions : posterPositions.length > 0 ? posterPositions : fallbackPositions
+  const fitPositions = targetPositions.length > 0 ? targetPositions : posterPositions.length > 0 ? posterPositions : campaignBoothPositions.length > 0 ? campaignBoothPositions : fallbackPositions
   const constrainPositions = getAreaPositions(boundaryArea ?? targetArea)
   const canManagePosterLocations = canPermission(user?.can, PERMISSIONS.POSTER_LOCATIONS_MANAGE) && can(assignment.can?.manage_poster_locations ?? true)
   const canCreatePosterLocations = assignment.type === 'poster_free' && canManagePosterLocations
+  const canUpdateAssignment = can(assignment.can?.update)
+  const canManageCampaignBoothLocation = canUpdateAssignment && can(assignment.can?.manage_campaign_booth_location ?? true)
+  const campaignBoothLocationCreateSettling = createCampaignBoothLocationMutation.isPending || (createCampaignBoothLocationMutation.isSuccess && !campaignBoothLocation)
   const photoRequired = requiresPhotoProof(assignment)
   const startsAt = assignment.startsAt ?? assignment.starts_at
   const dueAt = assignment.dueAt ?? assignment.due_at
@@ -248,6 +293,19 @@ export function AssignmentDetailPage() {
     setPosterLocationFormError(null)
   }
 
+  const saveCampaignBoothLocation = (values: CampaignBoothLocationFormValues) => {
+    if (!values.id && (campaignBoothLocation || createCampaignBoothLocationMutation.isPending || createCampaignBoothLocationMutation.isSuccess)) return
+    const payload: Partial<CampaignBoothLocation> = {
+      label: values.label || null,
+      notes: values.notes || null,
+      lat: values.lat,
+      lng: values.lng,
+      status: values.status,
+    }
+    if (values.id) updateCampaignBoothLocationMutation.mutate({ id: values.id, data: payload })
+    else createCampaignBoothLocationMutation.mutate(payload)
+  }
+
   return (
     <section className="space-y-4">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -285,12 +343,13 @@ export function AssignmentDetailPage() {
           <p className="mb-3 text-xs text-slate-600">Begrenzungsgebiet und Zielgebiet des Auftrags</p>
           {areasQuery.isError && <p className="mb-2 text-sm text-amber-700">Kampagnenflächen konnten nicht geladen werden. Verfügbare Auftragsflächen werden angezeigt.</p>}
           <div className="aspect-square w-full overflow-hidden rounded border">
-            {!boundaryGeometry && !targetGeometry && posterLocations.length === 0 && visibleAssignmentBuildings.length === 0 ? <div className="p-3 text-sm text-slate-600">Keine Kartenobjekte für diesen Auftrag vorhanden.</div> : (
+            {!boundaryGeometry && !targetGeometry && posterLocations.length === 0 && campaignBoothPositions.length === 0 && visibleAssignmentBuildings.length === 0 ? <div className="p-3 text-sm text-slate-600">Keine Kartenobjekte für diesen Auftrag vorhanden.</div> : (
               <MapContainer center={DEFAULT_CENTER} zoom={6} maxBoundsViscosity={0.85} className="h-full w-full">
                 <TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} />
                 <MapLayerPanes />
                 <MapMask geometry={boundaryMaskGeometry} />
                 {posterLocationToolsVisible && <MapClickPicker enabled={canCreatePosterLocations} onPick={(lat, lng) => { posterLocationForm.setValue('lat', Number(lat.toFixed(6))); posterLocationForm.setValue('lng', Number(lng.toFixed(6))); setPosterLocationEditorOpen(true) }} />}
+                {campaignBoothLocationToolsVisible && <MapClickPicker enabled={canManageCampaignBoothLocation && !campaignBoothLocationCreateSettling} onPick={(lat, lng) => { campaignBoothLocationForm.reset({ id: campaignBoothLocation?.id, label: campaignBoothLocation?.label ?? 'Aktionsstand', notes: campaignBoothLocation?.notes ?? '', lat: Number(lat.toFixed(6)), lng: Number(lng.toFixed(6)), status: campaignBoothLocation?.status ?? 'planned' }); setCampaignBoothLocationEditorOpen(true) }} />}
                 {boundaryArea && boundaryGeometry && <GeoJSON pane={MAP_PANES.boundary} data={boundaryGeometry as GeoJSON.GeoJsonObject} style={{ color: '#1d4ed8', weight: 5, fillOpacity: 0, opacity: 0.95 }}><Popup><p className="font-medium">{boundaryArea.name}</p><p>Begrenzungsgebiet</p></Popup></GeoJSON>}
                 {targetArea && targetGeometry && <GeoJSON pane={MAP_PANES.target} data={targetGeometry as GeoJSON.GeoJsonObject} style={{ color: '#0f766e', weight: 2, fillColor: '#14b8a6', fillOpacity: 0.2, opacity: 0.9 }}><Popup><p className="font-medium">{targetArea.name}</p><p>Zielgebiet</p></Popup></GeoJSON>}
                 {assignment.type === 'letterbox_distribution' && householdTargeting && <AssignmentBuildingsLayer pane={MAP_PANES.buildings} buildings={assignmentBuildings} householdTargeting={householdTargeting} selectedIds={selectedAreaBuildingIds} disabled selectedOnly={householdTargeting === 'selected_buildings'} />}
@@ -299,6 +358,11 @@ export function AssignmentDetailPage() {
                     <Popup><p className="font-medium">{posterLocation.label ?? `Standort #${posterLocation.id}`}</p><p>{posterLocation.notes ?? '-'}</p><p>Status: {posterLocation.status}</p></Popup>
                   </Marker>
                 ))}
+                {campaignBoothLocation && (
+                  <Marker key={campaignBoothLocation.id} pane={MAP_PANES.markers} position={[campaignBoothLocation.lat, campaignBoothLocation.lng]} icon={campaignBoothLocationIcon} draggable={campaignBoothLocationToolsVisible && canManageCampaignBoothLocation && can(campaignBoothLocation.can?.update ?? true)} eventHandlers={{ dragend: (event) => { const latLng = event.target.getLatLng(); updateCampaignBoothLocationMutation.mutate({ id: campaignBoothLocation.id, data: { lat: latLng.lat, lng: latLng.lng } }) } }}>
+                    <Popup><p className="font-medium">{campaignBoothLocation.label ?? `Aktionsstand #${campaignBoothLocation.id}`}</p><p>{campaignBoothLocation.notes ?? '-'}</p><p>Status: {campaignBoothLocation.status}</p></Popup>
+                  </Marker>
+                )}
                 <MapViewportController fitPositions={fitPositions} constrainPositions={constrainPositions} padding={[30, 30]} />
               </MapContainer>
             )}
@@ -353,6 +417,56 @@ export function AssignmentDetailPage() {
               {posterLocationFormError && <ErrorState message={posterLocationFormError} />}
               {posterLocationForm.formState.errors.lat && <ErrorState message={posterLocationForm.formState.errors.lat.message ?? ''} />}
               {posterLocationForm.formState.errors.lng && <ErrorState message={posterLocationForm.formState.errors.lng.message ?? ''} />}
+            </details>
+          </div>
+        </>
+      )}
+
+      {campaignBoothLocationToolsVisible && (
+        <>
+          <div className="rounded border bg-white p-4">
+            <details open>
+              <summary className="cursor-pointer font-medium">Aktionsstand-Standort</summary>
+              <div className="mt-3 space-y-2">
+                {!campaignBoothLocation && <EmptyState message="Noch kein Aktionsstand-Standort vorhanden." />}
+                {campaignBoothLocation && (
+                  <article className="rounded border p-2 text-sm">
+                    <p className="font-medium">{campaignBoothLocation.label ?? `Aktionsstand #${campaignBoothLocation.id}`}</p>
+                    <p>Status: {campaignBoothLocation.status}</p>
+                    <p>{campaignBoothLocation.notes ?? 'Keine Notizen.'}</p>
+                    <p>Koordinaten: {campaignBoothLocation.lat}, {campaignBoothLocation.lng}</p>
+                    <div className="mt-2 flex gap-2">
+                      <button type="button" className="border px-2 disabled:opacity-50" disabled={!canManageCampaignBoothLocation || !can(campaignBoothLocation.can?.update ?? true)} title={!canManageCampaignBoothLocation ? NO_PERMISSION_MESSAGE : undefined} onClick={() => { campaignBoothLocationForm.reset({ id: campaignBoothLocation.id, label: campaignBoothLocation.label ?? '', notes: campaignBoothLocation.notes ?? '', lat: campaignBoothLocation.lat, lng: campaignBoothLocation.lng, status: campaignBoothLocation.status }); setCampaignBoothLocationEditorOpen(true) }}>
+                        Standort bearbeiten
+                      </button>
+                      <button type="button" className="border px-2 disabled:opacity-50" disabled={!canManageCampaignBoothLocation || !can(campaignBoothLocation.can?.delete ?? true)} title={!canManageCampaignBoothLocation ? NO_PERMISSION_MESSAGE : undefined} onClick={() => deleteCampaignBoothLocationMutation.mutate(campaignBoothLocation.id)}>
+                        Standort entfernen
+                      </button>
+                    </div>
+                  </article>
+                )}
+              </div>
+            </details>
+          </div>
+
+          <div className="rounded border bg-white p-4">
+            <details open={campaignBoothLocationEditorOpen || !campaignBoothLocation} onToggle={(event) => setCampaignBoothLocationEditorOpen(event.currentTarget.open)}>
+              <summary className="cursor-pointer font-medium">Aktionsstand-Standort hinzufügen / bearbeiten</summary>
+              <form className="mt-3 space-y-2" onSubmit={campaignBoothLocationForm.handleSubmit(saveCampaignBoothLocation)}>
+                <input placeholder="Label" {...campaignBoothLocationForm.register('label')} disabled={!canManageCampaignBoothLocation} title={!canManageCampaignBoothLocation ? NO_PERMISSION_MESSAGE : undefined} />
+                <textarea rows={2} placeholder="Notizen" {...campaignBoothLocationForm.register('notes')} disabled={!canManageCampaignBoothLocation} />
+                <div className="grid gap-2 md:grid-cols-2">
+                  <input type="number" step="any" placeholder="Breitengrad" {...campaignBoothLocationForm.register('lat')} disabled={!canManageCampaignBoothLocation} />
+                  <input type="number" step="any" placeholder="Längengrad" {...campaignBoothLocationForm.register('lng')} disabled={!canManageCampaignBoothLocation} />
+                </div>
+                <select {...campaignBoothLocationForm.register('status')} disabled={!canManageCampaignBoothLocation}>{CAMPAIGN_BOOTH_LOCATION_STATUSES.map((status) => <option key={status}>{status}</option>)}</select>
+                <button type="submit" className="bg-slate-900 px-3 py-1 text-white disabled:opacity-50" disabled={!canManageCampaignBoothLocation || campaignBoothLocationCreateSettling || updateCampaignBoothLocationMutation.isPending}>{campaignBoothLocationForm.watch('id') ? 'Standort bearbeiten' : 'Standort hinzufügen'}</button>
+              </form>
+              {createCampaignBoothLocationMutation.isError && <ErrorState message={requestErrorMessage(createCampaignBoothLocationMutation.error)} />}
+              {updateCampaignBoothLocationMutation.isError && <ErrorState message={requestErrorMessage(updateCampaignBoothLocationMutation.error)} />}
+              {deleteCampaignBoothLocationMutation.isError && <ErrorState message={requestErrorMessage(deleteCampaignBoothLocationMutation.error)} />}
+              {campaignBoothLocationForm.formState.errors.lat && <ErrorState message={campaignBoothLocationForm.formState.errors.lat.message ?? ''} />}
+              {campaignBoothLocationForm.formState.errors.lng && <ErrorState message={campaignBoothLocationForm.formState.errors.lng.message ?? ''} />}
             </details>
           </div>
         </>
