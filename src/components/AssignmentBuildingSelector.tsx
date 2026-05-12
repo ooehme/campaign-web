@@ -228,7 +228,7 @@ export function AssignmentBuildingSelector({
   })
 
   const importMutation = useMutation({
-    mutationFn: () => importAreaBuildingsFromOsm(targetAreaId as number, { stream: true, onProgress: setImportProgress }),
+    mutationFn: () => importAreaBuildingsFromOsm(targetAreaId as number, { onProgress: setImportProgress }),
     onMutate: () => setImportProgress(null),
     onSuccess: (imported) => {
       queryClient.setQueryData<AreaBuilding[]>(['area-buildings', targetAreaId], imported)

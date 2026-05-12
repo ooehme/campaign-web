@@ -194,7 +194,7 @@ export function AreaBuildingsImport({
   const canManageBuildings = can(area.can?.manage_buildings)
 
   const importMutation = useMutation({
-    mutationFn: () => importAreaBuildingsFromOsm(area.id, { stream: true, onProgress: setImportProgress }),
+    mutationFn: () => importAreaBuildingsFromOsm(area.id, { onProgress: setImportProgress }),
     onMutate: () => {
       setSuccessMessage('')
       setImportProgress(null)
