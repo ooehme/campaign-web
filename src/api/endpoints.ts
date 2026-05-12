@@ -27,6 +27,7 @@ type ImportAreaBuildingsResponse = AreaBuilding[] | {
 type ImportAreaBuildingsStreamEvent =
   | { type: 'progress'; progress?: ImportAreaBuildingsProgress }
   | { type: 'complete'; progress?: ImportAreaBuildingsProgress; data?: AreaBuilding[]; area_buildings?: AreaBuilding[]; buildings?: AreaBuilding[] }
+  | { type: 'error'; message?: string; errors?: Record<string, string[]>; progress?: ImportAreaBuildingsProgress }
 
 const logAreaBuildingsImport = (id: number | string, message: string, details?: unknown) => {
   const prefix = `[OSM Import area:${id}]`
@@ -102,6 +103,7 @@ export const importAreaBuildingsFromOsm = async (
 ) => {
   if (options?.stream) {
     let imported: AreaBuilding[] = []
+    const debugLabel = `[OSM Import area:${id}]`
     logAreaBuildingsImport(id, 'stream started')
     try {
       await apiRequestNdjson<ImportAreaBuildingsStreamEvent>(
@@ -110,11 +112,19 @@ export const importAreaBuildingsFromOsm = async (
         (event) => {
           logAreaBuildingsImport(id, `event:${event.type}`, event)
           if (event.progress) options.onProgress?.(event.progress)
+          if (event.type === 'error') {
+            throw new ApiError(422, event.message ?? 'OSM import stream failed.', {
+              message: event.message,
+              errors: event.errors,
+              progress: event.progress,
+            }, 'validation')
+          }
           if (event.type === 'complete') {
             imported = normalizeAreaBuildingsResponse(event)
             logAreaBuildingsImport(id, `complete with ${imported.length} buildings`, event.progress)
           }
         },
+        { debugLabel },
       )
     } catch (error) {
       console.error(`[OSM Import area:${id}] stream failed`, error)

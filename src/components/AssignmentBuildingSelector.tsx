@@ -103,12 +103,14 @@ const formatLoadError = (error: unknown) => {
 
 const formatImportError = (error: unknown) => {
   if (!(error instanceof ApiError)) return 'Gebäude konnten nicht aus OSM importiert werden.'
+  const payload = error.details as { message?: string; error?: string; errors?: Record<string, string[]> } | undefined
+  const apiMessage = payload?.message ?? payload?.error ?? Object.values(payload?.errors ?? {})[0]?.[0]
   if (error.status === 403) return NO_PERMISSION_MESSAGE
   if (error.status === 408 || error.status === 504) return 'OSM/Overpass hat nicht rechtzeitig geantwortet. Bitte später erneut versuchen.'
   if (error.status === 413) return 'Das Zielgebiet ist für den OSM-Import zu groß.'
-  if (error.status === 422) return 'Das Zielgebiet ist ungültig oder kann nicht importiert werden.'
-  if (error.status >= 500) return 'OSM/Overpass ist gerade nicht erreichbar oder der Import ist fehlgeschlagen.'
-  return 'Gebäude konnten nicht aus OSM importiert werden.'
+  if (error.status === 422) return apiMessage ?? 'Das Zielgebiet ist ungültig oder kann nicht importiert werden.'
+  if (error.status >= 500) return apiMessage ?? 'OSM/Overpass ist gerade nicht erreichbar oder der Import ist fehlgeschlagen.'
+  return apiMessage ?? 'Gebäude konnten nicht aus OSM importiert werden.'
 }
 
 export function AssignmentBuildingsLayer({

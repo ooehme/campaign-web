@@ -71,9 +71,19 @@ export async function apiRequestNdjson<TEvent>(
   path: string,
   init: RequestInit | undefined,
   onEvent: (event: TEvent) => void,
+  options?: { debugLabel?: string },
 ): Promise<void> {
-  const headers = createHeaders(path, init, 'application/x-ndjson')
+  const headers = createHeaders(path, init, 'application/x-ndjson, application/json')
   const response = await fetch(`${baseUrl}${path}`, { ...init, headers })
+  const debugLabel = options?.debugLabel
+  if (debugLabel) {
+    console.debug(debugLabel, 'response opened', {
+      status: response.status,
+      contentType: response.headers.get('content-type'),
+      cacheControl: response.headers.get('cache-control'),
+      xAccelBuffering: response.headers.get('x-accel-buffering'),
+    })
+  }
 
   if (!response.ok) {
     await throwMappedError(response)
@@ -87,18 +97,36 @@ export async function apiRequestNdjson<TEvent>(
 
   while (true) {
     const { value, done } = await reader.read()
-    buffer += decoder.decode(value, { stream: !done })
+    const chunk = decoder.decode(value, { stream: !done })
+    if (debugLabel && chunk) console.debug(debugLabel, 'raw chunk', chunk)
+    buffer += chunk
     const lines = buffer.split(/\r?\n/)
     buffer = lines.pop() ?? ''
 
     for (const line of lines) {
       const trimmed = line.trim()
-      if (trimmed) onEvent(JSON.parse(trimmed) as TEvent)
+      if (!trimmed) continue
+
+      try {
+        if (debugLabel) console.debug(debugLabel, 'line', trimmed)
+        onEvent(JSON.parse(trimmed) as TEvent)
+      } catch (error) {
+        console.error(debugLabel ?? 'NDJSON stream', 'invalid JSON line', { line: trimmed, error })
+        throw new ApiError(response.status, 'Invalid NDJSON stream response.', { line: trimmed }, 'server')
+      }
     }
 
     if (done) break
   }
 
   const trimmed = buffer.trim()
-  if (trimmed) onEvent(JSON.parse(trimmed) as TEvent)
+  if (trimmed) {
+    try {
+      if (debugLabel) console.debug(debugLabel, 'line', trimmed)
+      onEvent(JSON.parse(trimmed) as TEvent)
+    } catch (error) {
+      console.error(debugLabel ?? 'NDJSON stream', 'invalid JSON line', { line: trimmed, error })
+      throw new ApiError(response.status, 'Invalid NDJSON stream response.', { line: trimmed }, 'server')
+    }
+  }
 }
