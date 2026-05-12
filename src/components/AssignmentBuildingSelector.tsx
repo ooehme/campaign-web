@@ -16,7 +16,13 @@ const EMPTY_FALLBACK_BUILDINGS: AreaBuilding[] = []
 
 const formatImportProgress = (progress: ImportAreaBuildingsProgress | null) => {
   if (progress?.event === 'import_started') return 'OSM-Import wird vorbereitet ...'
-  if (!progress?.chunks_total) return null
+  if (progress?.complete === true) return 'OSM-Import abgeschlossen.'
+  if (!progress?.chunks_total) {
+    if (progress?.message) return progress.message
+    if (progress?.complete === false && progress.next_chunk) return `OSM-Import läuft, nächster Chunk: ${progress.next_chunk}`
+    if (progress?.cursor) return `OSM-Import läuft, Cursor ${progress.cursor} verarbeitet`
+    return null
+  }
   const processed = progress.chunks_processed ?? Math.max((progress.chunk ?? 1) - 1, 0)
   const current = progress.event === 'chunk_started' && progress.chunk ? progress.chunk : processed
   const percent = Math.round((processed / progress.chunks_total) * 100)
@@ -110,14 +116,18 @@ const formatLoadError = (error: unknown) => {
 
 const formatImportError = (error: unknown) => {
   if (!(error instanceof ApiError)) return 'Gebäude konnten nicht aus OSM importiert werden.'
-  const payload = error.details as { message?: string; error?: string; errors?: Record<string, string[]> } | undefined
-  const apiMessage = payload?.message ?? payload?.error ?? Object.values(payload?.errors ?? {})[0]?.[0]
+  const payload = error.details as { message?: string; error?: string; errors?: Record<string, string[] | string> } | undefined
+  const firstError = Object.values(payload?.errors ?? {})[0]
+  const errorDetail = Array.isArray(firstError) ? firstError[0] : firstError
+  const apiMessage = payload?.message
+  const apiFallback = payload?.error ?? errorDetail
+  if (apiMessage) return apiMessage
   if (error.status === 403) return NO_PERMISSION_MESSAGE
   if (error.status === 408 || error.status === 504) return 'OSM/Overpass hat nicht rechtzeitig geantwortet. Bitte später erneut versuchen.'
   if (error.status === 413) return 'Das Zielgebiet ist für den OSM-Import zu groß.'
-  if (error.status === 422) return apiMessage ?? 'Das Zielgebiet ist ungültig oder kann nicht importiert werden.'
-  if (error.status >= 500) return apiMessage ?? 'OSM/Overpass ist gerade nicht erreichbar oder der Import ist fehlgeschlagen.'
-  return apiMessage ?? 'Gebäude konnten nicht aus OSM importiert werden.'
+  if (error.status === 422) return apiFallback ?? 'Das Zielgebiet ist ungültig oder kann nicht importiert werden.'
+  if (error.status >= 500) return apiFallback ?? 'OSM/Overpass ist gerade nicht erreichbar oder der Import ist fehlgeschlagen.'
+  return apiFallback ?? 'Gebäude konnten nicht aus OSM importiert werden.'
 }
 
 export function AssignmentBuildingsLayer({

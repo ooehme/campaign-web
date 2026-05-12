@@ -7,10 +7,13 @@ export type LoginResponse = { token: string; user: User }
 export type ImportAreaBuildingsProgress = {
   event?: 'import_started' | 'chunk_started' | 'chunk_finished' | 'waiting_for_overpass_slot' | 'overpass_retry_wait' | string
   chunk?: number
+  cursor?: number | string
   chunk_size_meters?: number
   chunks_total?: number
   chunks_processed?: number
   chunks_failed?: number
+  complete?: boolean
+  next_chunk?: number | string | null
   attempt?: number
   attempts_total?: number
   http_status?: number | string
@@ -25,6 +28,7 @@ type ImportAreaBuildingsResponse = AreaBuilding[] | {
   data?: AreaBuilding[]
   area_buildings?: AreaBuilding[]
   buildings?: AreaBuilding[]
+  message?: string
   meta?: { import?: ImportAreaBuildingsProgress }
 }
 
@@ -61,6 +65,14 @@ const normalizeAreaBuildingsResponse = (response: ImportAreaBuildingsResponse) =
   if (response && typeof response === 'object' && 'area_buildings' in response) return response.area_buildings ?? []
   if (response && typeof response === 'object' && 'buildings' in response) return response.buildings ?? []
   return Array.isArray(response) ? response : []
+}
+
+const getAreaBuildingsImportMeta = (response: ImportAreaBuildingsResponse) =>
+  response && typeof response === 'object' && !Array.isArray(response) ? response.meta?.import : undefined
+
+const buildAreaBuildingsImportPath = (id: number | string, cursor: number | string) => {
+  const searchParams = new URLSearchParams({ cursor: String(cursor) })
+  return `/api/areas/${id}/buildings/import-osm?${searchParams.toString()}`
 }
 
 const normalizeFeaturePermissions = (response: RolePermissionMatrixResponse): RolePermissionMatrixResponse => ({
@@ -100,11 +112,31 @@ export const importAreaBuildingsFromOsm = async (
   id: number | string,
   options?: { onProgress?: (progress: ImportAreaBuildingsProgress) => void },
 ) => {
-  logAreaBuildingsImport(id, 'json import started')
-  const response = await apiRequest<ImportAreaBuildingsResponse>(`/api/areas/${id}/buildings/import-osm`, { method: 'POST' })
-  options?.onProgress?.(response && typeof response === 'object' && !Array.isArray(response) ? response.meta?.import ?? {} : {})
-  const imported = normalizeAreaBuildingsResponse(response)
-  logAreaBuildingsImport(id, `json import complete with ${imported.length} buildings`, response && typeof response === 'object' && !Array.isArray(response) ? response.meta?.import : undefined)
+  logAreaBuildingsImport(id, 'cursor import started')
+  options?.onProgress?.({ event: 'import_started', cursor: 1 })
+
+  let cursor: number | string = 1
+  let batch = 0
+
+  while (true) {
+    batch += 1
+    logAreaBuildingsImport(id, `requesting cursor ${cursor}`)
+    const response = await apiRequest<ImportAreaBuildingsResponse>(buildAreaBuildingsImportPath(id, cursor), { method: 'POST' })
+    const meta = getAreaBuildingsImportMeta(response) ?? {}
+    const progress: ImportAreaBuildingsProgress = { ...meta, cursor }
+    options?.onProgress?.(progress)
+    logAreaBuildingsImport(id, `cursor ${cursor} finished`, progress)
+
+    if (progress.complete === true) break
+    if (progress.next_chunk === null || progress.next_chunk === undefined || progress.next_chunk === '') {
+      throw new ApiError(500, 'OSM-Import lieferte keinen nächsten Cursor.', { response }, 'server')
+    }
+
+    cursor = progress.next_chunk
+  }
+
+  const imported = await listAreaBuildings(id)
+  logAreaBuildingsImport(id, `cursor import complete with ${imported.length} buildings`, { batches: batch })
   return imported
 }
 export const listCampaignAreas = (campaignId: number, params?: PaginationParams) => requestPaginated<Area>(`/api/campaigns/${campaignId}/areas${buildQuery(params)}`)
