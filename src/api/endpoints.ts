@@ -1,5 +1,5 @@
 import { ApiError, apiRequest } from './client'
-import type { Area, AreaBuilding, Assignment, AssignmentBuilding, CampaignBoothLocation, GeoJsonFeatureCollection, RolePermissionMatrixResponse, RolePermissionUpdatePayload, PaginatedResponse, PosterLocation, Team, TeamInvitation, TeamMembershipPayload, User, UserTeam, Campaign } from '../types/models'
+import type { Area, AreaBuilding, Assignment, AssignmentBuilding, CampaignBoothLocation, GeoJsonFeatureCollection, GeoJsonGeometry, RolePermissionMatrixResponse, RolePermissionUpdatePayload, PaginatedResponse, PosterLocation, Team, TeamInvitation, TeamMembershipPayload, User, UserTeam, Campaign } from '../types/models'
 
 export type PaginationParams = { page?: number; per_page?: number }
 export type LoginPayload = { email: string; password: string; device_name?: string }
@@ -36,6 +36,26 @@ export type ImportAreaBuildingsOptions = {
   onProgress?: (progress: ImportAreaBuildingsProgress) => void
   startCursor?: number | string
   singleBatch?: boolean
+}
+export type AreaBuildingImportChunkFeature = {
+  type: 'Feature'
+  geometry: GeoJsonGeometry
+  properties: {
+    chunk: number
+    cursor: number
+    [key: string]: unknown
+  }
+}
+export type AreaBuildingImportChunkFeatureCollection = {
+  type: 'FeatureCollection'
+  features: AreaBuildingImportChunkFeature[]
+}
+type AreaBuildingImportChunksResponse = {
+  data?: AreaBuildingImportChunkFeatureCollection
+  meta?: {
+    chunk_size_meters?: number
+    chunks_total?: number
+  }
 }
 
 const logAreaBuildingsImport = (id: number | string, message: string, details?: unknown) => {
@@ -113,6 +133,12 @@ export const deleteArea = (id: number) => apiRequest<void>(`/api/areas/${id}`, {
 export const listAreaBuildings = async (id: number | string) => {
   const response = await apiRequest<ImportAreaBuildingsResponse>(`/api/areas/${id}/buildings`)
   return normalizeAreaBuildingsResponse(response)
+}
+export const listAreaBuildingImportChunks = async (id: number | string) => {
+  const response = await apiRequest<AreaBuildingImportChunksResponse | AreaBuildingImportChunkFeatureCollection>(`/api/areas/${id}/buildings/import-osm/chunks`)
+  return response && typeof response === 'object' && 'data' in response
+    ? response.data ?? { type: 'FeatureCollection', features: [] }
+    : response as AreaBuildingImportChunkFeatureCollection
 }
 export const importAreaBuildingsFromOsm = async (
   id: number | string,

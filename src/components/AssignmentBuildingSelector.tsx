@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CircleMarker, GeoJSON, MapContainer, Popup, TileLayer } from 'react-leaflet'
 import type { Path } from 'leaflet'
 import { ApiError } from '../api/client'
-import { importAreaBuildingsFromOsm, listAreaBuildings } from '../api/endpoints'
+import { importAreaBuildingsFromOsm, listAreaBuildingImportChunks, listAreaBuildings } from '../api/endpoints'
 import type { ImportAreaBuildingsOptions, ImportAreaBuildingsProgress } from '../api/endpoints'
 import type { Area, AreaBuilding, AssignmentHouseholdTargeting, GeoJsonInput } from '../types/models'
 import { getAreaMaskGeometry, getAreaPositions, MAP_PANES, MapLayerPanes, MapMask, MapViewportController } from './MapViewport'
@@ -243,6 +243,12 @@ export function AssignmentBuildingSelector({
     enabled: Boolean(targetAreaId),
     retry: false,
   })
+  const osmChunksQuery = useQuery({
+    queryKey: ['area-building-import-chunks', targetAreaId],
+    queryFn: () => listAreaBuildingImportChunks(targetAreaId as number),
+    enabled: Boolean(targetAreaId && showOsmChunks),
+    retry: false,
+  })
 
   const importMutation = useMutation({
     mutationFn: (input?: ImportAreaBuildingsMutationInput) => importAreaBuildingsFromOsm(targetAreaId as number, { onProgress: setImportProgress, ...input }),
@@ -353,6 +359,8 @@ export function AssignmentBuildingSelector({
       <input type="checkbox" checked={showOsmChunks} onChange={(event) => setShowOsmChunks(event.target.checked)} />
       OSM-Chunks
     </label>
+    {osmChunksQuery.isLoading && <p className="text-sm text-slate-600">OSM-Chunks werden geladen ...</p>}
+    {osmChunksQuery.isError && <p className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">OSM-Chunks konnten nicht geladen werden.</p>}
 
     <div className="aspect-square w-full overflow-hidden rounded border bg-white">
       <MapContainer center={DEFAULT_CENTER} zoom={6} maxBoundsViscosity={0.85} className="h-full w-full">
@@ -360,7 +368,7 @@ export function AssignmentBuildingSelector({
         <MapLayerPanes />
         <MapMask geometry={maskGeometry} />
         {targetGeometry && <GeoJSON pane={MAP_PANES.target} data={targetGeometry as GeoJSON.GeoJsonObject} style={{ color: '#0f766e', fillColor: '#14b8a6', fillOpacity: 0.12, weight: 2 }} />}
-        <AreaOsmChunkLayer geojson={targetArea.geojson} visible={showOsmChunks} disabled={disabled || !targetAreaId || importMutation.isPending} onChunkReload={({ chunk, cursor }) => importMutation.mutate({ startCursor: cursor, singleBatch: true, displayChunk: chunk })} />
+        <AreaOsmChunkLayer chunks={osmChunksQuery.data} visible={showOsmChunks} disabled={disabled || !targetAreaId || importMutation.isPending} onChunkReload={({ chunk, cursor }) => importMutation.mutate({ startCursor: cursor, singleBatch: true, displayChunk: chunk })} />
         <AssignmentBuildingsLayer pane={MAP_PANES.buildings} buildings={buildings} householdTargeting={householdTargeting} selectedIds={selectedIds} onSelectedIdsChange={onSelectedIdsChange} disabled={disabled} selectedOnly={selectedOnly} />
         {mapPositions.length > 0 && <MapViewportController fitPositions={mapPositions} constrainPositions={targetPositions.length > 0 ? targetPositions : mapPositions} />}
       </MapContainer>

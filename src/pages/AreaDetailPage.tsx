@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { GeoJSON, MapContainer, TileLayer } from 'react-leaflet'
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 import { ApiError } from '../api/client'
-import { deleteArea, getArea, importAreaBuildingsFromOsm } from '../api/endpoints'
+import { deleteArea, getArea, importAreaBuildingsFromOsm, listAreaBuildingImportChunks } from '../api/endpoints'
 import { AreaBuildingsImport, AreaBuildingsLayer, AreaOsmChunkLayer, getAreaBuildings, useAreaBuildings } from '../components/AreaBuildingsImport'
 import type { AreaOsmChunkReloadPayload } from '../components/AreaBuildingsImport'
 import { getAreaMaskGeometry, getAreaPositions, MAP_PANES, MapLayerPanes, MapMask, MapViewportController } from '../components/MapViewport'
@@ -51,6 +51,12 @@ export function AreaDetailPage() {
   const areaPositions = useMemo(() => getAreaPositions(area), [area])
   const areaMaskGeometry = useMemo(() => getAreaMaskGeometry([area]), [area])
   const buildingsQuery = useAreaBuildings(area?.id)
+  const osmChunksQuery = useQuery({
+    queryKey: ['area-building-import-chunks', area?.id],
+    queryFn: () => listAreaBuildingImportChunks(area?.id as number),
+    enabled: Boolean(area?.id && showOsmChunks),
+    retry: false,
+  })
   const buildings = buildingsQuery.data ?? getAreaBuildings(area)
   const canUpdate = can(area?.can?.update)
   const canDelete = can(area?.can?.delete)
@@ -114,9 +120,11 @@ export function AreaDetailPage() {
             OSM-Chunks
           </label>
           {chunkImportMessage && <p className="rounded border border-emerald-200 bg-emerald-50 p-2 text-sm text-emerald-700">{chunkImportMessage}</p>}
+          {osmChunksQuery.isLoading && <p className="text-sm text-slate-600">OSM-Chunks werden geladen ...</p>}
+          {osmChunksQuery.isError && <p className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">OSM-Chunks konnten nicht geladen werden.</p>}
           {importChunkMutation.isPending && <p className="text-sm text-slate-600">Chunk wird neu geladen ...</p>}
           {importChunkMutation.isError && <p className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">{formatChunkImportError(importChunkMutation.error)}</p>}
-          {summary.valid && areaPositions.length > 0 && geometry ? <div className="aspect-square w-full overflow-hidden rounded border"><MapContainer center={DEFAULT_CENTER} zoom={6} maxBoundsViscosity={0.85} className="h-full w-full"><TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} /><MapLayerPanes /><MapMask geometry={areaMaskGeometry} /><GeoJSON pane={MAP_PANES.areas} data={geometry as GeoJSON.GeoJsonObject} /><AreaOsmChunkLayer geojson={area.geojson} visible={showOsmChunks} disabled={!canManageBuildings || importChunkMutation.isPending} onChunkReload={(payload) => importChunkMutation.mutate(payload)} /><AreaBuildingsLayer pane={MAP_PANES.buildings} buildings={buildings} focusedBuildingId={focusedBuildingId} focusKey={buildingFocusKey} /><MapViewportController fitPositions={areaPositions} constrainPositions={areaPositions} padding={[16, 16]} /></MapContainer></div> : <p className="text-sm text-slate-700">Keine darstellbare GeoJSON-Geometrie vorhanden (Polygon/MultiPolygon erwartet).</p>}
+          {summary.valid && areaPositions.length > 0 && geometry ? <div className="aspect-square w-full overflow-hidden rounded border"><MapContainer center={DEFAULT_CENTER} zoom={6} maxBoundsViscosity={0.85} className="h-full w-full"><TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} /><MapLayerPanes /><MapMask geometry={areaMaskGeometry} /><GeoJSON pane={MAP_PANES.areas} data={geometry as GeoJSON.GeoJsonObject} /><AreaOsmChunkLayer chunks={osmChunksQuery.data} visible={showOsmChunks} disabled={!canManageBuildings || importChunkMutation.isPending} onChunkReload={(payload) => importChunkMutation.mutate(payload)} /><AreaBuildingsLayer pane={MAP_PANES.buildings} buildings={buildings} focusedBuildingId={focusedBuildingId} focusKey={buildingFocusKey} /><MapViewportController fitPositions={areaPositions} constrainPositions={areaPositions} padding={[16, 16]} /></MapContainer></div> : <p className="text-sm text-slate-700">Keine darstellbare GeoJSON-Geometrie vorhanden (Polygon/MultiPolygon erwartet).</p>}
         </div>
       </details>
     </div>

@@ -4,10 +4,9 @@ import L from 'leaflet'
 import { CircleMarker, GeoJSON, Popup, Tooltip, useMap } from 'react-leaflet'
 import { ApiError } from '../api/client'
 import { importAreaBuildingsFromOsm, listAreaBuildings } from '../api/endpoints'
-import type { ImportAreaBuildingsOptions, ImportAreaBuildingsProgress } from '../api/endpoints'
+import type { AreaBuildingImportChunkFeatureCollection, ImportAreaBuildingsOptions, ImportAreaBuildingsProgress } from '../api/endpoints'
 import type { Area, AreaBuilding, GeoJsonInput } from '../types/models'
 import { MAP_PANES } from './MapViewport'
-import { DEFAULT_OSM_IMPORT_CHUNK_SIZE_METERS, buildOsmImportChunks } from '../utils/osmImportChunks'
 import { can, NO_PERMISSION_MESSAGE } from '../utils/permissions'
 
 const IMPORT_LABEL = 'Gebäude aus OSM erfassen'
@@ -187,29 +186,24 @@ export function AreaBuildingsLayer({ buildings, focusedBuildingId, focusKey, pan
 }
 
 export function AreaOsmChunkLayer({
-  geojson,
+  chunks,
   visible,
   disabled = false,
   pane = MAP_PANES.chunks,
-  chunkSizeMeters = DEFAULT_OSM_IMPORT_CHUNK_SIZE_METERS,
   onChunkReload,
 }: {
-  geojson?: GeoJsonInput | null
+  chunks?: AreaBuildingImportChunkFeatureCollection | null
   visible: boolean
   disabled?: boolean
   pane?: string
-  chunkSizeMeters?: number
   onChunkReload?: (payload: AreaOsmChunkReloadPayload) => void
 }) {
-  const chunks = useMemo(
-    () => visible ? buildOsmImportChunks(geojson, chunkSizeMeters) : { type: 'FeatureCollection' as const, features: [] },
-    [chunkSizeMeters, geojson, visible],
-  )
+  const features = chunks?.features ?? []
 
-  if (!visible || chunks.features.length === 0) return null
+  if (!visible || features.length === 0) return null
 
   return <>
-    {chunks.features.map((feature) => (
+    {features.map((feature) => (
       <GeoJSON
         key={`osm-chunk-${feature.properties.chunk}`}
         pane={pane}
