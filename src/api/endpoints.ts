@@ -5,7 +5,7 @@ export type PaginationParams = { page?: number; per_page?: number }
 export type LoginPayload = { email: string; password: string; device_name?: string }
 export type LoginResponse = { token: string; user: User }
 export type ImportAreaBuildingsProgress = {
-  event?: 'chunk_started' | 'chunk_finished' | 'waiting_for_overpass_slot' | 'overpass_retry_wait' | string
+  event?: 'import_started' | 'chunk_started' | 'chunk_finished' | 'waiting_for_overpass_slot' | 'overpass_retry_wait' | string
   chunk?: number
   chunk_size_meters?: number
   chunks_total?: number

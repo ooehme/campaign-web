@@ -15,6 +15,7 @@ const DEFAULT_CENTER: [number, number] = [51.1657, 10.4515]
 const EMPTY_FALLBACK_BUILDINGS: AreaBuilding[] = []
 
 const formatImportProgress = (progress: ImportAreaBuildingsProgress | null) => {
+  if (progress?.event === 'import_started') return 'OSM-Import wird vorbereitet ...'
   if (!progress?.chunks_total) return null
   const processed = progress.chunks_processed ?? Math.max((progress.chunk ?? 1) - 1, 0)
   const current = progress.event === 'chunk_started' && progress.chunk ? progress.chunk : processed

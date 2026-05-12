@@ -77,7 +77,7 @@ export async function apiRequestNdjson<TEvent>(
   const response = await fetch(`${baseUrl}${path}`, { ...init, headers })
   const debugLabel = options?.debugLabel
   if (debugLabel) {
-    console.debug(debugLabel, 'response opened', {
+    console.info(debugLabel, 'response opened', {
       status: response.status,
       contentType: response.headers.get('content-type'),
       cacheControl: response.headers.get('cache-control'),
@@ -98,7 +98,7 @@ export async function apiRequestNdjson<TEvent>(
   while (true) {
     const { value, done } = await reader.read()
     const chunk = decoder.decode(value, { stream: !done })
-    if (debugLabel && chunk) console.debug(debugLabel, 'raw chunk', chunk)
+    if (debugLabel && chunk) console.info(debugLabel, 'raw chunk', chunk)
     buffer += chunk
     const lines = buffer.split(/\r?\n/)
     buffer = lines.pop() ?? ''
@@ -107,13 +107,16 @@ export async function apiRequestNdjson<TEvent>(
       const trimmed = line.trim()
       if (!trimmed) continue
 
+      let event: TEvent
       try {
-        if (debugLabel) console.debug(debugLabel, 'line', trimmed)
-        onEvent(JSON.parse(trimmed) as TEvent)
+        event = JSON.parse(trimmed) as TEvent
       } catch (error) {
         console.error(debugLabel ?? 'NDJSON stream', 'invalid JSON line', { line: trimmed, error })
         throw new ApiError(response.status, 'Invalid NDJSON stream response.', { line: trimmed }, 'server')
       }
+
+      if (debugLabel) console.info(debugLabel, 'line', trimmed)
+      onEvent(event)
     }
 
     if (done) break
@@ -121,12 +124,15 @@ export async function apiRequestNdjson<TEvent>(
 
   const trimmed = buffer.trim()
   if (trimmed) {
+    let event: TEvent
     try {
-      if (debugLabel) console.debug(debugLabel, 'line', trimmed)
-      onEvent(JSON.parse(trimmed) as TEvent)
+      event = JSON.parse(trimmed) as TEvent
     } catch (error) {
       console.error(debugLabel ?? 'NDJSON stream', 'invalid JSON line', { line: trimmed, error })
       throw new ApiError(response.status, 'Invalid NDJSON stream response.', { line: trimmed }, 'server')
     }
+
+    if (debugLabel) console.info(debugLabel, 'line', trimmed)
+    onEvent(event)
   }
 }
