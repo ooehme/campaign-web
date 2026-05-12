@@ -28,6 +28,12 @@ const formatImportProgress = (progress: ImportAreaBuildingsProgress | null) => {
     const waitLabel = typeof progress.wait_seconds === 'number' ? ` (${progress.wait_seconds} s)` : ''
     return `Warte auf freien Overpass-Slot${waitLabel} - ${chunkLabel}${importedLabel}`
   }
+  if (progress.event === 'overpass_retry_wait') {
+    const waitLabel = typeof progress.wait_seconds === 'number' ? ` in ${progress.wait_seconds} s` : ''
+    const attemptLabel = progress.attempt && progress.attempts_total ? ` (${progress.attempt}/${progress.attempts_total})` : ''
+    const statusLabel = progress.http_status ? ` nach HTTP ${progress.http_status}` : ''
+    return `Overpass-Retry${attemptLabel}${waitLabel}${statusLabel} - ${chunkLabel}${importedLabel}`
+  }
   if (progress.event === 'chunk_started') return `Verarbeite ${chunkLabel}${importedLabel}`
   if (progress.event === 'chunk_finished') return `${chunkLabel} abgeschlossen${importedLabel}`
   return `${chunkLabel}${importedLabel}`
