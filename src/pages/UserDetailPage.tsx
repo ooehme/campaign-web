@@ -7,6 +7,7 @@ import { useAuth } from '../auth/AuthContext'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import type { AssignmentStatus, TeamInvitation, TeamRole, UserAssignmentSummary } from '../types/models'
 import { appRoleLabel } from '../utils/appRoles'
+import { assignmentCampaignId, assignmentDueAt } from '../utils/assignment'
 import { can, hasPermission, NO_PERMISSION_MESSAGE } from '../utils/permissions'
 import { PERMISSIONS } from '../utils/permissionKeys'
 
@@ -29,8 +30,8 @@ export function UserDetailPage() {
   const [assignmentFilter, setAssignmentFilter] = useState<'all' | AssignmentStatus>('all')
 
   const userQuery = useQuery({ queryKey: ['user', id], queryFn: () => getUser(id), enabled: Number.isFinite(id), retry: false })
-  const teamsQuery = useQuery({ queryKey: ['user', id, 'teams'], queryFn: () => listUserTeams(id), enabled: hasPermission(userQuery.data, PERMISSIONS.TEAMS_VIEW), retry: false })
-  const assignmentsQuery = useQuery({ queryKey: ['assignments', 'user', id], queryFn: () => listUserAssignments(id), enabled: hasPermission(userQuery.data, PERMISSIONS.ASSIGNMENTS_VIEW), retry: false })
+  const teamsQuery = useQuery({ queryKey: ['user', id, 'teams'], queryFn: () => listUserTeams(id), enabled: hasPermission(currentUser, PERMISSIONS.TEAMS_VIEW), retry: false })
+  const assignmentsQuery = useQuery({ queryKey: ['assignments', 'user', id], queryFn: () => listUserAssignments(id), enabled: hasPermission(currentUser, PERMISSIONS.ASSIGNMENTS_VIEW), retry: false })
 
   const canViewInvitations = !!currentUser && currentUser.id === id
   const invitationsQuery = useQuery({ queryKey: ['user-invitations', id], queryFn: listCurrentUserInvitations, enabled: canViewInvitations, retry: false })
@@ -104,7 +105,7 @@ export function UserDetailPage() {
           {assignmentsQuery.isLoading && <LoadingState />}
           {assignmentsQuery.isError && <p className="text-sm text-slate-600">Auftrags-Endpunkt derzeit nicht verfügbar.</p>}
           {!assignmentsQuery.isLoading && !assignmentsQuery.isError && assignments.length === 0 && <EmptyState message="Keine Aufträge gefunden." />}
-          {assignments.length > 0 && <table className="min-w-[640px] w-full text-sm"><thead><tr className="text-left"><th>Titel</th><th>Status</th><th>Typ</th><th>Kampagne</th><th>Team</th><th>Fällig</th></tr></thead><tbody>{assignments.map((assignment) => <tr className="border-t" key={assignment.id}><td><Link className="text-blue-600" to={`/assignments/${assignment.id}`}>{assignment.title}</Link></td><td>{assignment.status}</td><td>{assignment.type}</td><td>{assignment.campaignId}</td><td>{assignment.team?.name ?? '-'}</td><td>{assignment.dueAt ?? '-'}</td></tr>)}</tbody></table>}
+          {assignments.length > 0 && <table className="min-w-[640px] w-full text-sm"><thead><tr className="text-left"><th>Titel</th><th>Status</th><th>Typ</th><th>Kampagne</th><th>Team</th><th>Fällig</th></tr></thead><tbody>{assignments.map((assignment) => <tr className="border-t" key={assignment.id}><td><Link className="text-blue-600" to={`/assignments/${assignment.id}`}>{assignment.title}</Link></td><td>{assignment.status}</td><td>{assignment.type}</td><td>{assignmentCampaignId(assignment) ?? '-'}</td><td>{assignment.team?.name ?? '-'}</td><td>{assignmentDueAt(assignment) ?? '-'}</td></tr>)}</tbody></table>}
         </div>
       </details>
     </div>

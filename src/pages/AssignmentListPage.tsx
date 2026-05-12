@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { listAssignments, listCampaignAssignments, listTeamAssignments, listUserAssignments, updateAssignment } from '../api/endpoints'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
-import { assignedTeamId, assignmentStatusLabel, assignmentTypeLabel, isClosedAssignment } from '../utils/assignment'
+import { assignedTeamId, assignmentDueAt, assignmentStatusLabel, assignmentTypeLabel, isClosedAssignment } from '../utils/assignment'
 import type { Assignment } from '../types/models'
 
 const formatDate = (value?: string | null) => {
@@ -35,7 +35,7 @@ export function AssignmentListPage() {
   })
 
   const assignMutation = useMutation({
-    mutationFn: ({ assignmentId, nextTeamId }: { assignmentId: number; nextTeamId: number | null }) => updateAssignment(assignmentId, { teamId: nextTeamId }),
+    mutationFn: ({ assignmentId, nextTeamId }: { assignmentId: number; nextTeamId: number | null }) => updateAssignment(assignmentId, { team_id: nextTeamId }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['assignments'] })
       qc.invalidateQueries({ queryKey: ['dashboard-campaign-assignments'] })
@@ -71,7 +71,7 @@ export function AssignmentListPage() {
                 <div>
                   <Link className="font-medium text-blue-600" to={`/assignments/${assignment.id}`}>{assignment.title}</Link>
                   <p className="text-sm text-slate-600">{assignmentTypeLabel[assignment.type]} · {assignmentStatusLabel[assignment.status]}</p>
-                  <p className="text-sm text-slate-600">Team: {assignment.team?.name ?? assignment.teamId ?? '-'} · Fällig: {formatDate(assignment.dueAt)}</p>
+                  <p className="text-sm text-slate-600">Team: {assignment.team?.name ?? assignedTeamId(assignment) ?? '-'} · Fällig: {formatDate(assignmentDueAt(assignment))}</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {!team && <span className="rounded border px-2 py-1 text-sm">Team-ID: {assignedTeamId(assignment) ?? '-'}</span>}

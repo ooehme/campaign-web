@@ -5,6 +5,7 @@ import { ApiError } from '../api/client'
 import { deleteTeam, detachTeamFromCampaign, getTeam, listTeamAssignments } from '../api/endpoints'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import type { Campaign, Team, TeamMembership, TeamRole } from '../types/models'
+import { assignmentDueAt } from '../utils/assignment'
 import { can, NO_PERMISSION_MESSAGE } from '../utils/permissions'
 
 const roleLabel: Record<TeamRole, string> = { lead: 'Teamleiter', member: 'Mitglied' }
@@ -103,7 +104,7 @@ export function TeamDetailPage() {
           <Link className="text-sm text-blue-600" to={`/teams/${id}/assignments`}>Alle Team-Aufträge anzeigen</Link>
           {assignmentsQuery.isLoading && <LoadingState />}
           {!assignmentsQuery.isLoading && assignments.length === 0 && <EmptyState message="Keine Aufträge für dieses Team gefunden." />}
-          {assignments.length > 0 && <div className="overflow-auto"><table className="min-w-[640px] w-full text-sm"><thead><tr className="text-left"><th>Titel</th><th>Status</th><th>Typ</th><th>Fällig</th></tr></thead><tbody>{assignments.map((assignment) => <tr key={assignment.id} className="border-t"><td><Link className="text-blue-600" to={`/assignments/${assignment.id}`}>{assignment.title}</Link></td><td>{assignment.status}</td><td>{assignment.type}</td><td>{assignment.dueAt ?? '-'}</td></tr>)}</tbody></table></div>}
+          {assignments.length > 0 && <div className="overflow-auto"><table className="min-w-[640px] w-full text-sm"><thead><tr className="text-left"><th>Titel</th><th>Status</th><th>Typ</th><th>Fällig</th></tr></thead><tbody>{assignments.map((assignment) => <tr key={assignment.id} className="border-t"><td><Link className="text-blue-600" to={`/assignments/${assignment.id}`}>{assignment.title}</Link></td><td>{assignment.status}</td><td>{assignment.type}</td><td>{assignmentDueAt(assignment) ?? '-'}</td></tr>)}</tbody></table></div>}
         </div>
       </details>
     </div>

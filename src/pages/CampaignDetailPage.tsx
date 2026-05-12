@@ -40,7 +40,7 @@ export function CampaignDetailPage() {
   })
 
   const assignAssignmentMutation = useMutation({
-    mutationFn: ({ assignmentId, teamId }: { assignmentId: number; teamId: number | null }) => updateAssignment(assignmentId, { teamId }),
+    mutationFn: ({ assignmentId, teamId }: { assignmentId: number; teamId: number | null }) => updateAssignment(assignmentId, { team_id: teamId }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['assignments'] })
       qc.invalidateQueries({ queryKey: ['dashboard-campaign-assignments'] })

@@ -4,7 +4,7 @@ import { acceptTeamInvitation, declineTeamInvitation, getTeam, healthCheck, list
 import { ErrorState, LoadingState } from '../components/UiState'
 import { useAuth } from '../auth/AuthContext'
 import { hasVisibleModuleNavigation } from '../utils/navigation'
-import { assignedTeamId, assignmentCampaignId, isAssignedToLeadTeam, isClosedAssignment, leadTeamsForCampaign, teamCampaigns, uniqueCampaigns } from '../utils/assignment'
+import { assignedTeamId, assignmentCampaignId, assignmentDueAt, isAssignedToLeadTeam, isClosedAssignment, leadTeamsForCampaign, teamCampaigns, uniqueCampaigns } from '../utils/assignment'
 import type { Assignment, Campaign, Team, TeamInvitation, UserTeam } from '../types/models'
 
 const asArray = <T,>(value: T[] | null | undefined): T[] => (Array.isArray(value) ? value : [])
@@ -172,7 +172,7 @@ export function DashboardPage() {
                     <p className="font-medium">{assignment.title}</p>
                     <p>Kampagne: {campaignLabel(assignment)}</p>
                     <p>Status: {assignment.status}</p>
-                    <p>Fällig: {formatDate(assignment.dueAt)}</p>
+                    <p>Fällig: {formatDate(assignmentDueAt(assignment))}</p>
                   </div>
                   <div className="flex items-center gap-2">
                     <Link className="text-blue-600" to={`/assignments/${assignment.id}`}>Details</Link>
@@ -199,7 +199,7 @@ export function DashboardPage() {
                     <p>Kampagne: {campaignLabel(assignment)}</p>
                     <p>Team: {assignment.team?.name ?? assignedTeamId(assignment) ?? '-'}</p>
                     <p>Status: {assignment.status}</p>
-                    <p>Fällig: {formatDate(assignment.dueAt)}</p>
+                    <p>Fällig: {formatDate(assignmentDueAt(assignment))}</p>
                   </div>
                   <div className="flex items-center gap-2">
                     <Link className="text-blue-600" to={`/assignments/${assignment.id}`}>Details</Link>

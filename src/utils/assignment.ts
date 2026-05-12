@@ -29,6 +29,8 @@ export const assignmentCampaignId = (assignment: Assignment): number | null => {
   return value == null ? null : Number(value)
 }
 
+export const assignmentDueAt = (assignment: Assignment): string | null => assignment.dueAt ?? assignment.due_at ?? null
+
 export const campaignRefId = (campaign: Pick<Campaign, 'id'>): number => Number(campaign.id)
 
 export const uniqueCampaigns = (campaigns: Campaign[]): Campaign[] => {
