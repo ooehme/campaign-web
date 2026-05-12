@@ -9,6 +9,7 @@ export const MAP_PANES = {
   mask: 'map-mask',
   boundary: 'map-boundary',
   target: 'map-target',
+  chunks: 'map-chunks',
   areas: 'map-areas',
   buildings: 'map-buildings',
   markers: 'map-markers',
@@ -60,11 +61,12 @@ export const getGeoJsonMaskGeometry = (geojson: GeoJsonInput | GeoJsonFeatureCol
   return { type: 'Polygon', coordinates: [worldRing, ...holes] }
 }
 
-export function MapLayerPanes({ panes = ['mask', 'boundary', 'target', 'areas', 'buildings', 'markers'] }: { panes?: MapPaneKey[] }) {
+export function MapLayerPanes({ panes = ['mask', 'boundary', 'target', 'chunks', 'areas', 'buildings', 'markers'] }: { panes?: MapPaneKey[] }) {
   return <>
     {panes.includes('mask') && <Pane name={MAP_PANES.mask} style={{ zIndex: 405, pointerEvents: 'none' }} />}
     {panes.includes('boundary') && <Pane name={MAP_PANES.boundary} style={{ zIndex: 410 }} />}
     {panes.includes('target') && <Pane name={MAP_PANES.target} style={{ zIndex: 420 }} />}
+    {panes.includes('chunks') && <Pane name={MAP_PANES.chunks} style={{ zIndex: 426 }} />}
     {panes.includes('areas') && <Pane name={MAP_PANES.areas} style={{ zIndex: 425 }} />}
     {panes.includes('buildings') && <Pane name={MAP_PANES.buildings} style={{ zIndex: 430 }} />}
     {panes.includes('markers') && <Pane name={MAP_PANES.markers} style={{ zIndex: 440 }} />}

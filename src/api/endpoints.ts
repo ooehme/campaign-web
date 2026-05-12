@@ -32,6 +32,12 @@ type ImportAreaBuildingsResponse = AreaBuilding[] | {
   meta?: { import?: ImportAreaBuildingsProgress }
 }
 
+export type ImportAreaBuildingsOptions = {
+  onProgress?: (progress: ImportAreaBuildingsProgress) => void
+  startCursor?: number | string
+  singleBatch?: boolean
+}
+
 const logAreaBuildingsImport = (id: number | string, message: string, details?: unknown) => {
   const prefix = `[OSM Import area:${id}]`
   if (details === undefined) {
@@ -110,12 +116,13 @@ export const listAreaBuildings = async (id: number | string) => {
 }
 export const importAreaBuildingsFromOsm = async (
   id: number | string,
-  options?: { onProgress?: (progress: ImportAreaBuildingsProgress) => void },
+  options?: ImportAreaBuildingsOptions,
 ) => {
-  logAreaBuildingsImport(id, 'cursor import started')
-  options?.onProgress?.({ event: 'import_started', cursor: 1 })
+  const startCursor = options?.startCursor ?? 1
+  logAreaBuildingsImport(id, options?.singleBatch ? `single cursor import started at ${startCursor}` : `cursor import started at ${startCursor}`)
+  options?.onProgress?.({ event: 'import_started', cursor: startCursor })
 
-  let cursor: number | string = 1
+  let cursor: number | string = startCursor
   let batch = 0
 
   while (true) {
@@ -127,7 +134,7 @@ export const importAreaBuildingsFromOsm = async (
     options?.onProgress?.(progress)
     logAreaBuildingsImport(id, `cursor ${cursor} finished`, progress)
 
-    if (progress.complete === true) break
+    if (options?.singleBatch || progress.complete === true) break
     if (progress.next_chunk === null || progress.next_chunk === undefined || progress.next_chunk === '') {
       throw new ApiError(500, 'OSM-Import lieferte keinen nächsten Cursor.', { response }, 'server')
     }

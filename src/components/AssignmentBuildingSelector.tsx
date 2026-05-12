@@ -4,15 +4,17 @@ import { CircleMarker, GeoJSON, MapContainer, Popup, TileLayer } from 'react-lea
 import type { Path } from 'leaflet'
 import { ApiError } from '../api/client'
 import { importAreaBuildingsFromOsm, listAreaBuildings } from '../api/endpoints'
-import type { ImportAreaBuildingsProgress } from '../api/endpoints'
+import type { ImportAreaBuildingsOptions, ImportAreaBuildingsProgress } from '../api/endpoints'
 import type { Area, AreaBuilding, AssignmentHouseholdTargeting, GeoJsonInput } from '../types/models'
 import { getAreaMaskGeometry, getAreaPositions, MAP_PANES, MapLayerPanes, MapMask, MapViewportController } from './MapViewport'
 import { MAP_ATTRIBUTION, MAP_TILE_URL } from '../utils/constants'
 import { getGeometryFromAreaGeoJson } from '../utils/campaignAreaMap'
 import { NO_PERMISSION_MESSAGE } from '../utils/permissions'
+import { AreaOsmChunkLayer } from './AreaBuildingsImport'
 
 const DEFAULT_CENTER: [number, number] = [51.1657, 10.4515]
 const EMPTY_FALLBACK_BUILDINGS: AreaBuilding[] = []
+type ImportAreaBuildingsMutationInput = Pick<ImportAreaBuildingsOptions, 'startCursor' | 'singleBatch'>
 
 const formatImportProgress = (progress: ImportAreaBuildingsProgress | null) => {
   if (progress?.event === 'import_started') return 'OSM-Import wird vorbereitet ...'
@@ -229,6 +231,11 @@ export function AssignmentBuildingSelector({
   const targetAreaId = targetArea?.id
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds])
   const [importProgress, setImportProgress] = useState<ImportAreaBuildingsProgress | null>(null)
+  const [successMessage, setSuccessMessage] = useState('')
+  const [chunkCursor, setChunkCursor] = useState('')
+  const [showOsmChunks, setShowOsmChunks] = useState(false)
+  const selectedChunkCursor = Number(chunkCursor)
+  const canImportSelectedChunk = Number.isInteger(selectedChunkCursor) && selectedChunkCursor > 0
 
   const buildingsQuery = useQuery({
     queryKey: ['area-buildings', targetAreaId],
@@ -238,13 +245,19 @@ export function AssignmentBuildingSelector({
   })
 
   const importMutation = useMutation({
-    mutationFn: () => importAreaBuildingsFromOsm(targetAreaId as number, { onProgress: setImportProgress }),
-    onMutate: () => setImportProgress(null),
-    onSuccess: (imported) => {
+    mutationFn: (input?: ImportAreaBuildingsMutationInput) => importAreaBuildingsFromOsm(targetAreaId as number, { onProgress: setImportProgress, ...input }),
+    onMutate: () => {
+      setSuccessMessage('')
+      setImportProgress(null)
+    },
+    onSuccess: (imported, input) => {
       queryClient.setQueryData<AreaBuilding[]>(['area-buildings', targetAreaId], imported)
       queryClient.invalidateQueries({ queryKey: ['area-buildings', targetAreaId] })
       queryClient.invalidateQueries({ queryKey: ['area', targetAreaId] })
       queryClient.invalidateQueries({ queryKey: ['campaign-areas'] })
+      setSuccessMessage(input?.singleBatch && input.startCursor
+        ? `Chunk ${input.startCursor} neu geladen. ${imported.length} Gebäude verfügbar.`
+        : `${imported.length} Gebäude aus OSM erfasst.`)
     },
   })
 
@@ -290,18 +303,45 @@ export function AssignmentBuildingSelector({
         </p>
       </div>
       {showImportButton && (
-        <button
-          type="button"
-          className="border bg-white px-3 py-2 disabled:opacity-50"
-          disabled={disabled || !targetAreaId || importMutation.isPending}
-          onClick={() => importMutation.mutate()}
-        >
-          {importMutation.isPending ? 'Gebäude werden erfasst ...' : 'Gebäude aus OSM erfassen'}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            className="border bg-white px-3 py-2 disabled:opacity-50"
+            disabled={disabled || !targetAreaId || importMutation.isPending}
+            onClick={() => importMutation.mutate({})}
+          >
+            {importMutation.isPending ? 'Gebäude werden erfasst ...' : 'Gebäude aus OSM erfassen'}
+          </button>
+          <div className="flex items-center gap-2">
+            <label className="sr-only" htmlFor={`assignment-area-${targetAreaId}-osm-chunk`}>Chunk</label>
+            <input
+              id={`assignment-area-${targetAreaId}-osm-chunk`}
+              type="number"
+              min={1}
+              step={1}
+              inputMode="numeric"
+              className="w-24 border bg-white px-2 py-2"
+              value={chunkCursor}
+              disabled={disabled || !targetAreaId || importMutation.isPending}
+              placeholder="Chunk"
+              onChange={(event) => setChunkCursor(event.target.value)}
+            />
+            <button
+              type="button"
+              className="border bg-white px-3 py-2 disabled:opacity-50"
+              disabled={disabled || !targetAreaId || importMutation.isPending || !canImportSelectedChunk}
+              title={!canImportSelectedChunk ? 'Chunknummer eingeben.' : undefined}
+              onClick={() => importMutation.mutate({ startCursor: selectedChunkCursor, singleBatch: true })}
+            >
+              Chunk laden
+            </button>
+          </div>
+        </div>
       )}
     </div>
 
     {importMutation.isPending && importProgressLabel && <p className="text-sm text-slate-600">{importProgressLabel}</p>}
+    {successMessage && <p className="rounded border border-emerald-200 bg-emerald-50 p-2 text-sm text-emerald-700">{successMessage}</p>}
     {buildingsQuery.isLoading && <p className="text-sm text-slate-600">Gebäude werden geladen ...</p>}
     {buildingsQuery.isError && <p className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">{formatLoadError(buildingsQuery.error)}</p>}
     {importMutation.isError && <p className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">{formatImportError(importMutation.error)}</p>}
@@ -309,12 +349,18 @@ export function AssignmentBuildingSelector({
       <p className="rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-800">Für dieses Zielgebiet wurden noch keine Gebäude erfasst. Erfasse zuerst Gebäude aus OSM.</p>
     )}
 
+    <label className="inline-flex items-center gap-2 text-sm">
+      <input type="checkbox" checked={showOsmChunks} onChange={(event) => setShowOsmChunks(event.target.checked)} />
+      OSM-Chunks
+    </label>
+
     <div className="aspect-square w-full overflow-hidden rounded border bg-white">
       <MapContainer center={DEFAULT_CENTER} zoom={6} maxBoundsViscosity={0.85} className="h-full w-full">
         <TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} />
         <MapLayerPanes />
         <MapMask geometry={maskGeometry} />
         {targetGeometry && <GeoJSON pane={MAP_PANES.target} data={targetGeometry as GeoJSON.GeoJsonObject} style={{ color: '#0f766e', fillColor: '#14b8a6', fillOpacity: 0.12, weight: 2 }} />}
+        <AreaOsmChunkLayer geojson={targetArea.geojson} visible={showOsmChunks} disabled={disabled || !targetAreaId || importMutation.isPending} onChunkReload={(chunk) => importMutation.mutate({ startCursor: chunk, singleBatch: true })} />
         <AssignmentBuildingsLayer pane={MAP_PANES.buildings} buildings={buildings} householdTargeting={householdTargeting} selectedIds={selectedIds} onSelectedIdsChange={onSelectedIdsChange} disabled={disabled} selectedOnly={selectedOnly} />
         {mapPositions.length > 0 && <MapViewportController fitPositions={mapPositions} constrainPositions={targetPositions.length > 0 ? targetPositions : mapPositions} />}
       </MapContainer>

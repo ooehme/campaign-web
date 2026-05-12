@@ -3,8 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { GeoJSON, MapContainer, TileLayer } from 'react-leaflet'
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 import { ApiError } from '../api/client'
-import { deleteArea, getArea } from '../api/endpoints'
-import { AreaBuildingsImport, AreaBuildingsLayer, getAreaBuildings, useAreaBuildings } from '../components/AreaBuildingsImport'
+import { deleteArea, getArea, importAreaBuildingsFromOsm } from '../api/endpoints'
+import { AreaBuildingsImport, AreaBuildingsLayer, AreaOsmChunkLayer, getAreaBuildings, useAreaBuildings } from '../components/AreaBuildingsImport'
 import { getAreaMaskGeometry, getAreaPositions, MAP_PANES, MapLayerPanes, MapMask, MapViewportController } from '../components/MapViewport'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import type { Area, AreaAssignmentRef } from '../types/models'
@@ -16,6 +16,14 @@ const DEFAULT_CENTER: [number, number] = [51.1657, 10.4515]
 
 const formatDate = (value?: string | null) => (value ? new Date(value).toLocaleString('de-DE') : '—')
 
+const formatChunkImportError = (error: unknown) => {
+  if (!(error instanceof ApiError)) return 'Chunk konnte nicht aus OSM geladen werden.'
+  const payload = error.details as { message?: string; error?: string; errors?: Record<string, string[] | string> } | undefined
+  const firstError = Object.values(payload?.errors ?? {})[0]
+  const errorDetail = Array.isArray(firstError) ? firstError[0] : firstError
+  return payload?.message ?? payload?.error ?? errorDetail ?? 'Chunk konnte nicht aus OSM geladen werden.'
+}
+
 export function AreaDetailPage() {
   const { areaId } = useParams()
   const id = Number(areaId)
@@ -23,6 +31,8 @@ export function AreaDetailPage() {
   const navigate = useNavigate()
   const [focusedBuildingId, setFocusedBuildingId] = useState<number | null>(null)
   const [buildingFocusKey, setBuildingFocusKey] = useState(0)
+  const [showOsmChunks, setShowOsmChunks] = useState(false)
+  const [chunkImportMessage, setChunkImportMessage] = useState('')
   const areaQuery = useQuery({ queryKey: ['area', id], queryFn: () => getArea(id), enabled: Number.isFinite(id) })
 
   const remove = useMutation({
@@ -43,6 +53,7 @@ export function AreaDetailPage() {
   const buildings = buildingsQuery.data ?? getAreaBuildings(area)
   const canUpdate = can(area?.can?.update)
   const canDelete = can(area?.can?.delete)
+  const canManageBuildings = can(area?.can?.manage_buildings)
   const assignments = (area?.campaigns ?? area?.assignments) as AreaAssignmentRef[] | undefined
   const prettyGeoJson = useMemo(() => {
     try {
@@ -51,6 +62,22 @@ export function AreaDetailPage() {
       return JSON.stringify(null, null, 2)
     }
   }, [area?.geojson])
+
+  const importChunkMutation = useMutation({
+    mutationFn: (chunk: number) => importAreaBuildingsFromOsm(id, { startCursor: chunk, singleBatch: true }),
+    onMutate: () => setChunkImportMessage(''),
+    onSuccess: (imported, chunk) => {
+      qc.setQueryData(['area-buildings', id], imported)
+      qc.setQueryData<Area>(['area', id], (current) => current
+        ? { ...current, area_buildings: imported, buildings: imported, building_count: imported.length }
+        : current)
+      qc.invalidateQueries({ queryKey: ['area-buildings', id] })
+      qc.invalidateQueries({ queryKey: ['area', id] })
+      qc.invalidateQueries({ queryKey: ['areas-pool'] })
+      qc.invalidateQueries({ queryKey: ['campaign-areas'] })
+      setChunkImportMessage(`Chunk ${chunk} neu geladen. ${imported.length} Gebäude verfügbar.`)
+    },
+  })
 
   if (areaQuery.isLoading) return <LoadingState />
   if (areaQuery.isError || !area) {
@@ -80,7 +107,16 @@ export function AreaDetailPage() {
     <div className="rounded border bg-white p-4 space-y-2">
       <details>
         <summary className="cursor-pointer font-medium">Kartenvorschau</summary>
-        <div className="mt-3">{summary.valid && areaPositions.length > 0 && geometry ? <div className="aspect-square w-full overflow-hidden rounded border"><MapContainer center={DEFAULT_CENTER} zoom={6} maxBoundsViscosity={0.85} className="h-full w-full"><TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} /><MapLayerPanes /><MapMask geometry={areaMaskGeometry} /><GeoJSON pane={MAP_PANES.areas} data={geometry as GeoJSON.GeoJsonObject} /><AreaBuildingsLayer pane={MAP_PANES.buildings} buildings={buildings} focusedBuildingId={focusedBuildingId} focusKey={buildingFocusKey} /><MapViewportController fitPositions={areaPositions} constrainPositions={areaPositions} padding={[16, 16]} /></MapContainer></div> : <p className="text-sm text-slate-700">Keine darstellbare GeoJSON-Geometrie vorhanden (Polygon/MultiPolygon erwartet).</p>}</div>
+        <div className="mt-3 space-y-2">
+          <label className="inline-flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={showOsmChunks} onChange={(event) => setShowOsmChunks(event.target.checked)} />
+            OSM-Chunks
+          </label>
+          {chunkImportMessage && <p className="rounded border border-emerald-200 bg-emerald-50 p-2 text-sm text-emerald-700">{chunkImportMessage}</p>}
+          {importChunkMutation.isPending && <p className="text-sm text-slate-600">Chunk wird neu geladen ...</p>}
+          {importChunkMutation.isError && <p className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">{formatChunkImportError(importChunkMutation.error)}</p>}
+          {summary.valid && areaPositions.length > 0 && geometry ? <div className="aspect-square w-full overflow-hidden rounded border"><MapContainer center={DEFAULT_CENTER} zoom={6} maxBoundsViscosity={0.85} className="h-full w-full"><TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} /><MapLayerPanes /><MapMask geometry={areaMaskGeometry} /><GeoJSON pane={MAP_PANES.areas} data={geometry as GeoJSON.GeoJsonObject} /><AreaOsmChunkLayer geojson={area.geojson} visible={showOsmChunks} disabled={!canManageBuildings || importChunkMutation.isPending} onChunkReload={(chunk) => importChunkMutation.mutate(chunk)} /><AreaBuildingsLayer pane={MAP_PANES.buildings} buildings={buildings} focusedBuildingId={focusedBuildingId} focusKey={buildingFocusKey} /><MapViewportController fitPositions={areaPositions} constrainPositions={areaPositions} padding={[16, 16]} /></MapContainer></div> : <p className="text-sm text-slate-700">Keine darstellbare GeoJSON-Geometrie vorhanden (Polygon/MultiPolygon erwartet).</p>}
+        </div>
       </details>
     </div>
 

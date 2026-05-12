@@ -1,14 +1,17 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import L from 'leaflet'
-import { CircleMarker, GeoJSON, useMap } from 'react-leaflet'
+import { CircleMarker, GeoJSON, Popup, Tooltip, useMap } from 'react-leaflet'
 import { ApiError } from '../api/client'
 import { importAreaBuildingsFromOsm, listAreaBuildings } from '../api/endpoints'
-import type { ImportAreaBuildingsProgress } from '../api/endpoints'
+import type { ImportAreaBuildingsOptions, ImportAreaBuildingsProgress } from '../api/endpoints'
 import type { Area, AreaBuilding, GeoJsonInput } from '../types/models'
+import { MAP_PANES } from './MapViewport'
+import { DEFAULT_OSM_IMPORT_CHUNK_SIZE_METERS, buildOsmImportChunks } from '../utils/osmImportChunks'
 import { can, NO_PERMISSION_MESSAGE } from '../utils/permissions'
 
 const IMPORT_LABEL = 'Gebäude aus OSM erfassen'
+type ImportAreaBuildingsMutationInput = Pick<ImportAreaBuildingsOptions, 'startCursor' | 'singleBatch'>
 
 const buildingKey = (building: AreaBuilding, index = 0) =>
   building.id ? `id:${building.id}` : building.osm_id ? `${building.osm_type ?? 'osm'}:${building.osm_id}` : `row:${index}`
@@ -182,6 +185,57 @@ export function AreaBuildingsLayer({ buildings, focusedBuildingId, focusKey, pan
   </>
 }
 
+export function AreaOsmChunkLayer({
+  geojson,
+  visible,
+  disabled = false,
+  pane = MAP_PANES.chunks,
+  chunkSizeMeters = DEFAULT_OSM_IMPORT_CHUNK_SIZE_METERS,
+  onChunkReload,
+}: {
+  geojson?: GeoJsonInput | null
+  visible: boolean
+  disabled?: boolean
+  pane?: string
+  chunkSizeMeters?: number
+  onChunkReload?: (chunk: number) => void
+}) {
+  const chunks = useMemo(
+    () => visible ? buildOsmImportChunks(geojson, chunkSizeMeters) : { type: 'FeatureCollection' as const, features: [] },
+    [chunkSizeMeters, geojson, visible],
+  )
+
+  if (!visible || chunks.features.length === 0) return null
+
+  return <>
+    {chunks.features.map((feature) => (
+      <GeoJSON
+        key={`osm-chunk-${feature.properties.chunk}`}
+        pane={pane}
+        data={feature as GeoJSON.GeoJsonObject}
+        style={() => ({ color: '#ea580c', fillColor: '#fdba74', fillOpacity: 0.04, opacity: 0.95, weight: 1 })}
+      >
+        <Tooltip sticky>Chunk {feature.properties.chunk}</Tooltip>
+        <Popup>
+          <div className="space-y-2 text-sm">
+            <p className="font-medium">Chunk {feature.properties.chunk}</p>
+            {onChunkReload && (
+              <button
+                type="button"
+                className="border px-2 py-1 disabled:opacity-50"
+                disabled={disabled}
+                onClick={() => onChunkReload(feature.properties.chunk)}
+              >
+                Chunk neu laden
+              </button>
+            )}
+          </div>
+        </Popup>
+      </GeoJSON>
+    ))}
+  </>
+}
+
 export function AreaBuildingsImport({
   area,
   hasValidPolygon,
@@ -198,18 +252,21 @@ export function AreaBuildingsImport({
   const qc = useQueryClient()
   const [successMessage, setSuccessMessage] = useState('')
   const [importProgress, setImportProgress] = useState<ImportAreaBuildingsProgress | null>(null)
+  const [chunkCursor, setChunkCursor] = useState('')
   const embeddedBuildings = useMemo(() => normalizeBuildings(area), [area])
   const buildingsQuery = useAreaBuildings(area.id)
   const buildings = buildingsQuery.data ?? embeddedBuildings
   const canManageBuildings = can(area.can?.manage_buildings)
+  const selectedChunkCursor = Number(chunkCursor)
+  const canImportSelectedChunk = Number.isInteger(selectedChunkCursor) && selectedChunkCursor > 0
 
   const importMutation = useMutation({
-    mutationFn: () => importAreaBuildingsFromOsm(area.id, { onProgress: setImportProgress }),
+    mutationFn: (input?: ImportAreaBuildingsMutationInput) => importAreaBuildingsFromOsm(area.id, { onProgress: setImportProgress, ...input }),
     onMutate: () => {
       setSuccessMessage('')
       setImportProgress(null)
     },
-    onSuccess: (imported) => {
+    onSuccess: (imported, input) => {
       const merged = imported
       qc.setQueryData<AreaBuilding[]>(['area-buildings', area.id], merged)
       qc.setQueryData<Area>(['area', area.id], (current) => current
@@ -219,7 +276,9 @@ export function AreaBuildingsImport({
       qc.invalidateQueries({ queryKey: ['area', area.id] })
       qc.invalidateQueries({ queryKey: ['areas-pool'] })
       qc.invalidateQueries({ queryKey: ['campaign-areas'] })
-      setSuccessMessage(`${imported.length} Gebäude aus OSM erfasst.`)
+      setSuccessMessage(input?.singleBatch && input.startCursor
+        ? `Chunk ${input.startCursor} neu geladen. ${imported.length} Gebäude verfügbar.`
+        : `${imported.length} Gebäude aus OSM erfasst.`)
     },
   })
   const importProgressLabel = formatImportProgress(importProgress)
@@ -237,15 +296,41 @@ export function AreaBuildingsImport({
         <h2 className="font-medium">Gebäude</h2>
         <p className="text-sm text-slate-600">Erfasste Gebäude: {buildings.length || area.building_count || 0}</p>
       </div>
-      <button
-        type="button"
-        className="border px-3 py-2 disabled:opacity-50"
-        disabled={disabled}
-        title={title}
-        onClick={() => importMutation.mutate()}
-      >
-        {importMutation.isPending ? 'Gebäude werden erfasst ...' : IMPORT_LABEL}
-      </button>
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          className="border px-3 py-2 disabled:opacity-50"
+          disabled={disabled}
+          title={title}
+          onClick={() => importMutation.mutate({})}
+        >
+          {importMutation.isPending ? 'Gebäude werden erfasst ...' : IMPORT_LABEL}
+        </button>
+        <div className="flex items-center gap-2">
+          <label className="sr-only" htmlFor={`area-${area.id}-osm-chunk`}>Chunk</label>
+          <input
+            id={`area-${area.id}-osm-chunk`}
+            type="number"
+            min={1}
+            step={1}
+            inputMode="numeric"
+            className="w-24 border px-2 py-2"
+            value={chunkCursor}
+            disabled={disabled}
+            placeholder="Chunk"
+            onChange={(event) => setChunkCursor(event.target.value)}
+          />
+          <button
+            type="button"
+            className="border px-3 py-2 disabled:opacity-50"
+            disabled={disabled || !canImportSelectedChunk}
+            title={!canImportSelectedChunk ? 'Chunknummer eingeben.' : title}
+            onClick={() => importMutation.mutate({ startCursor: selectedChunkCursor, singleBatch: true })}
+          >
+            Chunk laden
+          </button>
+        </div>
+      </div>
     </div>
 
     {importMutation.isPending && importProgressLabel && <p className="text-sm text-slate-600">{importProgressLabel}</p>}
