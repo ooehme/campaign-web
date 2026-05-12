@@ -18,6 +18,7 @@ export type OsmImportChunkFeature = {
   }
   properties: {
     chunk: number
+    cursor: number
   }
 }
 
@@ -135,7 +136,7 @@ const rectangleFeature = (chunk: number, minX: number, minY: number, maxX: numbe
     type: 'Polygon',
     coordinates: [rectanglePolygon(minX, minY, maxX, maxY)[0].map(unprojectPoint)],
   },
-  properties: { chunk },
+  properties: { chunk, cursor: chunk + 1 },
 })
 
 export const buildOsmImportChunks = (
@@ -155,7 +156,7 @@ export const buildOsmImportChunks = (
   const maxY = Math.ceil(bounds.maxY / chunkSizeMeters) * chunkSizeMeters
   const cols = Math.max(1, Math.ceil((maxX - minX) / chunkSizeMeters))
   const rows = Math.max(1, Math.ceil((maxY - minY) / chunkSizeMeters))
-  let chunk = 1
+  let chunk = 0
 
   for (let row = 0; row < rows; row += 1) {
     for (let col = 0; col < cols; col += 1) {

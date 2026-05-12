@@ -5,6 +5,7 @@ import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 import { ApiError } from '../api/client'
 import { deleteArea, getArea, importAreaBuildingsFromOsm } from '../api/endpoints'
 import { AreaBuildingsImport, AreaBuildingsLayer, AreaOsmChunkLayer, getAreaBuildings, useAreaBuildings } from '../components/AreaBuildingsImport'
+import type { AreaOsmChunkReloadPayload } from '../components/AreaBuildingsImport'
 import { getAreaMaskGeometry, getAreaPositions, MAP_PANES, MapLayerPanes, MapMask, MapViewportController } from '../components/MapViewport'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import type { Area, AreaAssignmentRef } from '../types/models'
@@ -64,9 +65,9 @@ export function AreaDetailPage() {
   }, [area?.geojson])
 
   const importChunkMutation = useMutation({
-    mutationFn: (chunk: number) => importAreaBuildingsFromOsm(id, { startCursor: chunk, singleBatch: true }),
+    mutationFn: ({ cursor }: AreaOsmChunkReloadPayload) => importAreaBuildingsFromOsm(id, { startCursor: cursor, singleBatch: true }),
     onMutate: () => setChunkImportMessage(''),
-    onSuccess: (imported, chunk) => {
+    onSuccess: (imported, { chunk }) => {
       qc.setQueryData(['area-buildings', id], imported)
       qc.setQueryData<Area>(['area', id], (current) => current
         ? { ...current, area_buildings: imported, buildings: imported, building_count: imported.length }
@@ -115,7 +116,7 @@ export function AreaDetailPage() {
           {chunkImportMessage && <p className="rounded border border-emerald-200 bg-emerald-50 p-2 text-sm text-emerald-700">{chunkImportMessage}</p>}
           {importChunkMutation.isPending && <p className="text-sm text-slate-600">Chunk wird neu geladen ...</p>}
           {importChunkMutation.isError && <p className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">{formatChunkImportError(importChunkMutation.error)}</p>}
-          {summary.valid && areaPositions.length > 0 && geometry ? <div className="aspect-square w-full overflow-hidden rounded border"><MapContainer center={DEFAULT_CENTER} zoom={6} maxBoundsViscosity={0.85} className="h-full w-full"><TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} /><MapLayerPanes /><MapMask geometry={areaMaskGeometry} /><GeoJSON pane={MAP_PANES.areas} data={geometry as GeoJSON.GeoJsonObject} /><AreaOsmChunkLayer geojson={area.geojson} visible={showOsmChunks} disabled={!canManageBuildings || importChunkMutation.isPending} onChunkReload={(chunk) => importChunkMutation.mutate(chunk)} /><AreaBuildingsLayer pane={MAP_PANES.buildings} buildings={buildings} focusedBuildingId={focusedBuildingId} focusKey={buildingFocusKey} /><MapViewportController fitPositions={areaPositions} constrainPositions={areaPositions} padding={[16, 16]} /></MapContainer></div> : <p className="text-sm text-slate-700">Keine darstellbare GeoJSON-Geometrie vorhanden (Polygon/MultiPolygon erwartet).</p>}
+          {summary.valid && areaPositions.length > 0 && geometry ? <div className="aspect-square w-full overflow-hidden rounded border"><MapContainer center={DEFAULT_CENTER} zoom={6} maxBoundsViscosity={0.85} className="h-full w-full"><TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} /><MapLayerPanes /><MapMask geometry={areaMaskGeometry} /><GeoJSON pane={MAP_PANES.areas} data={geometry as GeoJSON.GeoJsonObject} /><AreaOsmChunkLayer geojson={area.geojson} visible={showOsmChunks} disabled={!canManageBuildings || importChunkMutation.isPending} onChunkReload={(payload) => importChunkMutation.mutate(payload)} /><AreaBuildingsLayer pane={MAP_PANES.buildings} buildings={buildings} focusedBuildingId={focusedBuildingId} focusKey={buildingFocusKey} /><MapViewportController fitPositions={areaPositions} constrainPositions={areaPositions} padding={[16, 16]} /></MapContainer></div> : <p className="text-sm text-slate-700">Keine darstellbare GeoJSON-Geometrie vorhanden (Polygon/MultiPolygon erwartet).</p>}
         </div>
       </details>
     </div>

@@ -14,7 +14,7 @@ import { AreaOsmChunkLayer } from './AreaBuildingsImport'
 
 const DEFAULT_CENTER: [number, number] = [51.1657, 10.4515]
 const EMPTY_FALLBACK_BUILDINGS: AreaBuilding[] = []
-type ImportAreaBuildingsMutationInput = Pick<ImportAreaBuildingsOptions, 'startCursor' | 'singleBatch'>
+type ImportAreaBuildingsMutationInput = Pick<ImportAreaBuildingsOptions, 'startCursor' | 'singleBatch'> & { displayChunk?: number }
 
 const formatImportProgress = (progress: ImportAreaBuildingsProgress | null) => {
   if (progress?.event === 'import_started') return 'OSM-Import wird vorbereitet ...'
@@ -256,7 +256,7 @@ export function AssignmentBuildingSelector({
       queryClient.invalidateQueries({ queryKey: ['area', targetAreaId] })
       queryClient.invalidateQueries({ queryKey: ['campaign-areas'] })
       setSuccessMessage(input?.singleBatch && input.startCursor
-        ? `Chunk ${input.startCursor} neu geladen. ${imported.length} Gebäude verfügbar.`
+        ? `Chunk ${input.displayChunk ?? input.startCursor} neu geladen. ${imported.length} Gebäude verfügbar.`
         : `${imported.length} Gebäude aus OSM erfasst.`)
     },
   })
@@ -360,7 +360,7 @@ export function AssignmentBuildingSelector({
         <MapLayerPanes />
         <MapMask geometry={maskGeometry} />
         {targetGeometry && <GeoJSON pane={MAP_PANES.target} data={targetGeometry as GeoJSON.GeoJsonObject} style={{ color: '#0f766e', fillColor: '#14b8a6', fillOpacity: 0.12, weight: 2 }} />}
-        <AreaOsmChunkLayer geojson={targetArea.geojson} visible={showOsmChunks} disabled={disabled || !targetAreaId || importMutation.isPending} onChunkReload={(chunk) => importMutation.mutate({ startCursor: chunk, singleBatch: true })} />
+        <AreaOsmChunkLayer geojson={targetArea.geojson} visible={showOsmChunks} disabled={disabled || !targetAreaId || importMutation.isPending} onChunkReload={({ chunk, cursor }) => importMutation.mutate({ startCursor: cursor, singleBatch: true, displayChunk: chunk })} />
         <AssignmentBuildingsLayer pane={MAP_PANES.buildings} buildings={buildings} householdTargeting={householdTargeting} selectedIds={selectedIds} onSelectedIdsChange={onSelectedIdsChange} disabled={disabled} selectedOnly={selectedOnly} />
         {mapPositions.length > 0 && <MapViewportController fitPositions={mapPositions} constrainPositions={targetPositions.length > 0 ? targetPositions : mapPositions} />}
       </MapContainer>

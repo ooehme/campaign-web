@@ -11,7 +11,8 @@ import { DEFAULT_OSM_IMPORT_CHUNK_SIZE_METERS, buildOsmImportChunks } from '../u
 import { can, NO_PERMISSION_MESSAGE } from '../utils/permissions'
 
 const IMPORT_LABEL = 'Gebäude aus OSM erfassen'
-type ImportAreaBuildingsMutationInput = Pick<ImportAreaBuildingsOptions, 'startCursor' | 'singleBatch'>
+type ImportAreaBuildingsMutationInput = Pick<ImportAreaBuildingsOptions, 'startCursor' | 'singleBatch'> & { displayChunk?: number }
+export type AreaOsmChunkReloadPayload = { chunk: number; cursor: number }
 
 const buildingKey = (building: AreaBuilding, index = 0) =>
   building.id ? `id:${building.id}` : building.osm_id ? `${building.osm_type ?? 'osm'}:${building.osm_id}` : `row:${index}`
@@ -198,7 +199,7 @@ export function AreaOsmChunkLayer({
   disabled?: boolean
   pane?: string
   chunkSizeMeters?: number
-  onChunkReload?: (chunk: number) => void
+  onChunkReload?: (payload: AreaOsmChunkReloadPayload) => void
 }) {
   const chunks = useMemo(
     () => visible ? buildOsmImportChunks(geojson, chunkSizeMeters) : { type: 'FeatureCollection' as const, features: [] },
@@ -224,7 +225,7 @@ export function AreaOsmChunkLayer({
                 type="button"
                 className="border px-2 py-1 disabled:opacity-50"
                 disabled={disabled}
-                onClick={() => onChunkReload(feature.properties.chunk)}
+                onClick={() => onChunkReload({ chunk: feature.properties.chunk, cursor: feature.properties.cursor })}
               >
                 Chunk neu laden
               </button>
@@ -277,7 +278,7 @@ export function AreaBuildingsImport({
       qc.invalidateQueries({ queryKey: ['areas-pool'] })
       qc.invalidateQueries({ queryKey: ['campaign-areas'] })
       setSuccessMessage(input?.singleBatch && input.startCursor
-        ? `Chunk ${input.startCursor} neu geladen. ${imported.length} Gebäude verfügbar.`
+        ? `Chunk ${input.displayChunk ?? input.startCursor} neu geladen. ${imported.length} Gebäude verfügbar.`
         : `${imported.length} Gebäude aus OSM erfasst.`)
     },
   })
