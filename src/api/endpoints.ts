@@ -28,6 +28,15 @@ type ImportAreaBuildingsStreamEvent =
   | { type: 'progress'; progress?: ImportAreaBuildingsProgress }
   | { type: 'complete'; progress?: ImportAreaBuildingsProgress; data?: AreaBuilding[]; area_buildings?: AreaBuilding[]; buildings?: AreaBuilding[] }
 
+const logAreaBuildingsImport = (id: number | string, message: string, details?: unknown) => {
+  const prefix = `[OSM Import area:${id}]`
+  if (details === undefined) {
+    console.info(prefix, message)
+    return
+  }
+  console.info(prefix, message, details)
+}
+
 const buildQuery = (params?: PaginationParams) => {
   if (!params) return ''
   const searchParams = new URLSearchParams()
@@ -93,20 +102,33 @@ export const importAreaBuildingsFromOsm = async (
 ) => {
   if (options?.stream) {
     let imported: AreaBuilding[] = []
-    await apiRequestNdjson<ImportAreaBuildingsStreamEvent>(
-      `/api/areas/${id}/buildings/import-osm?stream=1`,
-      { method: 'POST' },
-      (event) => {
-        if (event.progress) options.onProgress?.(event.progress)
-        if (event.type === 'complete') imported = normalizeAreaBuildingsResponse(event)
-      },
-    )
+    logAreaBuildingsImport(id, 'stream started')
+    try {
+      await apiRequestNdjson<ImportAreaBuildingsStreamEvent>(
+        `/api/areas/${id}/buildings/import-osm?stream=1`,
+        { method: 'POST' },
+        (event) => {
+          logAreaBuildingsImport(id, `event:${event.type}`, event)
+          if (event.progress) options.onProgress?.(event.progress)
+          if (event.type === 'complete') {
+            imported = normalizeAreaBuildingsResponse(event)
+            logAreaBuildingsImport(id, `complete with ${imported.length} buildings`, event.progress)
+          }
+        },
+      )
+    } catch (error) {
+      console.error(`[OSM Import area:${id}] stream failed`, error)
+      throw error
+    }
     return imported
   }
 
+  logAreaBuildingsImport(id, 'json import started')
   const response = await apiRequest<ImportAreaBuildingsResponse>(`/api/areas/${id}/buildings/import-osm`, { method: 'POST' })
   options?.onProgress?.(response && typeof response === 'object' && !Array.isArray(response) ? response.meta?.import ?? {} : {})
-  return normalizeAreaBuildingsResponse(response)
+  const imported = normalizeAreaBuildingsResponse(response)
+  logAreaBuildingsImport(id, `json import complete with ${imported.length} buildings`, response && typeof response === 'object' && !Array.isArray(response) ? response.meta?.import : undefined)
+  return imported
 }
 export const listCampaignAreas = (campaignId: number, params?: PaginationParams) => requestPaginated<Area>(`/api/campaigns/${campaignId}/areas${buildQuery(params)}`)
 export const listCampaignAreasMap = (campaignId: number) => requestResource<GeoJsonFeatureCollection>(`/api/campaigns/${campaignId}/areas?map=1`)
