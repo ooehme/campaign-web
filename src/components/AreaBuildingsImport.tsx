@@ -4,6 +4,7 @@ import L from 'leaflet'
 import { CircleMarker, GeoJSON, useMap } from 'react-leaflet'
 import { ApiError } from '../api/client'
 import { importAreaBuildingsFromOsm, listAreaBuildings } from '../api/endpoints'
+import type { ImportAreaBuildingsProgress } from '../api/endpoints'
 import type { Area, AreaBuilding, GeoJsonInput } from '../types/models'
 import { can, NO_PERMISSION_MESSAGE } from '../utils/permissions'
 
@@ -16,6 +17,15 @@ const normalizeBuildings = (area?: Area | null): AreaBuilding[] =>
   (area?.area_buildings ?? area?.buildings ?? []) as AreaBuilding[]
 
 const stringValue = (value: unknown) => typeof value === 'string' || typeof value === 'number' ? String(value) : undefined
+
+const formatImportProgress = (progress: ImportAreaBuildingsProgress | null) => {
+  if (!progress?.chunks_total) return null
+  if (progress.event === 'waiting_for_overpass_slot') return 'Warte auf freien Overpass-Slot ...'
+  const processed = progress.chunks_processed ?? Math.max((progress.chunk ?? 1) - 1, 0)
+  const current = progress.event === 'chunk_started' && progress.chunk ? progress.chunk : processed
+  const percent = Math.round((processed / progress.chunks_total) * 100)
+  return `Chunk ${current} / ${progress.chunks_total}${Number.isFinite(percent) ? ` (${percent} %)` : ''}`
+}
 
 export const useAreaBuildings = (areaId?: number) => useQuery({
   queryKey: ['area-buildings', areaId],
@@ -97,13 +107,6 @@ const formatImportError = (error: unknown) => {
   return apiMessage ?? 'Gebäude konnten nicht aus OSM importiert werden.'
 }
 
-const mergeBuildings = (existing: AreaBuilding[], imported: AreaBuilding[]) => {
-  const byKey = new Map<string, AreaBuilding>()
-  existing.forEach((building, index) => byKey.set(buildingKey(building, index), building))
-  imported.forEach((building, index) => byKey.set(buildingKey(building, index), building))
-  return Array.from(byKey.values())
-}
-
 function FocusBuilding({ building, focusKey }: { building?: AreaBuilding | null; focusKey?: number }) {
   const map = useMap()
 
@@ -167,16 +170,20 @@ export function AreaBuildingsImport({
 }) {
   const qc = useQueryClient()
   const [successMessage, setSuccessMessage] = useState('')
+  const [importProgress, setImportProgress] = useState<ImportAreaBuildingsProgress | null>(null)
   const embeddedBuildings = useMemo(() => normalizeBuildings(area), [area])
   const buildingsQuery = useAreaBuildings(area.id)
   const buildings = buildingsQuery.data ?? embeddedBuildings
   const canManageBuildings = can(area.can?.manage_buildings)
 
   const importMutation = useMutation({
-    mutationFn: () => importAreaBuildingsFromOsm(area.id),
-    onMutate: () => setSuccessMessage(''),
+    mutationFn: () => importAreaBuildingsFromOsm(area.id, { stream: true, onProgress: setImportProgress }),
+    onMutate: () => {
+      setSuccessMessage('')
+      setImportProgress(null)
+    },
     onSuccess: (imported) => {
-      const merged = mergeBuildings(buildings, imported)
+      const merged = imported
       qc.setQueryData<AreaBuilding[]>(['area-buildings', area.id], merged)
       qc.setQueryData<Area>(['area', area.id], (current) => current
         ? { ...current, area_buildings: merged, buildings: merged, building_count: merged.length }
@@ -188,6 +195,7 @@ export function AreaBuildingsImport({
       setSuccessMessage(`${imported.length} Gebäude aus OSM erfasst.`)
     },
   })
+  const importProgressLabel = formatImportProgress(importProgress)
 
   const disabled = Boolean(disabledReason) || !area.id || !hasValidPolygon || !canManageBuildings || importMutation.isPending
   const title = disabledReason
@@ -209,10 +217,11 @@ export function AreaBuildingsImport({
         title={title}
         onClick={() => importMutation.mutate()}
       >
-        {importMutation.isPending ? 'Gebäude werden aus OSM geladen ...' : IMPORT_LABEL}
+        {importMutation.isPending ? 'Gebäude werden erfasst ...' : IMPORT_LABEL}
       </button>
     </div>
 
+    {importMutation.isPending && importProgressLabel && <p className="text-sm text-slate-600">{importProgressLabel}</p>}
     {successMessage && <p className="rounded border border-emerald-200 bg-emerald-50 p-2 text-sm text-emerald-700">{successMessage}</p>}
     {buildingsQuery.isLoading && <p className="text-sm text-slate-600">Gebäude werden geladen ...</p>}
     {buildingsQuery.isError && <p className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">Gebäude konnten nicht geladen werden.</p>}

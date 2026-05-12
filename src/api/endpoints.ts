@@ -1,9 +1,32 @@
-import { ApiError, apiRequest } from './client'
+import { ApiError, apiRequest, apiRequestNdjson } from './client'
 import type { Area, AreaBuilding, Assignment, AssignmentBuilding, CampaignBoothLocation, GeoJsonFeatureCollection, RolePermissionMatrixResponse, RolePermissionUpdatePayload, PaginatedResponse, PosterLocation, Team, TeamInvitation, TeamMembershipPayload, User, UserTeam, Campaign } from '../types/models'
 
 export type PaginationParams = { page?: number; per_page?: number }
 export type LoginPayload = { email: string; password: string; device_name?: string }
 export type LoginResponse = { token: string; user: User }
+export type ImportAreaBuildingsProgress = {
+  event?: 'chunk_started' | 'chunk_finished' | 'waiting_for_overpass_slot' | string
+  chunk?: number
+  chunk_size_meters?: number
+  chunks_total?: number
+  chunks_processed?: number
+  chunks_failed?: number
+  available_slots?: number
+  rate_limit?: number
+  wait_seconds?: number
+  buildings_imported?: number
+}
+
+type ImportAreaBuildingsResponse = AreaBuilding[] | {
+  data?: AreaBuilding[]
+  area_buildings?: AreaBuilding[]
+  buildings?: AreaBuilding[]
+  meta?: { import?: ImportAreaBuildingsProgress }
+}
+
+type ImportAreaBuildingsStreamEvent =
+  | { type: 'progress'; progress?: ImportAreaBuildingsProgress }
+  | { type: 'complete'; progress?: ImportAreaBuildingsProgress; data?: AreaBuilding[]; area_buildings?: AreaBuilding[]; buildings?: AreaBuilding[] }
 
 const buildQuery = (params?: PaginationParams) => {
   if (!params) return ''
@@ -22,6 +45,13 @@ const requestResource = async <T>(path: string, init?: RequestInit): Promise<T> 
     return (response as { data?: T }).data as T
   }
   return response as T
+}
+
+const normalizeAreaBuildingsResponse = (response: ImportAreaBuildingsResponse) => {
+  if (response && typeof response === 'object' && 'data' in response) return response.data ?? []
+  if (response && typeof response === 'object' && 'area_buildings' in response) return response.area_buildings ?? []
+  if (response && typeof response === 'object' && 'buildings' in response) return response.buildings ?? []
+  return Array.isArray(response) ? response : []
 }
 
 const normalizeFeaturePermissions = (response: RolePermissionMatrixResponse): RolePermissionMatrixResponse => ({
@@ -54,18 +84,29 @@ export const getArea = (id: number) => requestResource<Area>(`/api/areas/${id}`)
 export const updateArea = (id: number, payload: Partial<Area>) => apiRequest<Area>(`/api/areas/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
 export const deleteArea = (id: number) => apiRequest<void>(`/api/areas/${id}`, { method: 'DELETE' })
 export const listAreaBuildings = async (id: number | string) => {
-  const response = await apiRequest<AreaBuilding[] | { data?: AreaBuilding[]; area_buildings?: AreaBuilding[]; buildings?: AreaBuilding[] }>(`/api/areas/${id}/buildings`)
-  if (response && typeof response === 'object' && 'data' in response) return response.data ?? []
-  if (response && typeof response === 'object' && 'area_buildings' in response) return response.area_buildings ?? []
-  if (response && typeof response === 'object' && 'buildings' in response) return response.buildings ?? []
-  return Array.isArray(response) ? response : []
+  const response = await apiRequest<ImportAreaBuildingsResponse>(`/api/areas/${id}/buildings`)
+  return normalizeAreaBuildingsResponse(response)
 }
-export const importAreaBuildingsFromOsm = async (id: number | string) => {
-  const response = await apiRequest<AreaBuilding[] | { data?: AreaBuilding[]; area_buildings?: AreaBuilding[]; buildings?: AreaBuilding[] }>(`/api/areas/${id}/buildings/import-osm`, { method: 'POST' })
-  if (response && typeof response === 'object' && 'data' in response) return response.data ?? []
-  if (response && typeof response === 'object' && 'area_buildings' in response) return response.area_buildings ?? []
-  if (response && typeof response === 'object' && 'buildings' in response) return response.buildings ?? []
-  return Array.isArray(response) ? response : []
+export const importAreaBuildingsFromOsm = async (
+  id: number | string,
+  options?: { stream?: boolean; onProgress?: (progress: ImportAreaBuildingsProgress) => void },
+) => {
+  if (options?.stream) {
+    let imported: AreaBuilding[] = []
+    await apiRequestNdjson<ImportAreaBuildingsStreamEvent>(
+      `/api/areas/${id}/buildings/import-osm?stream=1`,
+      { method: 'POST' },
+      (event) => {
+        if (event.progress) options.onProgress?.(event.progress)
+        if (event.type === 'complete') imported = normalizeAreaBuildingsResponse(event)
+      },
+    )
+    return imported
+  }
+
+  const response = await apiRequest<ImportAreaBuildingsResponse>(`/api/areas/${id}/buildings/import-osm`, { method: 'POST' })
+  options?.onProgress?.(response && typeof response === 'object' && !Array.isArray(response) ? response.meta?.import ?? {} : {})
+  return normalizeAreaBuildingsResponse(response)
 }
 export const listCampaignAreas = (campaignId: number, params?: PaginationParams) => requestPaginated<Area>(`/api/campaigns/${campaignId}/areas${buildQuery(params)}`)
 export const listCampaignAreasMap = (campaignId: number) => requestResource<GeoJsonFeatureCollection>(`/api/campaigns/${campaignId}/areas?map=1`)

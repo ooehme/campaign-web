@@ -32,25 +32,73 @@ const mapError = (status: number, payload: unknown) => {
   return new ApiError(status, `Request failed with status ${status}.`, payload, 'generic')
 }
 
-export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
+const createHeaders = (path: string, init?: RequestInit, accept = 'application/json') => {
   const token = readStoredToken()
   const headers = new Headers(init?.headers ?? {})
-  headers.set('Accept', 'application/json')
+  headers.set('Accept', accept)
   if (!headers.has('Content-Type') && init?.body) headers.set('Content-Type', 'application/json')
   if (token && !isLoginRequest(path, init?.method)) headers.set('Authorization', `Bearer ${token}`)
+  return headers
+}
+
+const readErrorPayload = async (response: Response) => {
+  try { return await response.json() } catch { return undefined }
+}
+
+const throwMappedError = async (response: Response) => {
+  const payload = await readErrorPayload(response)
+  if (response.status === 401) {
+    clearAuth()
+    window.dispatchEvent(new CustomEvent('campaign-auth-required'))
+  }
+  throw mapError(response.status, payload)
+}
+
+export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers = createHeaders(path, init)
 
   const response = await fetch(`${baseUrl}${path}`, { ...init, headers })
 
   if (!response.ok) {
-    let payload: unknown
-    try { payload = await response.json() } catch { payload = undefined }
-    if (response.status === 401) {
-      clearAuth()
-      window.dispatchEvent(new CustomEvent('campaign-auth-required'))
-    }
-    throw mapError(response.status, payload)
+    await throwMappedError(response)
   }
 
   if (response.status === 204) return undefined as T
   return response.json() as Promise<T>
+}
+
+export async function apiRequestNdjson<TEvent>(
+  path: string,
+  init: RequestInit | undefined,
+  onEvent: (event: TEvent) => void,
+): Promise<void> {
+  const headers = createHeaders(path, init, 'application/x-ndjson')
+  const response = await fetch(`${baseUrl}${path}`, { ...init, headers })
+
+  if (!response.ok) {
+    await throwMappedError(response)
+  }
+
+  if (!response.body) return
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  while (true) {
+    const { value, done } = await reader.read()
+    buffer += decoder.decode(value, { stream: !done })
+    const lines = buffer.split(/\r?\n/)
+    buffer = lines.pop() ?? ''
+
+    for (const line of lines) {
+      const trimmed = line.trim()
+      if (trimmed) onEvent(JSON.parse(trimmed) as TEvent)
+    }
+
+    if (done) break
+  }
+
+  const trimmed = buffer.trim()
+  if (trimmed) onEvent(JSON.parse(trimmed) as TEvent)
 }

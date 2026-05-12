@@ -1,9 +1,10 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CircleMarker, GeoJSON, MapContainer, Popup, TileLayer } from 'react-leaflet'
 import type { Path } from 'leaflet'
 import { ApiError } from '../api/client'
 import { importAreaBuildingsFromOsm, listAreaBuildings } from '../api/endpoints'
+import type { ImportAreaBuildingsProgress } from '../api/endpoints'
 import type { Area, AreaBuilding, AssignmentHouseholdTargeting, GeoJsonInput } from '../types/models'
 import { getAreaMaskGeometry, getAreaPositions, MAP_PANES, MapLayerPanes, MapMask, MapViewportController } from './MapViewport'
 import { MAP_ATTRIBUTION, MAP_TILE_URL } from '../utils/constants'
@@ -12,6 +13,15 @@ import { NO_PERMISSION_MESSAGE } from '../utils/permissions'
 
 const DEFAULT_CENTER: [number, number] = [51.1657, 10.4515]
 const EMPTY_FALLBACK_BUILDINGS: AreaBuilding[] = []
+
+const formatImportProgress = (progress: ImportAreaBuildingsProgress | null) => {
+  if (!progress?.chunks_total) return null
+  if (progress.event === 'waiting_for_overpass_slot') return 'Warte auf freien Overpass-Slot ...'
+  const processed = progress.chunks_processed ?? Math.max((progress.chunk ?? 1) - 1, 0)
+  const current = progress.event === 'chunk_started' && progress.chunk ? progress.chunk : processed
+  const percent = Math.round((processed / progress.chunks_total) * 100)
+  return `Chunk ${current} / ${progress.chunks_total}${Number.isFinite(percent) ? ` (${percent} %)` : ''}`
+}
 
 const getBuildingId = (building: AreaBuilding) => typeof building.id === 'number' ? building.id : null
 const stringValue = (value: unknown) => typeof value === 'string' || typeof value === 'number' ? String(value) : undefined
@@ -189,6 +199,7 @@ export function AssignmentBuildingSelector({
   const queryClient = useQueryClient()
   const targetAreaId = targetArea?.id
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds])
+  const [importProgress, setImportProgress] = useState<ImportAreaBuildingsProgress | null>(null)
 
   const buildingsQuery = useQuery({
     queryKey: ['area-buildings', targetAreaId],
@@ -198,8 +209,10 @@ export function AssignmentBuildingSelector({
   })
 
   const importMutation = useMutation({
-    mutationFn: () => importAreaBuildingsFromOsm(targetAreaId as number),
-    onSuccess: () => {
+    mutationFn: () => importAreaBuildingsFromOsm(targetAreaId as number, { stream: true, onProgress: setImportProgress }),
+    onMutate: () => setImportProgress(null),
+    onSuccess: (imported) => {
+      queryClient.setQueryData<AreaBuilding[]>(['area-buildings', targetAreaId], imported)
       queryClient.invalidateQueries({ queryKey: ['area-buildings', targetAreaId] })
       queryClient.invalidateQueries({ queryKey: ['area', targetAreaId] })
       queryClient.invalidateQueries({ queryKey: ['campaign-areas'] })
@@ -233,6 +246,7 @@ export function AssignmentBuildingSelector({
   }), [visibleBuildings])
   const mapPositions = targetPositions.length > 0 ? targetPositions : buildingPositions
   const maskGeometry = useMemo(() => getAreaMaskGeometry([targetArea]), [targetArea])
+  const importProgressLabel = formatImportProgress(importProgress)
 
   if (!targetArea) return null
 
@@ -250,14 +264,15 @@ export function AssignmentBuildingSelector({
         <button
           type="button"
           className="border bg-white px-3 py-2 disabled:opacity-50"
-          disabled={!targetAreaId || importMutation.isPending}
+          disabled={disabled || !targetAreaId || importMutation.isPending}
           onClick={() => importMutation.mutate()}
         >
-          {importMutation.isPending ? 'Gebäude werden aus OSM geladen ...' : 'Gebäude aus OSM erfassen'}
+          {importMutation.isPending ? 'Gebäude werden erfasst ...' : 'Gebäude aus OSM erfassen'}
         </button>
       )}
     </div>
 
+    {importMutation.isPending && importProgressLabel && <p className="text-sm text-slate-600">{importProgressLabel}</p>}
     {buildingsQuery.isLoading && <p className="text-sm text-slate-600">Gebäude werden geladen ...</p>}
     {buildingsQuery.isError && <p className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">{formatLoadError(buildingsQuery.error)}</p>}
     {importMutation.isError && <p className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">{formatImportError(importMutation.error)}</p>}
